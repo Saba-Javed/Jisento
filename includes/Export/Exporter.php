@@ -857,6 +857,7 @@ class Exporter {
 		return array(
 			'package_version'   => JISENTO_PACKAGE_VERSION,
 			'plugin_version'    => JISENTO_VERSION,
+			'plugin_basename'   => defined( 'JISENTO_BASENAME' ) ? JISENTO_BASENAME : '',
 			'format_marker'     => JISENTO_FORMAT_MARKER,
 			'wordpress_version' => get_bloginfo( 'version' ),
 			'php_version'       => PHP_VERSION,

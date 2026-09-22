@@ -123,8 +123,10 @@ class Live_Url {
 	public static function release( $job_id = '' ) {
 		$pin = self::read();
 		if ( $pin && ( '' === (string) $job_id || ( isset( $pin['job_id'] ) && (string) $pin['job_id'] === (string) $job_id ) ) ) {
-			if ( empty( $pin['released'] ) && isset( $pin['imported_active_plugins'] ) && false !== $pin['imported_active_plugins'] && function_exists( 'update_option' ) ) {
-				update_option( 'active_plugins', $pin['imported_active_plugins'] );
+			if ( empty( $pin['released'] ) && isset( $pin['imported_active_plugins'] ) && is_array( $pin['imported_active_plugins'] ) && function_exists( 'update_option' ) ) {
+				$skipped = isset( $pin['skipped_plugin_dirs'] ) && is_array( $pin['skipped_plugin_dirs'] ) ? $pin['skipped_plugin_dirs'] : array();
+				$own     = defined( 'JISENTO_BASENAME' ) ? (string) JISENTO_BASENAME : '';
+				update_option( 'active_plugins', self::filter_active_plugins( $pin['imported_active_plugins'], $skipped, $own ) );
 			}
 			$path = self::path();
 			if ( is_file( $path ) ) {
@@ -134,6 +136,54 @@ class Live_Url {
 		if ( ! self::read() ) {
 			self::remove_guard();
 		}
+	}
+
+	/**
+	 * Remember which plugin folders in the package were Jisento copies that the import skipped.
+	 *
+	 * @param string   $job_id Job id.
+	 * @param string[] $dirs   Folder names under wp-content/plugins.
+	 */
+	public static function skip_plugin_dirs( $job_id, array $dirs ) {
+		$pin = self::read();
+		if ( ! $pin || ! empty( $pin['released'] ) || ! isset( $pin['job_id'] ) || (string) $pin['job_id'] !== (string) $job_id ) {
+			return;
+		}
+		$pin['skipped_plugin_dirs'] = array_values( array_unique( array_map( 'strval', $dirs ) ) );
+		self::write( $pin );
+	}
+
+	/**
+	 * The source's active_plugins as they apply here: entries for skipped Jisento copies are
+	 * removed (their folder was not restored, or holds a different install), and this plugin
+	 * stays active under its own folder name.
+	 *
+	 * @param array    $plugins      active_plugins from the package.
+	 * @param string[] $skipped_dirs Plugin folder names of skipped Jisento copies.
+	 * @param string   $own          This plugin's basename (JISENTO_BASENAME).
+	 * @return string[]
+	 */
+	public static function filter_active_plugins( array $plugins, array $skipped_dirs, $own ) {
+		$skip = array();
+		foreach ( $skipped_dirs as $dir ) {
+			$skip[ trim( str_replace( '\\', '/', (string) $dir ), '/' ) ] = true;
+		}
+		$out = array();
+		foreach ( $plugins as $entry ) {
+			$entry = (string) $entry;
+			$slash = strpos( $entry, '/' );
+			if ( false !== $slash && isset( $skip[ substr( $entry, 0, $slash ) ] ) ) {
+				continue;
+			}
+			if ( ! in_array( $entry, $out, true ) ) {
+				$out[] = $entry;
+			}
+		}
+		$own = (string) $own;
+		if ( '' !== $own && ! in_array( $own, $out, true ) ) {
+			$out[] = $own;
+		}
+		return $out;
 	}
 
 	/**
@@ -163,10 +213,15 @@ call_user_func(
 			return;
 		}
 		$data = json_decode( (string) @file_get_contents( $config ), true );
-		if ( ! is_array( $data ) || empty( $data['plugin_dir'] ) || ! is_string( $data['plugin_dir'] ) || ! preg_match( '/^[A-Za-z0-9._-]+$/', $data['plugin_dir'] ) || '..' === $data['plugin_dir'] ) {
+		if ( ! is_array( $data ) || ! isset( $data['plugin_dir'] ) || ! is_string( $data['plugin_dir'] ) ) {
 			return;
 		}
-		$file = WP_PLUGIN_DIR . '/' . $data['plugin_dir'] . '/includes/Core/Live_Url.php';
+		$dir = $data['plugin_dir'];
+		// Any single path segment, including spaces; never a separator, NUL, "." or "..".
+		if ( '' === $dir || '.' === $dir || '..' === $dir || strlen( $dir ) !== strcspn( $dir, "/\\\0" ) ) {
+			return;
+		}
+		$file = WP_PLUGIN_DIR . '/' . $dir . '/includes/Core/Live_Url.php';
 		if ( ! is_file( $file ) ) {
 			return;
 		}

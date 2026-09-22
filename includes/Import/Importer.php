@@ -80,7 +80,31 @@ class Importer {
 	 */
 	public static function arm( $job ) {
 		Live_Url::capture( $job->job_id );
+		if ( ! empty( $job->state['skipped_plugin_dirs'] ) ) {
+			Live_Url::skip_plugin_dirs( $job->job_id, $job->state['skipped_plugin_dirs'] );
+		}
 		Admin_Guard::snapshot( $job->job_id );
+	}
+
+	/**
+	 * Plugin folder names whose active_plugins entries must not survive the import: Jisento
+	 * copies found in the package, and the source's own Jisento folder (never exported).
+	 *
+	 * @param string[] $copies   Archive prefixes such as "wp-content/plugins/foo/".
+	 * @param array    $manifest Package manifest.
+	 * @return string[]
+	 */
+	public static function skipped_plugin_dirs( array $copies, array $manifest ) {
+		$dirs = array();
+		foreach ( $copies as $prefix ) {
+			if ( preg_match( '#(?:^|/)plugins/([^/]+)/?$#', (string) $prefix, $m ) ) {
+				$dirs[] = $m[1];
+			}
+		}
+		if ( ! empty( $manifest['plugin_basename'] ) && false !== strpos( (string) $manifest['plugin_basename'], '/' ) ) {
+			$dirs[] = substr( (string) $manifest['plugin_basename'], 0, strpos( (string) $manifest['plugin_basename'], '/' ) );
+		}
+		return array_values( array_unique( $dirs ) );
 	}
 
 	/**
@@ -310,7 +334,9 @@ class Importer {
 			'database'      => (bool) $info['has_db'],
 			'files'         => (bool) $info['has_files'],
 		);
-		$state['jisento_copies'] = $archive->jisento_plugin_copies( $path );
+		$state['jisento_copies']      = $archive->jisento_plugin_copies( $path );
+		$state['skipped_plugin_dirs'] = self::skipped_plugin_dirs( $state['jisento_copies'], $info['manifest'] );
+		Live_Url::skip_plugin_dirs( $job->job_id, $state['skipped_plugin_dirs'] );
 		if ( empty( $state['options']['source_url'] ) && ! empty( $info['manifest']['home_url'] ) ) {
 			$state['options']['source_url'] = $info['manifest']['home_url'];
 		}

@@ -1,43 +1,146 @@
 <?php
-define( 'ABSPATH', __DIR__ );
-require dirname( __DIR__ ) . '/includes/Core/Live_Url.php';
+/**
+ * Live URL pin and mu-plugin guard.
+ *
+ * Run: php tests/live-url-test.php
+ */
+
+$lu_root = sys_get_temp_dir() . '/jisento-live-url-' . getmypid();
+define( 'WP_CONTENT_DIR', $lu_root . '/wp-content' );
+define( 'JISENTO_BASENAME', 'Jisento migration plugin/jisento-migration.php' );
+require __DIR__ . '/bootstrap.php';
 
 use Jisento\Migration\Core\Live_Url;
+use Jisento\Migration\Import\Importer;
 
-$failed = 0;
-function check( $name, $ok, $detail = '' ) {
-	global $failed;
-	if ( $ok ) {
-		echo "OK  $name\n";
+function lu_rmtree( $dir ) {
+	if ( ! is_dir( $dir ) ) {
 		return;
 	}
-	$failed++;
-	echo "FAIL $name" . ( $detail ? " — $detail" : '' ) . "\n";
+	foreach ( scandir( $dir ) as $item ) {
+		if ( '.' === $item || '..' === $item ) {
+			continue;
+		}
+		$path = $dir . '/' . $item;
+		is_dir( $path ) ? lu_rmtree( $path ) : unlink( $path );
+	}
+	rmdir( $dir );
 }
 
-check(
-	'package domain on the live site is healed when the request host differs',
-	Live_Url::should_heal( 'https://source.example', 'https://source.example', 'dest.example', array( 'https://source.example' ) )
-);
-check(
-	'a healthy destination URL is left alone',
-	! Live_Url::should_heal( 'https://dest.example', 'https://dest.example', 'dest.example', array( 'https://source.example' ) )
-);
-check(
-	'an unrelated live domain is left alone',
-	! Live_Url::should_heal( 'https://other.example', 'https://other.example', 'dest.example', array( 'https://source.example' ) )
-);
-check(
-	'restored URL keeps the path and uses the request host',
-	'https://dest.example/blog' === Live_Url::url_with_host( 'https://source.example/blog', 'dest.example', true )
+/**
+ * Load the generated mu-plugin in a fresh PHP process, the way WordPress would.
+ *
+ * @return array{output:string,code:int}
+ */
+function lu_run_guard( $root, $plugin_dir_json ) {
+	$plugins = $root . '/plugins';
+	$mu      = $root . '/mu-plugins';
+	@mkdir( $mu, 0777, true );
+	file_put_contents( $mu . '/jisento-live-url.php', Live_Url::guard_code() );
+	file_put_contents( $mu . '/jisento-live-url.json', $plugin_dir_json );
+	$runner = $root . '/run.php';
+	file_put_contents(
+		$runner,
+		"<?php\nerror_reporting( E_ALL );\ndefine( 'ABSPATH', __DIR__ . '/' );\ndefine( 'WP_PLUGIN_DIR', " . var_export( $plugins, true ) . " );\nrequire " . var_export( $mu . '/jisento-live-url.php', true ) . ";\necho \"\\nLOADED\";\n"
+	);
+	$out  = array();
+	$code = 0;
+	exec( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( $runner ) . ' 2>&1', $out, $code );
+	return array(
+		'output' => implode( "\n", $out ),
+		'code'   => (int) $code,
+	);
+}
+
+// --- mu-plugin guard -------------------------------------------------------
+
+$code = Live_Url::guard_code();
+check( 'guard holds no absolute path of this server', false === strpos( $code, rtrim( str_replace( '\\', '/', JISENTO_PATH ), '/' ) ) && false === strpos( $code, rtrim( JISENTO_PATH, '/\\' ) ) );
+check( 'guard requires only after file_exists-style check', false !== strpos( $code, 'is_file( $file )' ) && strpos( $code, 'is_file( $file )' ) < strpos( $code, 'require_once $file' ) );
+check( 'guard source is valid PHP', false !== @token_get_all( $code ) );
+
+$guard_root = $lu_root . '/guard';
+$spaced     = 'Jisento migration plugin';
+@mkdir( $guard_root . '/plugins/' . $spaced . '/includes/Core', 0777, true );
+file_put_contents(
+	$guard_root . '/plugins/' . $spaced . '/includes/Core/Live_Url.php',
+	"<?php\nnamespace Jisento\\Migration\\Core;\nclass Live_Url { public static function protect() { echo 'PROTECTED'; } }\n"
 );
 
-$controller = file_get_contents( dirname( __DIR__ ) . '/includes/Api/Rest_Controller.php' );
-$archive    = file_get_contents( dirname( __DIR__ ) . '/includes/Package/Archive.php' );
+$run = lu_run_guard( $guard_root, json_encode( array( 'plugin_dir' => $spaced ) ) );
+check( 'guard loads the plugin from a folder name with spaces', 0 === $run['code'] && false !== strpos( $run['output'], 'PROTECTED' ) && false !== strpos( $run['output'], 'LOADED' ), $run['output'] );
+
+foreach ( array( '../' . $spaced, 'a/b', 'a\\b', "a\0b", '..', '.', '' ) as $bad ) {
+	$run = lu_run_guard( $guard_root, json_encode( array( 'plugin_dir' => $bad ) ) );
+	check( 'guard refuses plugin_dir ' . json_encode( $bad ) . ' without a fatal', 0 === $run['code'] && false === strpos( $run['output'], 'PROTECTED' ) && false !== strpos( $run['output'], 'LOADED' ), $run['output'] );
+}
+
+$run = lu_run_guard( $guard_root, json_encode( array( 'plugin_dir' => 'moved-away' ) ) );
+check( 'guard does nothing (no fatal) when the plugin folder is gone', 0 === $run['code'] && false === strpos( $run['output'], 'PROTECTED' ) && false !== strpos( $run['output'], 'LOADED' ), $run['output'] );
+
+$run = lu_run_guard( $guard_root, '{not json' );
+check( 'guard does nothing (no fatal) with a broken config file', 0 === $run['code'] && false !== strpos( $run['output'], 'LOADED' ), $run['output'] );
+
+// --- active_plugins on release ---------------------------------------------
+
+$source_plugins = array(
+	'woocommerce/woocommerce.php',
+	'jisento-migration/jisento-migration.php',
+	'elementor/elementor.php',
+	'old-jisento-copy/jisento-migration.php',
+);
+$filtered = Live_Url::filter_active_plugins( $source_plugins, array( 'jisento-migration', 'old-jisento-copy' ), JISENTO_BASENAME );
+check(
+	'skipped Jisento copies are removed and this install stays active',
+	array( 'woocommerce/woocommerce.php', 'elementor/elementor.php', JISENTO_BASENAME ) === $filtered,
+	json_encode( $filtered )
+);
+check(
+	'same folder name on both sites keeps exactly one entry',
+	array( 'a/a.php', 'jisento-migration/jisento-migration.php' ) === Live_Url::filter_active_plugins( array( 'a/a.php', 'jisento-migration/jisento-migration.php' ), array( 'jisento-migration' ), 'jisento-migration/jisento-migration.php' )
+);
+check( 'single-file plugins are kept', in_array( 'hello.php', Live_Url::filter_active_plugins( array( 'hello.php' ), array( 'hello.php' ), JISENTO_BASENAME ), true ) );
+
+$dirs = Importer::skipped_plugin_dirs( array( 'wp-content/plugins/old-jisento-copy/', 'plugins/jisento-migration/' ), array( 'plugin_basename' => 'jisento-src/jisento-migration.php' ) );
+check( 'skipped dirs come from package copies and the source basename', array( 'old-jisento-copy', 'jisento-migration', 'jisento-src' ) === $dirs, json_encode( $dirs ) );
+
+@mkdir( WP_CONTENT_DIR . '/jisento', 0777, true );
+file_put_contents(
+	WP_CONTENT_DIR . '/jisento/live-url.json',
+	json_encode(
+		array(
+			'job_id'                  => 'job_release_test',
+			'home'                    => 'https://destination.test',
+			'active_plugins'          => array( JISENTO_BASENAME ),
+			'imported_active_plugins' => $source_plugins,
+			'released'                => false,
+		)
+	)
+);
+Live_Url::skip_plugin_dirs( 'job_release_test', $dirs );
+Live_Url::release( 'job_release_test' );
+$written = isset( $GLOBALS['jisento_test_options']['active_plugins'] ) ? $GLOBALS['jisento_test_options']['active_plugins'] : null;
+check(
+	'release writes the source plugins without skipped copies, with this install active',
+	array( 'woocommerce/woocommerce.php', 'elementor/elementor.php', JISENTO_BASENAME ) === $written,
+	json_encode( $written )
+);
+check( 'release removes the pin', ! is_file( WP_CONTENT_DIR . '/jisento/live-url.json' ) );
+
+// --- no unauthenticated URL changes ---------------------------------------
+
+$live = file_get_contents( JISENTO_PATH . 'includes/Core/Live_Url.php' );
+check( 'Live_Url never reads the Host header', false === strpos( $live, 'HTTP_HOST' ) && false === strpos( $live, 'heal_from_package' ) );
+check( 'jisento-recover.php is gone', ! file_exists( JISENTO_PATH . 'jisento-recover.php' ) );
+check( 'hostinger options are preserved', Live_Url::preserved_option( 'hostinger_onboarding' ) && Live_Url::preserved_option( 'hostinger-ai-builder' ) );
+check( 'other options are not preserved', ! Live_Url::preserved_option( 'siteurl' ) && ! Live_Url::preserved_option( 'my_hostinger' ) );
+
+$controller = file_get_contents( JISENTO_PATH . 'includes/Api/Rest_Controller.php' );
+$archive    = file_get_contents( JISENTO_PATH . 'includes/Package/Archive.php' );
 check( 'upload and validate do not update options', false === strpos( $controller, 'update_option' ) );
 check( 'upload and validate do not extract the package', false === strpos( $controller, 'extractTo' ) && false === strpos( $controller, 'import_chunk' ) );
 $inspect = substr( $archive, strpos( $archive, 'function inspect' ), strpos( $archive, 'function has_files_prefix' ) - strpos( $archive, 'function inspect' ) );
 check( 'package inspect does not extract or write the database', false === strpos( $inspect, 'extractTo' ) && false === strpos( $inspect, 'query(' ) );
 
-echo $failed ? "\n$failed failed\n" : "\nLive URL checks passed\n";
-exit( $failed ? 1 : 0 );
+lu_rmtree( $lu_root );
+jisento_test_finish();
