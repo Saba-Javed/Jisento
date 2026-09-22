@@ -8,8 +8,10 @@
 namespace Jisento\Migration\Api;
 
 use Jisento\Migration\Core\Compatibility;
+use Jisento\Migration\Core\Lease;
 use Jisento\Migration\Export\Exporter;
 use Jisento\Migration\Import\Importer;
+use Jisento\Migration\Jobs\Job_Runner;
 use Jisento\Migration\Plugin;
 use Jisento\Migration\Remote\Transfer;
 use Jisento\Migration\Security\Guard;
@@ -65,6 +67,15 @@ class Rest_Controller {
 			array(
 				'methods'             => 'POST',
 				'callback'            => array( $this, 'resume_job' ),
+				'permission_callback' => array( $this, 'job_permission' ),
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/jobs/(?P<id>[a-zA-Z0-9_]+)/retry',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'retry_job' ),
 				'permission_callback' => array( $this, 'job_permission' ),
 			)
 		);
@@ -322,7 +333,7 @@ class Rest_Controller {
 			$job = ( new Exporter() )->start( $options );
 		} elseif ( 'receive' === $type ) {
 			$plugin = Plugin::instance();
-			$job    = $plugin->jobs->create(
+			$job    = Job_Runner::open(
 				'receive',
 				array(
 					'options' => $options,
@@ -333,17 +344,23 @@ class Rest_Controller {
 					),
 				)
 			);
-			$job = $plugin->jobs->update(
-				$job->job_id,
-				array(
-					'status' => 'running',
-					'stage'  => 'uploading',
-				)
-			);
+			if ( ! is_wp_error( $job ) ) {
+				$job = $plugin->jobs->update(
+					$job,
+					array(
+						'status' => 'running',
+						'stage'  => 'uploading',
+					)
+				);
+				Importer::arm( $job );
+			}
 		} elseif ( 'import' === $type ) {
 			$job = ( new Importer() )->start( $options );
 		} else {
 			return new \WP_Error( 'jisento_type', __( 'Unknown job type.', 'jisento' ), array( 'status' => 400 ) );
+		}
+		if ( is_wp_error( $job ) ) {
+			return $job;
 		}
 		return $this->respond_job( $job );
 	}
@@ -358,14 +375,15 @@ class Rest_Controller {
 		}
 		$secret = \Jisento\Migration\Security\Job_Continuation::issue( $job->job_id );
 		if ( '' === $secret ) {
+			Job_Runner::fail( $job, sprintf( __( 'Stage: start. Operation: store the job token. Reason: the token file could not be written. Recovery: make wp-content/jisento/jobs writable by PHP, then start again. Job: %s', 'jisento' ), $job->job_id ) );
 			return new \WP_Error(
 				'jisento_continuation',
 				__( 'The job could not store a continuation proof, so it was not started.', 'jisento' ),
 				array( 'status' => 500 )
 			);
 		}
-		$response                        = Plugin::instance()->jobs->to_response( $job );
-		$response['continuation_token']  = $secret;
+		$response                       = Plugin::instance()->jobs->to_response( $job );
+		$response['continuation_token'] = $secret;
 		return rest_ensure_response( $response );
 	}
 
@@ -374,121 +392,69 @@ class Rest_Controller {
 		if ( ! $job ) {
 			return new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento' ), array( 'status' => 404 ) );
 		}
-		return rest_ensure_response( Plugin::instance()->jobs->to_response( $job ) );
+		$payload                 = Plugin::instance()->jobs->to_response( $job );
+		$payload['lease_holder'] = Lease::holder();
+		return rest_ensure_response( $payload );
 	}
 
 	public function step_job( \WP_REST_Request $request ) {
-		$plugin = Plugin::instance();
-		$job    = $plugin->jobs->get( $request['id'] );
-		if ( ! $job ) {
-			return new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento' ), array( 'status' => 404 ) );
-		}
-		if ( 'paused' === $job->status || 'completed' === $job->status || 'cancelled' === $job->status ) {
-			return rest_ensure_response( $plugin->jobs->to_response( $job ) );
-		}
-		if ( 'failed' === $job->status ) {
-			$stage = $job->stage;
-			if ( 'failed' === $stage || '' === $stage ) {
-				if ( ! empty( $job->state['sql_path'] ) ) {
-					$stage = 'importing_database';
-				}
-			}
-			if ( in_array( $stage, array( '', 'failed', 'completed', 'cancelled' ), true ) ) {
-				return rest_ensure_response( $plugin->jobs->to_response( $job ) );
-			}
-			$job = $plugin->jobs->update(
-				$job->job_id,
-				array(
-					'status'        => 'running',
-					'stage'         => $stage,
-					'error_summary' => '',
-				)
-			);
-		}
-
 		ignore_user_abort( true );
 		if ( function_exists( 'set_time_limit' ) ) {
 			@set_time_limit( 40 );
 		}
-		$locked = $this->acquire_job_lock( $job->job_id );
-		if ( ! $locked ) {
-			$payload                 = $plugin->jobs->to_response( $job );
-			$payload['worker_busy']  = true;
-			return rest_ensure_response( $payload );
-		}
+		$controller = $this;
+		$ran        = Job_Runner::step(
+			(string) $request['id'],
+			static function ( $job ) use ( $controller ) {
+				if ( 'receive' === $job->type ) {
+					return $controller->step_receive( $job );
+				}
+				if ( 'export' === $job->type ) {
+					return ( new Exporter() )->step( $job );
+				}
+				return ( new Importer() )->step( $job );
+			}
+		);
+		return $this->step_response( $ran );
+	}
 
-		try {
-			if ( 'receive' === $job->type || ( 'import' === $job->type && ! empty( $job->state['remote'] ) && empty( $job->state['validation'] ) ) ) {
-				$job = $this->step_receive( $job );
-			} elseif ( 'export' === $job->type ) {
-				$job = ( new Exporter() )->step( $job );
-			} else {
-				$job = ( new Importer() )->step( $job );
-			}
-		} catch ( \Throwable $e ) {
-			$message = trim( (string) $e->getMessage() );
-			if ( '' === $message ) {
-				$message = sprintf(
-					/* translators: %s: PHP exception class */
-					__( 'The migration worker stopped with %s but PHP supplied no error message. Check the server PHP error log.', 'jisento' ),
-					get_class( $e )
-				);
-			}
-			$job = $plugin->jobs->update(
-				$request['id'],
-				array(
-					'status'        => 'failed',
-					'error_summary' => $message,
-				)
-			);
-			$plugin->logger->log( $request['id'], 'runtime', 'error', '', 'error', $message );
-		} finally {
-			$this->release_job_lock( $job->job_id );
+	private function step_response( array $ran ) {
+		if ( $ran['error'] ) {
+			return $ran['error'];
 		}
-		$payload                = $plugin->jobs->to_response( $job );
-		$payload['worker_busy'] = false;
+		$payload                = Plugin::instance()->jobs->to_response( $ran['job'] );
+		$payload['worker_busy'] = $ran['busy'];
 		return rest_ensure_response( $payload );
 	}
 
-	private function acquire_job_lock( $job_id ) {
-		global $wpdb;
-		$name = 'jisento_' . preg_replace( '/[^a-zA-Z0-9_]/', '', (string) $job_id );
-		$got  = $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 0)', $name ) );
-		if ( null === $got ) {
-			return true;
-		}
-		return '1' === (string) $got;
-	}
-
-	private function release_job_lock( $job_id ) {
-		global $wpdb;
-		$name = 'jisento_' . preg_replace( '/[^a-zA-Z0-9_]/', '', (string) $job_id );
-		$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $name ) );
-	}
-
-	private function step_receive( $job ) {
+	/**
+	 * Called from inside Job_Runner::step, which holds the job lock and the site lease.
+	 *
+	 * @param object $job Receive job.
+	 * @return object
+	 */
+	public function step_receive( $job ) {
 		$plugin = Plugin::instance();
 		$state  = $job->state;
 		$remote = isset( $state['remote'] ) ? $state['remote'] : array();
 		$xfer   = new Transfer();
+		$headers = array(
+			'Content-Type'            => 'application/json',
+			'X-Jisento-Session'       => $remote['session_id'],
+			'X-Jisento-Session-Token' => $remote['token'],
+		);
 
 		if ( empty( $remote['export_job'] ) ) {
-			$started = $xfer->request(
-				untrailingslashit( $remote['source_url'] ) . '/wp-json/jisento/v1/remote/export',
-				'POST',
-				array(
-					'Content-Type'            => 'application/json',
-					'X-Jisento-Session'       => $remote['session_id'],
-					'X-Jisento-Session-Token' => $remote['token'],
-				),
-				wp_json_encode( array() )
-			);
+			$started = $xfer->request( untrailingslashit( $remote['source_url'] ) . '/wp-json/jisento/v1/remote/export', 'POST', $headers, wp_json_encode( array() ) );
 			if ( is_wp_error( $started ) ) {
-				throw new \RuntimeException( $started->get_error_message() );
+				throw new \RuntimeException( 'Operation: start the export on the source site. Reason: ' . $started->get_error_message() . ' Recovery: check the source site is reachable and no other export runs there, then start again.' );
 			}
-			$state['remote']['export_job'] = $started['job_id'];
+			if ( empty( $started['job_id'] ) ) {
+				throw new \RuntimeException( 'Operation: start the export on the source site. Reason: the source did not return an export job. Recovery: update Jisento Migration on the source site, then start again.' );
+			}
+			$state['remote']['export_job'] = (string) $started['job_id'];
 			return $plugin->jobs->update(
-				$job->job_id,
+				$job,
 				array(
 					'stage'        => 'uploading',
 					'current_item' => __( 'Starting remote export', 'jisento' ),
@@ -501,26 +467,25 @@ class Rest_Controller {
 			$stepped = $xfer->request(
 				untrailingslashit( $remote['source_url'] ) . '/wp-json/jisento/v1/remote/export-step',
 				'POST',
-				array(
-					'Content-Type'            => 'application/json',
-					'X-Jisento-Session'       => $remote['session_id'],
-					'X-Jisento-Session-Token' => $remote['token'],
-				),
+				$headers,
 				wp_json_encode( array( 'job_id' => $state['remote']['export_job'] ) )
 			);
 			if ( is_wp_error( $stepped ) ) {
-				throw new \RuntimeException( $stepped->get_error_message() );
+				throw new \RuntimeException( 'Operation: run the export on the source site. Reason: ' . $stepped->get_error_message() . ' Recovery: press Retry on a new import once the source is reachable.' );
+			}
+			if ( isset( $stepped['status'] ) && 'failed' === $stepped['status'] ) {
+				throw new \RuntimeException( 'Operation: run the export on the source site. Reason: the source export failed: ' . ( isset( $stepped['error_summary'] ) ? (string) $stepped['error_summary'] : '' ) . ' Recovery: fix the problem on the source site, then start a new migration.' );
 			}
 			if ( isset( $stepped['status'] ) && 'completed' === $stepped['status'] ) {
 				$state['remote']['package_ready'] = true;
 				$state['remote']['package_size']  = isset( $stepped['state']['package_size'] ) ? (int) $stepped['state']['package_size'] : 0;
 				$state['remote']['offset']        = 0;
-				$slug = 'packages/remote-' . $job->job_id . '.jisento';
-				$state['options']['package'] = $slug;
+				$slug                             = 'packages/remote-' . $job->job_id . '.jisento';
+				$state['options']['package']      = $slug;
 				$state['remote']['local_package'] = $plugin->storage->get_path( $slug );
 			}
 			return $plugin->jobs->update(
-				$job->job_id,
+				$job,
 				array(
 					'progress'     => isset( $stepped['progress'] ) ? min( 40, (int) $stepped['progress'] ) : (int) $job->progress,
 					'current_item' => isset( $stepped['current_item'] ) ? $stepped['current_item'] : '',
@@ -530,7 +495,7 @@ class Rest_Controller {
 		}
 
 		if ( empty( $state['remote']['transfer_done'] ) ) {
-			$chunk = max( 131072, min( 1048576, (int) Plugin::instance()->settings->get( 'chunk_size', 524288 ) ) );
+			$chunk  = max( 131072, min( 1048576, (int) Plugin::instance()->settings->get( 'chunk_size', 524288 ) ) );
 			$result = $xfer->download_package_chunk(
 				$remote['source_url'],
 				$remote['session_id'],
@@ -542,16 +507,15 @@ class Rest_Controller {
 				$job->job_id
 			);
 			if ( is_wp_error( $result ) ) {
-				throw new \RuntimeException( $result->get_error_message() );
+				throw new \RuntimeException( 'Operation: download the package. Reason: ' . $result->get_error_message() . ' Recovery: start a new migration once the source is reachable.' );
 			}
 			$state['remote']['offset'] += (int) $result['bytes'];
 			$total = max( 1, (int) $state['remote']['package_size'] );
 			if ( $result['bytes'] < $chunk || $state['remote']['offset'] >= $total ) {
 				$state['remote']['transfer_done'] = true;
-				$state['options']['package'] = $state['options']['package'];
 			}
 			return $plugin->jobs->update(
-				$job->job_id,
+				$job,
 				array(
 					'stage'        => 'uploading',
 					'progress'     => 40 + min( 20, (int) floor( ( $state['remote']['offset'] / $total ) * 20 ) ),
@@ -563,58 +527,41 @@ class Rest_Controller {
 			);
 		}
 
-		$job->state = $state;
-		$job->type  = 'import';
-		$job->stage = empty( $job->stage ) || 'uploading' === $job->stage ? 'validating' : $job->stage;
-		$plugin->jobs->update(
-			$job->job_id,
+		// The download is complete: from here on this job is an ordinary import of that package.
+		return $plugin->jobs->update(
+			$job,
 			array(
 				'type'  => 'import',
 				'stage' => 'validating',
 				'state' => $state,
 			)
 		);
-		$job = $plugin->jobs->get( $job->job_id );
-		return ( new Importer() )->step( $job );
+	}
+
+	private function job_result( $job ) {
+		if ( is_wp_error( $job ) ) {
+			return $job;
+		}
+		return rest_ensure_response( Plugin::instance()->jobs->to_response( $job ) );
 	}
 
 	public function pause_job( \WP_REST_Request $request ) {
-		$job = Plugin::instance()->jobs->update( $request['id'], array( 'status' => 'paused' ) );
-		return rest_ensure_response( Plugin::instance()->jobs->to_response( $job ) );
+		return $this->job_result( Job_Runner::pause( (string) $request['id'] ) );
 	}
 
 	public function resume_job( \WP_REST_Request $request ) {
-		$job = Plugin::instance()->jobs->update( $request['id'], array( 'status' => 'running' ) );
-		return rest_ensure_response( Plugin::instance()->jobs->to_response( $job ) );
+		return $this->job_result( Job_Runner::resume( (string) $request['id'] ) );
+	}
+
+	/**
+	 * Explicit retry of a failed job. Never automatic.
+	 */
+	public function retry_job( \WP_REST_Request $request ) {
+		return $this->job_result( Job_Runner::retry( (string) $request['id'] ) );
 	}
 
 	public function cancel_job( \WP_REST_Request $request ) {
-		$plugin   = Plugin::instance();
-		$existing = $plugin->jobs->get( $request['id'] );
-		if ( $existing && ! empty( $existing->state['safety_job'] ) ) {
-			$plugin->jobs->update(
-				$existing->state['safety_job'],
-				array(
-					'status'        => 'cancelled',
-					'stage'         => 'cancelled',
-					'error_summary' => __( 'Cancelled because the import was cancelled.', 'jisento' ),
-				)
-			);
-			$plugin->storage->delete_tree( $plugin->storage->tmp_dir( $existing->state['safety_job'] ) );
-		}
-		$job = $plugin->jobs->update(
-			$request['id'],
-			array(
-				'status'        => 'cancelled',
-				'stage'         => 'cancelled',
-				'error_summary' => __( 'Cancelled by administrator.', 'jisento' ),
-			)
-		);
-		$plugin->storage->delete_tree( $plugin->storage->tmp_dir( $request['id'] ) );
-		if ( $existing && ! empty( $existing->state['sql_path'] ) ) {
-			\Jisento\Migration\Database\Database_Importer::drop_shadows( $existing->state['sql_path'] );
-		}
-		return rest_ensure_response( $plugin->jobs->to_response( $job ) );
+		return $this->job_result( Job_Runner::cancel( (string) $request['id'] ) );
 	}
 
 	public function compatibility() {
@@ -818,6 +765,15 @@ class Rest_Controller {
 		if ( is_wp_error( $sess ) ) {
 			return $sess;
 		}
+		$bound = Session_Store::bound_job( $sess );
+		if ( '' !== $bound ) {
+			// A retried request after a timeout gets the job this session already created.
+			$existing = Plugin::instance()->jobs->get( $bound );
+			if ( $existing ) {
+				return rest_ensure_response( Plugin::instance()->jobs->to_response( $existing ) );
+			}
+			return new \WP_Error( 'jisento_session', __( 'This migration session already created an export, which no longer exists. Connect again with a new migration key.', 'jisento' ), array( 'status' => 409 ) );
+		}
 		$job = ( new Exporter() )->start(
 			array(
 				'mode'         => 'full',
@@ -825,29 +781,56 @@ class Rest_Controller {
 				'skip_backups' => true,
 			)
 		);
+		if ( is_wp_error( $job ) ) {
+			return $job;
+		}
+		if ( ! ( new Session_Store() )->bind_job( $sess, $job->job_id ) ) {
+			Job_Runner::cancel( $job->job_id );
+			return new \WP_Error( 'jisento_session', __( 'Another request already started an export with this migration session.', 'jisento' ), array( 'status' => 409 ) );
+		}
 		return rest_ensure_response( Plugin::instance()->jobs->to_response( $job ) );
+	}
+
+	/**
+	 * @return object|\WP_Error The session's own export job.
+	 */
+	private function remote_bound_job( \WP_REST_Request $request ) {
+		$sess = $this->remote_session( $request );
+		if ( is_wp_error( $sess ) ) {
+			return $sess;
+		}
+		$job_id = sanitize_text_field( (string) $request->get_param( 'job_id' ) );
+		$bound  = Session_Store::bound_job( $sess );
+		if ( '' === $bound || ! hash_equals( $bound, $job_id ) ) {
+			return new \WP_Error( 'jisento_forbidden', __( 'This migration session may only access the export job it created.', 'jisento' ), array( 'status' => 403 ) );
+		}
+		$job = Plugin::instance()->jobs->get( $job_id );
+		if ( ! $job || 'export' !== $job->type ) {
+			return new \WP_Error( 'jisento_missing', __( 'Export job not found.', 'jisento' ), array( 'status' => 404 ) );
+		}
+		return $job;
 	}
 
 	public function remote_export_step( \WP_REST_Request $request ) {
-		$sess = $this->remote_session( $request );
-		if ( is_wp_error( $sess ) ) {
-			return $sess;
+		$job = $this->remote_bound_job( $request );
+		if ( is_wp_error( $job ) ) {
+			return $job;
 		}
-		$job = Plugin::instance()->jobs->get( sanitize_text_field( $request->get_param( 'job_id' ) ) );
-		if ( ! $job ) {
-			return new \WP_Error( 'jisento_missing', __( 'Export job not found.', 'jisento' ), array( 'status' => 404 ) );
-		}
-		$job = ( new Exporter() )->step( $job );
-		return rest_ensure_response( Plugin::instance()->jobs->to_response( $job ) );
+		ignore_user_abort( true );
+		// Same lock, lease and state checks as the admin step route: a destination that retries
+		// after its own timeout gets "worker busy" instead of a second concurrent step.
+		return $this->step_response( Job_Runner::step( $job->job_id ) );
 	}
 
 	public function remote_chunk( \WP_REST_Request $request ) {
-		$sess = $this->remote_session( $request );
-		if ( is_wp_error( $sess ) ) {
-			return $sess;
+		$job = $this->remote_bound_job( $request );
+		if ( is_wp_error( $job ) ) {
+			return $job;
 		}
-		$job_id = sanitize_text_field( $request->get_param( 'job_id' ) );
-		$job    = Plugin::instance()->jobs->get( $job_id );
+		$job_id = $job->job_id;
+		if ( 'completed' !== $job->status ) {
+			return new \WP_Error( 'jisento_package', __( 'Remote package is not ready.', 'jisento' ), array( 'status' => 409 ) );
+		}
 		$offset = max( 0, (int) $request->get_param( 'offset' ) );
 		$length = min( 2 * 1024 * 1024, max( 1024, (int) $request->get_param( 'length' ) ) );
 		$index  = (int) $request->get_param( 'chunk_index' );
@@ -1104,7 +1087,7 @@ class Rest_Controller {
 			'status'            => 'completed',
 			'created_at'        => current_time( 'mysql' ),
 			'package_version'   => isset( $manifest['package_version'] ) ? $manifest['package_version'] : '',
-			'signature'         => \JISENTO_SIGNATURE,
+			'format_marker'     => \JISENTO_FORMAT_MARKER,
 			'home_url'          => isset( $manifest['home_url'] ) ? $manifest['home_url'] : '',
 			'database_size'     => isset( $manifest['database_size'] ) ? (int) $manifest['database_size'] : 0,
 			'files_size'        => isset( $manifest['files_size'] ) ? (int) $manifest['files_size'] : 0,
@@ -1143,7 +1126,7 @@ class Rest_Controller {
 						'package'   => $resolved['key'],
 						'manifest'  => array(
 							'package_version'   => $meta['package_version'],
-							'signature'         => isset( $meta['signature'] ) ? $meta['signature'] : '',
+							'format_marker'     => isset( $meta['format_marker'] ) ? $meta['format_marker'] : ( isset( $meta['signature'] ) ? $meta['signature'] : '' ),
 							'home_url'          => $meta['home_url'],
 							'database_size'     => isset( $meta['database_size'] ) ? (int) $meta['database_size'] : 0,
 							'files_size'        => isset( $meta['files_size'] ) ? (int) $meta['files_size'] : 0,

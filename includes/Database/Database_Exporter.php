@@ -38,17 +38,55 @@ class Database_Exporter {
 	 */
 	private $column_types = array();
 
+	/**
+	 * @var array<string,array<string,bool>>
+	 */
+	private $not_null = array();
+
+	/**
+	 * @var array<string,array>
+	 */
+	private $key_cache = array();
+
+	/**
+	 * @var string[]
+	 */
+	private $skipped_views = array();
+
+	/**
+	 * @var Sql_Escaper
+	 */
+	private $escaper;
+
 	public function __construct() {
 		global $wpdb;
-		$this->wpdb = $wpdb;
+		$this->wpdb    = $wpdb;
+		$dbh           = isset( $wpdb->dbh ) ? $wpdb->dbh : null;
+		$this->escaper = new Sql_Escaper( $dbh );
+	}
+
+	/**
+	 * The export reads through a utf8mb4 connection so 4-byte characters are never
+	 * replaced by "?" on sites whose wp-config still says utf8.
+	 */
+	public function restore_connection_charset() {
+		if ( isset( $this->wpdb->dbh ) && is_object( $this->wpdb->dbh ) && method_exists( $this->wpdb, 'set_charset' ) ) {
+			$this->wpdb->set_charset( $this->wpdb->dbh );
+		}
 	}
 
 	public function tables( array $exclude = array() ) {
 		$prefix = $this->wpdb->prefix;
 		$like   = $this->wpdb->esc_like( $prefix ) . '%';
-		$found  = $this->wpdb->get_col( $this->wpdb->prepare( 'SHOW TABLES LIKE %s', $like ) );
+		$found  = $this->wpdb->get_results( $this->wpdb->prepare( 'SHOW FULL TABLES LIKE %s', $like ), ARRAY_N );
 		$out    = array();
-		foreach ( $found as $table ) {
+		$this->skipped_views = array();
+		foreach ( (array) $found as $row ) {
+			$table = isset( $row[0] ) ? (string) $row[0] : '';
+			$type  = isset( $row[1] ) ? strtoupper( (string) $row[1] ) : 'BASE TABLE';
+			if ( '' === $table ) {
+				continue;
+			}
 			$short = substr( $table, strlen( $prefix ) );
 			if ( in_array( $table, $exclude, true ) || in_array( $short, $exclude, true ) ) {
 				continue;
@@ -56,9 +94,22 @@ class Database_Exporter {
 			if ( 0 === strpos( $short, 'jisento_' ) ) {
 				continue;
 			}
+			if ( 'VIEW' === $type ) {
+				$this->skipped_views[] = $table;
+				continue;
+			}
 			$out[] = $table;
 		}
 		return $out;
+	}
+
+	/**
+	 * Views are not exported. The caller records them in the manifest and the job log.
+	 *
+	 * @return string[]
+	 */
+	public function skipped_views() {
+		return $this->skipped_views;
 	}
 
 	public function table_meta( $table ) {
@@ -72,37 +123,82 @@ class Database_Exporter {
 		);
 	}
 
-	public function write_header( $handle ) {
+	/**
+	 * Session header written at the top of every segment, so each segment restores on its own.
+	 *
+	 * @param string $prefix Table prefix.
+	 * @return string
+	 */
+	public static function header_sql( $prefix ) {
 		$lines = array(
 			'-- Jisento Migration SQL dump',
-			'-- Plugin: ' . JISENTO_VERSION,
-			'-- Prefix: ' . $this->wpdb->prefix,
+			'-- Plugin: ' . ( defined( 'JISENTO_VERSION' ) ? JISENTO_VERSION : '' ),
+			'-- Prefix: ' . $prefix,
 			'SET NAMES utf8mb4;',
 			'SET FOREIGN_KEY_CHECKS=0;',
 			'SET SQL_MODE=\'NO_AUTO_VALUE_ON_ZERO\';',
 			'',
 		);
-		fwrite( $handle, implode( "\n", $lines ) . "\n" );
+		return implode( "\n", $lines ) . "\n";
 	}
 
-	public function write_footer( $handle ) {
-		fwrite( $handle, "SET FOREIGN_KEY_CHECKS=1;\n" );
+	/**
+	 * @return true|\WP_Error
+	 */
+	public function write_header( $handle, $hash = null ) {
+		return self::write_all( $handle, self::header_sql( $this->wpdb->prefix ), $hash );
 	}
 
-	public function export_table_structure( $handle, $table ) {
-		$create = $this->wpdb->get_row( 'SHOW CREATE TABLE `' . $this->esc_ident( $table ) . '`', ARRAY_N ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		if ( ! $create || empty( $create[1] ) ) {
-			return new \WP_Error( 'jisento_create', sprintf( __( 'Unable to read structure for table %s.', 'jisento' ), $table ) );
+	/**
+	 * @return true|\WP_Error
+	 */
+	public function write_footer( $handle, $hash = null ) {
+		return self::write_all( $handle, "SET FOREIGN_KEY_CHECKS=1;\n", $hash );
+	}
+
+	/**
+	 * A short write means the disk is full or the file is gone. The segment must not be kept.
+	 *
+	 * @param resource         $handle File.
+	 * @param string           $bytes  Data.
+	 * @param mixed            $hash   HashContext, a list of them, or null.
+	 * @return true|\WP_Error
+	 */
+	public static function write_all( $handle, $bytes, $hash = null ) {
+		$bytes  = (string) $bytes;
+		$length = strlen( $bytes );
+		$done   = 0;
+		while ( $done < $length ) {
+			$wrote = fwrite( $handle, 0 === $done ? $bytes : substr( $bytes, $done ) );
+			if ( false === $wrote || 0 === $wrote ) {
+				return new \WP_Error( 'jisento_export_write', __( 'Writing the database segment failed (disk full or file removed).', 'jisento' ) );
+			}
+			$done += $wrote;
 		}
-		fwrite( $handle, "\n-- Table {$table}\n" );
-		fwrite( $handle, "DROP TABLE IF EXISTS `{$table}`;\n" );
-		fwrite( $handle, $create[1] . ";\n\n" );
+		foreach ( is_array( $hash ) ? $hash : array( $hash ) as $ctx ) {
+			if ( null !== $ctx ) {
+				hash_update( $ctx, $bytes );
+			}
+		}
 		return true;
 	}
 
 	/**
-	 * Export a slice of rows. Returns next offset or -1 when complete.
+	 * @return array{bytes:int}|\WP_Error
 	 */
+	public function export_table_structure( $handle, $table, $hash = null ) {
+		$create = $this->wpdb->get_row( 'SHOW CREATE TABLE `' . $this->esc_ident( $table ) . '`', ARRAY_N ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		if ( ! $create || empty( $create[1] ) ) {
+			return new \WP_Error( 'jisento_create', sprintf( __( 'Unable to read structure for table %s.', 'jisento' ), $table ) );
+		}
+		$sql   = "\n-- Table {$table}\nDROP TABLE IF EXISTS `{$table}`;\n" . $create[1] . ";\n\n";
+		$wrote = self::write_all( $handle, $sql, $hash );
+		if ( is_wp_error( $wrote ) ) {
+			return $wrote;
+		}
+		return array( 'bytes' => strlen( $sql ) );
+	}
+
 	public function primary_columns( $table ) {
 		$rows = $this->wpdb->get_results( 'SHOW KEYS FROM `' . $this->esc_ident( $table ) . '` WHERE Key_name = \'PRIMARY\'', ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		if ( ! $rows ) {
@@ -122,88 +218,131 @@ class Database_Exporter {
 	}
 
 	/**
-	 * Read a stable page of rows. Cursor is the last primary-key tuple, or array( '__offset' => n ) for tables without a key.
+	 * Columns used to page through a table: the primary key, otherwise a UNIQUE index whose
+	 * columns are all NOT NULL. Without either, every column is used and the order is not
+	 * guaranteed to be stable across requests; the manifest records that.
 	 *
-	 * @return array{done:bool,cursor:array|null}|\WP_Error
+	 * @param string $table Table.
+	 * @return array{columns:string[],source:string,stable:bool}
 	 */
-	public function export_table_rows( $handle, $table, $cursor, $limit = 500 ) {
+	public function key_columns( $table ) {
+		if ( isset( $this->key_cache[ $table ] ) ) {
+			return $this->key_cache[ $table ];
+		}
+		$this->binary_column_map( $table );
+		$pk = $this->primary_columns( $table );
+		if ( $pk ) {
+			return $this->key_cache[ $table ] = array(
+				'columns' => $pk,
+				'source'  => 'primary',
+				'stable'  => true,
+			);
+		}
+		$rows    = $this->wpdb->get_results( 'SHOW KEYS FROM `' . $this->esc_ident( $table ) . '` WHERE Non_unique = 0', ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$indexes = array();
+		foreach ( (array) $rows as $row ) {
+			if ( empty( $row['Key_name'] ) || empty( $row['Column_name'] ) ) {
+				continue;
+			}
+			$indexes[ $row['Key_name'] ][ (int) $row['Seq_in_index'] ] = $row['Column_name'];
+		}
+		ksort( $indexes );
+		foreach ( $indexes as $columns ) {
+			ksort( $columns );
+			$columns = array_values( $columns );
+			$usable  = true;
+			foreach ( $columns as $column ) {
+				if ( empty( $this->not_null[ $table ][ $column ] ) ) {
+					$usable = false;
+					break;
+				}
+			}
+			if ( $usable && $columns ) {
+				return $this->key_cache[ $table ] = array(
+					'columns' => $columns,
+					'source'  => 'unique',
+					'stable'  => true,
+				);
+			}
+		}
+		return $this->key_cache[ $table ] = array(
+			'columns' => isset( $this->column_names[ $table ] ) ? $this->column_names[ $table ] : array(),
+			'source'  => 'none',
+			'stable'  => false,
+		);
+	}
+
+	/**
+	 * Read one page of rows and write it as INSERT statements.
+	 * Keyed tables use keyset pagination on the full ordered key tuple. Tables without a
+	 * usable key are ordered by every column and paged with OFFSET.
+	 *
+	 * @param resource $handle Segment file.
+	 * @param string   $table  Table.
+	 * @param mixed    $cursor array( '__keyset' => ... ), array( '__offset' => n ), or null.
+	 * @param int      $limit  Rows per page.
+	 * @param mixed    $hash   HashContext or list of HashContext updated with every byte written.
+	 * @return array{done:bool,cursor:array|null,rows:int,bytes:int,sha256:string}|\WP_Error
+	 */
+	public function export_table_rows( $handle, $table, $cursor, $limit = 500, $hash = null ) {
 		$limit  = max( 1, (int) $limit );
-		$pk     = $this->primary_columns( $table );
 		$ident  = '`' . $this->esc_ident( $table ) . '`';
 		$binary = $this->binary_column_map( $table );
 		$select = $this->select_list( $table, $binary );
 		if ( '' === $select ) {
-			return new \WP_Error( 'jisento_export_columns', sprintf( __( 'Unable to read the columns for table %s, so its rows were not exported again.', 'jisento' ), $table ) );
+			return new \WP_Error( 'jisento_export_columns', sprintf( __( 'Unable to read the columns for table %s, so its rows were not exported.', 'jisento' ), $table ) );
 		}
-		if ( $pk ) {
-			$order_sql = array();
-			foreach ( $pk as $col ) {
-				$order_sql[] = '`' . $this->esc_ident( $col ) . '`';
-			}
-			$order = ' ORDER BY ' . implode( ', ', $order_sql );
+		$key       = $this->key_columns( $table );
+		$keyed     = 'none' !== $key['source'];
+		$order_sql = array();
+		foreach ( $key['columns'] as $col ) {
+			$order_sql[] = $ident . '.`' . $this->esc_ident( $col ) . '`';
+		}
+		if ( ! $order_sql ) {
+			return new \WP_Error( 'jisento_export_columns', sprintf( __( 'Table %s has no columns to order by, so its rows were not exported.', 'jisento' ), $table ) );
+		}
+		$order  = ' ORDER BY ' . implode( ', ', $order_sql );
+		$offset = 0;
+		if ( $keyed ) {
 			$where = '';
 			$args  = array();
-			if ( is_array( $cursor ) && isset( $cursor['__offset'] ) ) {
-				$sql  = 'SELECT ' . $select . ' FROM ' . $ident . $order . ' LIMIT %d OFFSET %d';
-				$rows = $this->wpdb->get_results( $this->wpdb->prepare( $sql, $limit, (int) $cursor['__offset'] ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			} else {
-				if ( is_array( $cursor ) && isset( $cursor['__keyset'] ) ) {
-					if ( ! is_array( $cursor['__keyset'] ) || count( $cursor['__keyset'] ) !== count( $pk ) ) {
-						return new \WP_Error( 'jisento_export_cursor', __( 'The database export cursor does not match this table, so the export stopped instead of writing the table again.', 'jisento' ) );
-					}
-					$predicate = self::keyset_predicate( $order_sql, $cursor['__keyset'] );
-					if ( null === $predicate ) {
-						return new \WP_Error( 'jisento_export_cursor', __( 'The database export cursor is not a valid keyset, so the export stopped instead of writing the table again.', 'jisento' ) );
-					}
-					$where = ' WHERE ' . $predicate[0];
-					$args  = $predicate[1];
-				} elseif ( is_array( $cursor ) && isset( $cursor['__hexpk'] ) ) {
-					if ( ! is_array( $cursor['__hexpk'] ) || count( $cursor['__hexpk'] ) !== count( $pk ) ) {
-						return new \WP_Error( 'jisento_export_cursor', __( 'The database export cursor does not match this table, so the export stopped instead of writing the table again.', 'jisento' ) );
-					}
-					$placeholders = array();
-					foreach ( $cursor['__hexpk'] as $value ) {
-						if ( null === $value ) {
-							$placeholders[] = 'NULL';
-							continue;
-						}
-						if ( ! is_string( $value ) || ! preg_match( '/^[0-9a-fA-F]*$/', $value ) ) {
-							return new \WP_Error( 'jisento_export_cursor', __( 'The database export cursor is not valid hexadecimal, so the export stopped instead of writing the table again.', 'jisento' ) );
-						}
-						$placeholders[] = 'UNHEX(%s)';
-						$args[]         = $value;
-					}
-					$where = ' WHERE (' . implode( ', ', $order_sql ) . ') > (' . implode( ', ', $placeholders ) . ')';
-				} elseif ( is_array( $cursor ) && count( $cursor ) === count( $pk ) ) {
-					$placeholders = array();
-					foreach ( $cursor as $value ) {
-						$placeholders[] = '%s';
-						$args[]         = $value;
-					}
-					$where = ' WHERE (' . implode( ', ', $order_sql ) . ') > (' . implode( ', ', $placeholders ) . ')';
+			if ( is_array( $cursor ) && isset( $cursor['__keyset'] ) ) {
+				if ( ! is_array( $cursor['__keyset'] ) || count( $cursor['__keyset'] ) !== count( $key['columns'] ) ) {
+					return new \WP_Error( 'jisento_export_cursor', sprintf( __( 'The export cursor for table %s does not match its key columns (%s), so the export stopped instead of writing the table again.', 'jisento' ), $table, implode( ', ', $key['columns'] ) ) );
 				}
-				$args[] = $limit;
-				$sql    = 'SELECT ' . $select . ' FROM ' . $ident . $where . $order . ' LIMIT %d';
-				$rows   = $this->wpdb->get_results( $this->wpdb->prepare( $sql, ...$args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$predicate = self::keyset_predicate( $order_sql, $cursor['__keyset'] );
+				if ( null === $predicate ) {
+					return new \WP_Error( 'jisento_export_cursor', sprintf( __( 'The export cursor for table %s is not a valid keyset, so the export stopped instead of writing the table again.', 'jisento' ), $table ) );
+				}
+				$where = ' WHERE ' . $predicate[0];
+				$args  = $predicate[1];
+			} elseif ( null !== $cursor ) {
+				return new \WP_Error( 'jisento_export_cursor', sprintf( __( 'The export cursor for table %s is not a keyset cursor, so the export stopped instead of writing the table again.', 'jisento' ), $table ) );
 			}
+			$args[] = $limit;
+			$sql    = 'SELECT ' . $select . ' FROM ' . $ident . $where . $order . ' LIMIT %d';
+			$rows   = $this->wpdb->get_results( $this->wpdb->prepare( $sql, ...$args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		} else {
-			$offset = ( is_array( $cursor ) && isset( $cursor['__offset'] ) ) ? (int) $cursor['__offset'] : 0;
-			$sql    = 'SELECT ' . $select . ' FROM ' . $ident . ' LIMIT %d OFFSET %d';
+			$offset = ( is_array( $cursor ) && isset( $cursor['__offset'] ) ) ? max( 0, (int) $cursor['__offset'] ) : 0;
+			$sql    = 'SELECT ' . $select . ' FROM ' . $ident . $order . ' LIMIT %d OFFSET %d';
 			$rows   = $this->wpdb->get_results( $this->wpdb->prepare( $sql, $limit, $offset ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		}
 		if ( ! is_array( $rows ) ) {
-			return new \WP_Error( 'jisento_export_read', sprintf( __( 'Unable to read rows from table %s. %s', 'jisento' ), $table, (string) $this->wpdb->last_error ) );
+			return new \WP_Error( 'jisento_export_read', sprintf( __( 'Unable to read rows from table %1$s. Database error: %2$s', 'jisento' ), $table, (string) $this->wpdb->last_error ) );
 		}
 		if ( ! $rows ) {
 			return array(
 				'done'   => true,
 				'cursor' => null,
+				'rows'   => 0,
+				'bytes'  => 0,
+				'sha256' => hash( 'sha256', '' ),
 			);
 		}
-		$kinds  = array();
-		$labels = array();
-		if ( $pk ) {
-			foreach ( $pk as $col ) {
+		$kinds = array();
+		if ( $keyed ) {
+			$labels = array();
+			foreach ( $key['columns'] as $col ) {
 				$kinds[]  = isset( $this->column_kinds[ $table ][ $col ] ) ? $this->column_kinds[ $table ][ $col ] : 'string';
 				$labels[] = $col . ' ' . ( isset( $this->column_types[ $table ][ $col ] ) ? $this->column_types[ $table ][ $col ] : $kinds[ count( $kinds ) - 1 ] );
 			}
@@ -212,16 +351,16 @@ class Database_Exporter {
 				return $previous;
 			}
 			foreach ( $rows as $row ) {
-				$current = self::comparable_tuple( $row, $pk, $kinds );
+				$current = self::comparable_tuple( $row, $key['columns'], $kinds );
 				if ( null === $current ) {
-					return new \WP_Error( 'jisento_export_key', sprintf( __( 'Table %s returned a primary key that is not a valid integer, so the export stopped instead of comparing it as text.', 'jisento' ), $table ) );
+					return new \WP_Error( 'jisento_export_key', sprintf( __( 'Table %1$s returned a key value in (%2$s) that is not a valid integer, so the export stopped instead of comparing it as text.', 'jisento' ), $table, implode( ', ', $labels ) ) );
 				}
 				if ( null !== $previous && self::key_follows( $previous, $current, $kinds ) < 1 ) {
 					return new \WP_Error(
 						'jisento_export_repeat',
 						sprintf(
 							/* translators: 1: table, 2: key description, 3: previous key, 4: next key */
-							__( 'Table %1$s primary key (%2$s) repeated or went backwards. Previous: %3$s. Next: %4$s. The export stopped instead of writing that key twice.', 'jisento' ),
+							__( 'Table %1$s key (%2$s) did not advance. Previous key: %3$s. Next key: %4$s. The export stopped instead of writing that key twice.', 'jisento' ),
 							$table,
 							implode( ', ', $labels ),
 							self::format_key( $previous, $kinds ),
@@ -233,13 +372,21 @@ class Database_Exporter {
 			}
 		}
 
+		$page    = hash_init( 'sha256' );
+		$targets = array( $page );
+		foreach ( is_array( $hash ) ? $hash : array( $hash ) as $ctx ) {
+			if ( null !== $ctx ) {
+				$targets[] = $ctx;
+			}
+		}
 		$columns = array();
-		$group   = array();
 		foreach ( array_keys( $rows[0] ) as $col ) {
 			$columns[] = '`' . $this->esc_ident( $col ) . '`';
 		}
-		$prefix = 'INSERT INTO `' . $table . '` (' . implode( ',', $columns ) . ') VALUES ';
-		$bytes  = strlen( $prefix );
+		$prefix  = 'INSERT INTO `' . $table . '` (' . implode( ',', $columns ) . ') VALUES ';
+		$group   = array();
+		$size    = strlen( $prefix );
+		$written = 0;
 		foreach ( $rows as $row ) {
 			$values = array();
 			foreach ( $row as $column => $value ) {
@@ -251,26 +398,32 @@ class Database_Exporter {
 			}
 			$tuple   = '(' . implode( ',', $values ) . ')';
 			$group[] = $tuple;
-			$bytes  += strlen( $tuple ) + 1;
-			if ( count( $group ) >= 40 || $bytes >= 262144 ) {
-				fwrite( $handle, $prefix . implode( ',', $group ) . ";\n" );
-				$group = array();
-				$bytes = strlen( $prefix );
+			$size   += strlen( $tuple ) + 1;
+			if ( count( $group ) >= 40 || $size >= 262144 ) {
+				$sql   = $prefix . implode( ',', $group ) . ";\n";
+				$wrote = self::write_all( $handle, $sql, $targets );
+				if ( is_wp_error( $wrote ) ) {
+					return $wrote;
+				}
+				$written += strlen( $sql );
+				$group    = array();
+				$size     = strlen( $prefix );
 			}
 		}
 		if ( $group ) {
-			fwrite( $handle, $prefix . implode( ',', $group ) . ";\n" );
+			$sql   = $prefix . implode( ',', $group ) . ";\n";
+			$wrote = self::write_all( $handle, $sql, $targets );
+			if ( is_wp_error( $wrote ) ) {
+				return $wrote;
+			}
+			$written += strlen( $sql );
 		}
 
 		$done   = count( $rows ) < $limit;
 		$cursor = null;
 		if ( ! $done ) {
-			$last = $rows[ count( $rows ) - 1 ];
-			if ( $pk ) {
-				$tuple = self::comparable_tuple( $last, $pk, $kinds );
-				if ( null === $tuple ) {
-					return new \WP_Error( 'jisento_export_key', sprintf( __( 'Table %s returned a primary key that is not a valid integer, so the export stopped instead of comparing it as text.', 'jisento' ), $table ) );
-				}
+			if ( $keyed ) {
+				$tuple  = self::comparable_tuple( $rows[ count( $rows ) - 1 ], $key['columns'], $kinds );
 				$cursor = self::pack_keyset( $tuple, $kinds );
 			} else {
 				$cursor = array( '__offset' => $offset + count( $rows ) );
@@ -279,34 +432,10 @@ class Database_Exporter {
 		return array(
 			'done'   => $done,
 			'cursor' => $cursor,
+			'rows'   => count( $rows ),
+			'bytes'  => $written,
+			'sha256' => hash_final( $page ),
 		);
-	}
-
-	/**
-	 * Drop bytes written after the last saved export cursor.
-	 * A request can be killed after it appends SQL and before that cursor is stored.
-	 *
-	 * @param string $path      SQL file.
-	 * @param int    $committed Byte length that matches the saved cursor.
-	 * @return int
-	 */
-	public static function reconcile_sql_file( $path, $committed ) {
-		$committed = max( 0, (int) $committed );
-		if ( ! is_file( $path ) ) {
-			return 0;
-		}
-		clearstatcache( true, $path );
-		$size = (int) filesize( $path );
-		if ( $size > $committed ) {
-			$handle = fopen( $path, 'rb+' );
-			if ( $handle ) {
-				ftruncate( $handle, $committed );
-				fclose( $handle );
-			}
-			clearstatcache( true, $path );
-			$size = (int) filesize( $path );
-		}
-		return $size;
 	}
 
 	/**
@@ -337,13 +466,15 @@ class Database_Exporter {
 	 */
 	public static function canonical_int( $value ) {
 		$value = trim( (string) $value );
-		if ( ! preg_match( '/^-?(0|[1-9][0-9]*)$/', $value ) ) {
+		if ( ! preg_match( '/^(-?)([0-9]+)$/', $value, $match ) ) {
 			return null;
 		}
-		if ( '-0' === $value ) {
+		// ZEROFILL columns return "00012"; the key is still the integer 12.
+		$digits = ltrim( $match[2], '0' );
+		if ( '' === $digits ) {
 			return '0';
 		}
-		return $value;
+		return $match[1] . $digits;
 	}
 
 	/**
@@ -784,6 +915,7 @@ class Database_Exporter {
 				continue;
 			}
 			$names[] = $row['Field'];
+			$this->not_null[ $table ][ $row['Field'] ] = isset( $row['Null'] ) && 'NO' === strtoupper( (string) $row['Null'] );
 			$type    = isset( $row['Type'] ) ? strtolower( (string) $row['Type'] ) : '';
 			$collate = isset( $row['Collation'] ) ? strtolower( (string) $row['Collation'] ) : '';
 			$kind    = self::column_kind_from_type( $type, $collate );
@@ -819,10 +951,7 @@ class Database_Exporter {
 	}
 
 	private function sql_value( $value ) {
-		if ( null === $value ) {
-			return 'NULL';
-		}
-		return "'" . $this->wpdb->_real_escape( (string) $value ) . "'";
+		return $this->escaper->quote( $value );
 	}
 
 	private function esc_ident( $ident ) {

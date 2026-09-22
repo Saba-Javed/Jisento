@@ -18,137 +18,385 @@ class Url_Replacer {
 	 */
 	private $serializer;
 
-	public function __construct() {
+	/**
+	 * @var int
+	 */
+	private $batch_size;
+
+	public function __construct( $batch_size = 200 ) {
 		$this->serializer = new Serializer();
+		$this->batch_size = max( 1, (int) $batch_size );
 	}
 
-	public function replace_all( $source_url, $dest_url, $time_budget = 8, $state = array() ) {
-		global $wpdb;
+	/**
+	 * Replace the source URL with the destination URL in every text column, resumably.
+	 *
+	 * @param string $source_url  Source site URL.
+	 * @param string $dest_url    Destination site URL.
+	 * @param int    $time_budget Seconds to work before returning a resumable state (at least one batch always runs).
+	 * @param array  $state       State returned by a previous call, or empty to start.
+	 * @param array  $options     only_tables (string[] full table names) and replace_guids (bool); also read from $state. Only used when the table list is first built.
+	 * @return array done, updated, tables, index, table, offset, cursor, skipped_tables, skipped_values.
+	 * @throws \RuntimeException When a query fails.
+	 */
+	public function replace_all( $source_url, $dest_url, $time_budget = 8, $state = array(), array $options = array() ) {
+		$state   = is_array( $state ) ? $state : array();
+		$options = array_merge(
+			array(
+				'only_tables'   => isset( $state['only_tables'] ) ? $state['only_tables'] : null,
+				'replace_guids' => ! empty( $state['replace_guids'] ),
+			),
+			$options
+		);
+
+		$updated        = isset( $state['updated'] ) ? (int) $state['updated'] : 0;
+		$skipped_values = isset( $state['skipped_values'] ) ? (int) $state['skipped_values'] : 0;
+		$skipped_tables = ( isset( $state['skipped_tables'] ) && is_array( $state['skipped_tables'] ) ) ? $state['skipped_tables'] : array();
 
 		$replacements = Serializer::build_replacements( $source_url, $dest_url );
 		if ( empty( $replacements ) ) {
-			return array(
-				'done'    => true,
-				'updated' => isset( $state['updated'] ) ? (int) $state['updated'] : 0,
-				'table'   => '',
-				'offset'  => 0,
-			);
+			$tables = ( isset( $state['tables'] ) && is_array( $state['tables'] ) ) ? $state['tables'] : array();
+			return $this->state( true, $updated, $tables, count( $tables ), null, $skipped_tables, $skipped_values );
 		}
 
-		$tables = isset( $state['tables'] ) ? $state['tables'] : $this->discover_text_tables();
-		$index  = isset( $state['index'] ) ? (int) $state['index'] : 0;
-		$offset = isset( $state['offset'] ) ? (int) $state['offset'] : 0;
-		$updated = isset( $state['updated'] ) ? (int) $state['updated'] : 0;
-		$start  = time();
+		if ( isset( $state['tables'] ) && is_array( $state['tables'] ) ) {
+			$tables = $this->normalize_tables( $state['tables'], $options, $skipped_tables );
+		} else {
+			$tables = $this->discover_text_tables( $options, $skipped_tables );
+		}
+		$index    = isset( $state['index'] ) ? (int) $state['index'] : 0;
+		$cursor   = ( isset( $state['cursor'] ) && is_array( $state['cursor'] ) ) ? $state['cursor'] : null;
+		$baseline = $this->serializer->skipped_count();
+		$start    = time();
+		$batches  = 0;
+		$count    = count( $tables );
 
-		while ( $index < count( $tables ) ) {
-			if ( ( time() - $start ) >= $time_budget ) {
-				return array(
-					'done'    => false,
-					'updated' => $updated,
-					'tables'  => $tables,
-					'index'   => $index,
-					'offset'  => $offset,
-					'table'   => $tables[ $index ]['name'],
-				);
+		while ( $index < $count ) {
+			if ( $batches > 0 && ( time() - $start ) >= $time_budget ) {
+				$skipped_values += $this->serializer->skipped_count() - $baseline;
+				return $this->state( false, $updated, $tables, $index, $cursor, $skipped_tables, $skipped_values );
 			}
 
-			$table   = $tables[ $index ];
-			$primary = $table['primary'];
-			$columns = $table['columns'];
-			$name    = $table['name'];
-
-			$rows = $wpdb->get_results(
-				$wpdb->prepare(
-					'SELECT `' . $this->esc( $primary ) . '`, `' . implode( '`,`', array_map( array( $this, 'esc' ), $columns ) ) . '` FROM `' . $this->esc( $name ) . '` ORDER BY `' . $this->esc( $primary ) . '` LIMIT %d OFFSET %d',
-					80,
-					$offset
-				),
-				ARRAY_A
-			); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-
-			if ( ! $rows ) {
+			$table = $tables[ $index ];
+			if ( empty( $table['key'] ) || empty( $table['columns'] ) ) {
 				$index++;
-				$offset = 0;
+				$cursor = null;
 				continue;
 			}
 
+			$rows = $this->fetch_batch( $table, $cursor );
+			$batches++;
 			foreach ( $rows as $row ) {
-				$id      = $row[ $primary ];
-				$changed = false;
-				$set     = array();
-				$format  = array();
-				foreach ( $columns as $column ) {
-					$original = $row[ $column ];
-					if ( null === $original || '' === $original ) {
-						continue;
-					}
-					$new = $this->serializer->replace( $original, $replacements );
-					if ( $new !== $original ) {
-						$set[ $column ] = $new;
-						$format[]       = '%s';
-						$changed        = true;
-					}
-				}
-				if ( $changed ) {
-					$wpdb->update( $name, $set, array( $primary => $id ), $format, is_numeric( $id ) ? array( '%d' ) : array( '%s' ) );
-					$updated++;
-				}
+				$updated += $this->replace_row( $table, $row, $replacements );
 			}
 
-			$offset += count( $rows );
-			if ( count( $rows ) < 80 ) {
+			if ( count( $rows ) < $this->batch_size ) {
 				$index++;
-				$offset = 0;
+				$cursor = null;
+			} else {
+				$cursor = $this->encode_cursor( $table, $rows[ count( $rows ) - 1 ] );
 			}
 		}
 
 		update_option( 'siteurl', $dest_url );
 		update_option( 'home', $dest_url );
 
+		$skipped_values += $this->serializer->skipped_count() - $baseline;
+		return $this->state( true, $updated, $tables, $index, null, $skipped_tables, $skipped_values );
+	}
+
+	/**
+	 * Tables that belong to this install: prefixed, not plugin job tables, and not another
+	 * install whose prefix merely starts with ours (e.g. wp_staging_ next to wp_).
+	 *
+	 * @param string[] $all_tables Table names.
+	 * @param string   $prefix     This install's table prefix.
+	 * @return string[]
+	 */
+	public static function own_tables( array $all_tables, $prefix ) {
+		$prefix = (string) $prefix;
+		$names  = array();
+		foreach ( $all_tables as $table ) {
+			$table = (string) $table;
+			if ( '' === $prefix || 0 === strpos( $table, $prefix ) ) {
+				$names[] = $table;
+			}
+		}
+
+		$lookup    = array_flip( $names );
+		$multisite = isset( $lookup[ $prefix . 'blogs' ] );
+		$foreign   = array();
+		foreach ( $names as $table ) {
+			if ( strlen( $table ) <= 7 || 'options' !== substr( $table, -7 ) ) {
+				continue;
+			}
+			$other = substr( $table, 0, -7 );
+			if ( $other === $prefix || ( '' !== $prefix && 0 !== strpos( $other, $prefix ) ) ) {
+				continue;
+			}
+			if ( ! isset( $lookup[ $other . 'posts' ] ) ) {
+				continue;
+			}
+			if ( $multisite && preg_match( '/^\d+_$/', substr( $other, strlen( $prefix ) ) ) ) {
+				continue;
+			}
+			$foreign[] = $other;
+		}
+
+		$out = array();
+		foreach ( $names as $table ) {
+			if ( 0 === strpos( $table, $prefix . 'jisento_' ) ) {
+				continue;
+			}
+			foreach ( $foreign as $other ) {
+				if ( 0 === strpos( $table, $other ) ) {
+					continue 2;
+				}
+			}
+			$out[] = $table;
+		}
+
+		return $out;
+	}
+
+	private function state( $done, $updated, array $tables, $index, $cursor, array $skipped_tables, $skipped_values ) {
 		return array(
-			'done'    => true,
-			'updated' => $updated,
-			'tables'  => $tables,
-			'index'   => $index,
-			'offset'  => 0,
-			'table'   => '',
+			'done'           => (bool) $done,
+			'updated'        => (int) $updated,
+			'tables'         => $tables,
+			'index'          => (int) $index,
+			'table'          => ( ! $done && isset( $tables[ $index ]['name'] ) ) ? $tables[ $index ]['name'] : '',
+			'offset'         => 0,
+			'cursor'         => $cursor,
+			'skipped_tables' => $skipped_tables,
+			'skipped_values' => (int) $skipped_values,
 		);
 	}
 
-	private function discover_text_tables() {
+	private function fetch_batch( array $table, $cursor ) {
 		global $wpdb;
-		$prefix = $wpdb->prefix;
-		$like   = $wpdb->esc_like( $prefix ) . '%';
-		$tables = $wpdb->get_col( $wpdb->prepare( 'SHOW TABLES LIKE %s', $like ) );
-		$out    = array();
 
-		foreach ( $tables as $table ) {
-			if ( 0 === strpos( substr( $table, strlen( $prefix ) ), 'jisento_' ) ) {
+		$keys = array_map( array( $this, 'ident' ), $table['key'] );
+		$sql  = 'SELECT ' . implode( ', ', array_map( array( $this, 'ident' ), array_merge( $table['key'], $table['columns'] ) ) ) . ' FROM ' . $this->ident( $table['name'] );
+		$args = array();
+
+		if ( null !== $cursor ) {
+			if ( count( $cursor ) !== count( $table['key'] ) ) {
+				throw new \RuntimeException( 'URL replacement cursor does not match the key of table ' . $table['name'] . ' (key: ' . implode( ', ', $table['key'] ) . ')' );
+			}
+			$placeholders = array();
+			foreach ( array_values( $cursor ) as $value ) {
+				if ( is_int( $value ) ) {
+					$placeholders[] = '%d';
+					$args[]         = $value;
+					continue;
+				}
+				if ( ! is_string( $value ) || ! preg_match( '/^(?:[0-9a-fA-F]{2})*$/', $value ) ) {
+					throw new \RuntimeException( 'URL replacement cursor is corrupt for table ' . $table['name'] . ' (key: ' . implode( ', ', $table['key'] ) . ')' );
+				}
+				$placeholders[] = '%s';
+				$args[]         = (string) hex2bin( $value );
+			}
+			if ( 1 === count( $keys ) ) {
+				$sql .= ' WHERE ' . $keys[0] . ' > ' . $placeholders[0];
+			} else {
+				$sql .= ' WHERE (' . implode( ', ', $keys ) . ') > (' . implode( ', ', $placeholders ) . ')';
+			}
+		}
+
+		$sql   .= ' ORDER BY ' . implode( ', ', $keys ) . ' LIMIT %d';
+		$args[] = $this->batch_size;
+
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		if ( ! is_array( $rows ) || '' !== (string) $wpdb->last_error ) {
+			throw new \RuntimeException( 'URL replacement failed reading table ' . $table['name'] . ' (key: ' . implode( ', ', $table['key'] ) . '): ' . $wpdb->last_error );
+		}
+
+		return $rows;
+	}
+
+	private function replace_row( array $table, array $row, array $replacements ) {
+		global $wpdb;
+
+		$set  = array();
+		$args = array();
+		foreach ( $table['columns'] as $column ) {
+			if ( ! isset( $row[ $column ] ) || '' === $row[ $column ] ) {
 				continue;
 			}
-			$cols    = $wpdb->get_results( 'SHOW COLUMNS FROM `' . $this->esc( $table ) . '`', ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			$text    = array();
-			$primary = '';
-			foreach ( $cols as $col ) {
-				$type = strtolower( $col['Type'] );
-				if ( 'PRI' === $col['Key'] && ! $primary ) {
-					$primary = $col['Field'];
-				}
-				if ( preg_match( '/char|text|blob|json/i', $type ) ) {
-					$text[] = $col['Field'];
-				}
+			$new = $this->serializer->replace( $row[ $column ], $replacements );
+			if ( $new !== $row[ $column ] ) {
+				$set[]  = $this->ident( $column ) . ' = %s';
+				$args[] = $new;
 			}
-			if ( $primary && $text ) {
-				$out[] = array(
-					'name'    => $table,
-					'primary' => $primary,
-					'columns' => $text,
-				);
+		}
+		if ( ! $set ) {
+			return 0;
+		}
+
+		$where = array();
+		foreach ( $table['key'] as $column ) {
+			$value = (string) $row[ $column ];
+			if ( $this->is_int_key( $table, $column, $value ) ) {
+				$where[] = $this->ident( $column ) . ' = %d';
+				$args[]  = (int) $value;
+			} else {
+				$where[] = $this->ident( $column ) . ' = %s';
+				$args[]  = $value;
+			}
+		}
+
+		$sql    = 'UPDATE ' . $this->ident( $table['name'] ) . ' SET ' . implode( ', ', $set ) . ' WHERE ' . implode( ' AND ', $where );
+		$result = $wpdb->query( $wpdb->prepare( $sql, $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		if ( false === $result ) {
+			throw new \RuntimeException( 'URL replacement failed updating table ' . $table['name'] . ' (key: ' . implode( ', ', $table['key'] ) . '): ' . $wpdb->last_error );
+		}
+
+		return ( (int) $result > 0 ) ? 1 : 0;
+	}
+
+	private function encode_cursor( array $table, array $row ) {
+		$cursor = array();
+		foreach ( $table['key'] as $column ) {
+			$value    = (string) $row[ $column ];
+			$cursor[] = $this->is_int_key( $table, $column, $value ) ? (int) $value : bin2hex( $value );
+		}
+		return $cursor;
+	}
+
+	private function is_int_key( array $table, $column, $value ) {
+		return ! empty( $table['int_keys'] ) && in_array( $column, $table['int_keys'], true ) && preg_match( '/^-?\d+$/', $value ) && (string) (int) $value === $value;
+	}
+
+	private function normalize_tables( array $tables, array $options, array &$skipped ) {
+		$out = array();
+		foreach ( $tables as $table ) {
+			if ( isset( $table['key'], $table['columns'] ) && is_array( $table['key'] ) ) {
+				$out[] = $table;
+				continue;
+			}
+			$name  = isset( $table['name'] ) ? (string) $table['name'] : '';
+			$fresh = '' !== $name ? $this->describe_table( $name, $options, $skipped ) : null;
+			$out[] = $fresh ? $fresh : array(
+				'name'     => $name,
+				'key'      => array(),
+				'int_keys' => array(),
+				'columns'  => array(),
+			);
+		}
+		return $out;
+	}
+
+	private function discover_text_tables( array $options, array &$skipped ) {
+		global $wpdb;
+
+		if ( is_array( $options['only_tables'] ) ) {
+			$existing = $wpdb->get_col( 'SHOW TABLES' );
+			$this->assert_no_error( 'listing tables' );
+			$wanted = array();
+			foreach ( $options['only_tables'] as $name ) {
+				$wanted[] = (string) $name;
+			}
+			$names = array_values( array_intersect( array_unique( $wanted ), (array) $existing ) );
+		} else {
+			$like  = $wpdb->esc_like( $wpdb->prefix ) . '%';
+			$found = $wpdb->get_col( $wpdb->prepare( 'SHOW TABLES LIKE %s', $like ) );
+			$this->assert_no_error( 'listing tables' );
+			$names = self::own_tables( (array) $found, $wpdb->prefix );
+		}
+
+		$out = array();
+		foreach ( $names as $name ) {
+			$table = $this->describe_table( $name, $options, $skipped );
+			if ( $table ) {
+				$out[] = $table;
 			}
 		}
 
 		return $out;
+	}
+
+	private function describe_table( $name, array $options, array &$skipped ) {
+		global $wpdb;
+
+		$cols = $wpdb->get_results( 'SHOW FULL COLUMNS FROM `' . $this->esc( $name ) . '`', ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$this->assert_no_error( 'reading columns of ' . $name );
+		$keys = $wpdb->get_results( 'SHOW KEYS FROM `' . $this->esc( $name ) . '` WHERE Non_unique = 0', ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$this->assert_no_error( 'reading keys of ' . $name );
+
+		$not_null = array();
+		$int_cols = array();
+		$text     = array();
+		$skip     = array();
+		if ( $name === $wpdb->prefix . 'posts' && empty( $options['replace_guids'] ) ) {
+			$skip[] = 'guid';
+		}
+		foreach ( (array) $cols as $col ) {
+			$field = $col['Field'];
+			$type  = strtolower( (string) $col['Type'] );
+			if ( 'NO' === $col['Null'] ) {
+				$not_null[ $field ] = true;
+			}
+			if ( preg_match( '/^(?:tiny|small|medium|big)?int\b/', $type ) ) {
+				$int_cols[] = $field;
+			}
+			$collation = isset( $col['Collation'] ) ? strtolower( (string) $col['Collation'] ) : '';
+			if ( preg_match( '/^(?:(?:var)?char|(?:tiny|medium|long)?text|json)\b/', $type ) && 'binary' !== $collation && ! in_array( $field, $skip, true ) ) {
+				$text[] = $field;
+			}
+		}
+
+		$indexes = array();
+		foreach ( (array) $keys as $key ) {
+			$indexes[ $key['Key_name'] ][ (int) $key['Seq_in_index'] ] = $key['Column_name'];
+		}
+		$key_cols = array();
+		if ( isset( $indexes['PRIMARY'] ) ) {
+			ksort( $indexes['PRIMARY'] );
+			$key_cols = array_values( $indexes['PRIMARY'] );
+		} else {
+			foreach ( $indexes as $columns ) {
+				ksort( $columns );
+				$usable = true;
+				foreach ( $columns as $column ) {
+					if ( empty( $not_null[ $column ] ) ) {
+						$usable = false;
+						break;
+					}
+				}
+				if ( $usable ) {
+					$key_cols = array_values( $columns );
+					break;
+				}
+			}
+		}
+
+		$text = array_values( array_diff( $text, $key_cols ) );
+		if ( ! $text ) {
+			return null;
+		}
+		if ( ! $key_cols ) {
+			$skipped[ $name ] = 'No primary key or NOT NULL unique index; URLs in this table were not replaced.';
+			return null;
+		}
+
+		return array(
+			'name'     => $name,
+			'key'      => $key_cols,
+			'int_keys' => array_values( array_intersect( $key_cols, $int_cols ) ),
+			'columns'  => $text,
+		);
+	}
+
+	private function assert_no_error( $action ) {
+		global $wpdb;
+		if ( '' !== (string) $wpdb->last_error ) {
+			throw new \RuntimeException( 'URL replacement failed ' . $action . ': ' . $wpdb->last_error );
+		}
+	}
+
+	private function ident( $ident ) {
+		return '`' . str_replace( array( '`', '%' ), array( '', '%%' ), $ident ) . '`';
 	}
 
 	private function esc( $ident ) {

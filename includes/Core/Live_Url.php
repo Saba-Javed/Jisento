@@ -2,9 +2,12 @@
 /**
  * Keeps the destination site on its own URL until URL replacement finishes.
  *
- * Package metadata is not the live site. Uploading or validating a package
- * must not call this. An import captures the destination URL when it starts,
- * and database restore is not allowed to leave the source home or siteurl active.
+ * An import captures the destination home, siteurl and active_plugins when it starts, and the
+ * database restore is not allowed to leave the source values active. The pin only applies while
+ * its import job is running: once the job completes, fails or is cancelled (or the job row is
+ * gone) the pin is released and nothing is forced any more.
+ *
+ * Nothing here trusts the request Host header.
  *
  * @package Jisento\Migration
  */
@@ -17,16 +20,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Live_Url {
 
+	const GUARD_FILE   = 'jisento-live-url.php';
+	const GUARD_CONFIG = 'jisento-live-url.json';
+
 	public static function protect() {
 		if ( ! isset( $GLOBALS['wpdb'] ) || ! is_object( $GLOBALS['wpdb'] ) ) {
 			return;
 		}
-		self::install_guard();
-		if ( self::pin_active() ) {
-			self::hold();
+		$pin = self::read();
+		if ( ! is_array( $pin ) || ! empty( $pin['released'] ) || empty( $pin['home'] ) ) {
 			return;
 		}
-		self::heal_from_package();
+		if ( ! self::job_running( isset( $pin['job_id'] ) ? (string) $pin['job_id'] : '' ) ) {
+			self::release();
+			return;
+		}
+		self::hold();
 	}
 
 	public static function capture( $job_id ) {
@@ -35,6 +44,7 @@ class Live_Url {
 		}
 		$existing = self::read();
 		if ( $existing && empty( $existing['released'] ) && isset( $existing['job_id'] ) && (string) $existing['job_id'] === (string) $job_id ) {
+			self::install_guard();
 			return;
 		}
 		self::write(
@@ -48,20 +58,6 @@ class Live_Url {
 			)
 		);
 		self::install_guard();
-	}
-
-	public static function hold_if_options_statement( $sql ) {
-		if ( ! isset( $GLOBALS['wpdb'] ) || ! is_object( $GLOBALS['wpdb'] ) ) {
-			return;
-		}
-		$table = $GLOBALS['wpdb']->options;
-		if ( ! is_string( $sql ) || false === stripos( $sql, '`' . $table . '`' ) ) {
-			return;
-		}
-		if ( preg_match( '/^(DROP|CREATE)\s/i', ltrim( $sql ) ) ) {
-			return;
-		}
-		self::hold();
 	}
 
 	public static function hold() {
@@ -119,125 +115,106 @@ class Live_Url {
 		self::force_option( 'siteurl', $url );
 	}
 
-	public static function release() {
+	/**
+	 * Stop pinning. With a job id, only that job's pin is released.
+	 *
+	 * @param string $job_id Optional job id.
+	 */
+	public static function release( $job_id = '' ) {
 		$pin = self::read();
-		if ( ! $pin ) {
-			return;
+		if ( $pin && ( '' === (string) $job_id || ( isset( $pin['job_id'] ) && (string) $pin['job_id'] === (string) $job_id ) ) ) {
+			if ( empty( $pin['released'] ) && isset( $pin['imported_active_plugins'] ) && false !== $pin['imported_active_plugins'] && function_exists( 'update_option' ) ) {
+				update_option( 'active_plugins', $pin['imported_active_plugins'] );
+			}
+			$path = self::path();
+			if ( is_file( $path ) ) {
+				@unlink( $path );
+			}
 		}
-		$pin['released'] = true;
-		self::write( $pin );
-		if ( isset( $pin['imported_active_plugins'] ) && false !== $pin['imported_active_plugins'] ) {
-			update_option( 'active_plugins', $pin['imported_active_plugins'] );
-		}
-		$path = self::path();
-		if ( is_file( $path ) ) {
-			@unlink( $path );
+		if ( ! self::read() ) {
+			self::remove_guard();
 		}
 	}
 
-	public static function should_heal( $live_home, $live_siteurl, $request_host, array $package_homes ) {
-		$request_host = strtolower( (string) $request_host );
-		if ( '' === $request_host || ! preg_match( '/^[a-z0-9.-]+$/', $request_host ) ) {
+	/**
+	 * mu-plugin source. It holds no absolute paths: the plugin folder name is read at runtime
+	 * from a JSON file next to it, and every step is guarded so a missing or moved plugin can
+	 * never cause a fatal error.
+	 *
+	 * @return string
+	 */
+	public static function guard_code() {
+		return <<<'PHP'
+<?php
+/**
+ * Jisento Migration: keeps this site on its own URL while an import runs.
+ * Written and removed by the Jisento Migration plugin. Safe to delete.
+ */
+if ( ! defined( 'ABSPATH' ) ) {
+	return;
+}
+call_user_func(
+	function () {
+		if ( ! defined( 'WP_PLUGIN_DIR' ) ) {
+			return;
+		}
+		$config = __DIR__ . '/jisento-live-url.json';
+		if ( ! is_readable( $config ) ) {
+			return;
+		}
+		$data = json_decode( (string) @file_get_contents( $config ), true );
+		if ( ! is_array( $data ) || empty( $data['plugin_dir'] ) || ! is_string( $data['plugin_dir'] ) || ! preg_match( '/^[A-Za-z0-9._-]+$/', $data['plugin_dir'] ) || '..' === $data['plugin_dir'] ) {
+			return;
+		}
+		$file = WP_PLUGIN_DIR . '/' . $data['plugin_dir'] . '/includes/Core/Live_Url.php';
+		if ( ! is_file( $file ) ) {
+			return;
+		}
+		try {
+			require_once $file;
+			if ( class_exists( '\Jisento\Migration\Core\Live_Url', false ) ) {
+				\Jisento\Migration\Core\Live_Url::protect();
+			}
+		} catch ( \Throwable $e ) {
+			error_log( 'Jisento live URL guard: ' . $e->getMessage() );
+		}
+	}
+);
+
+PHP;
+	}
+
+	/**
+	 * @return string Folder name of this plugin under WP_PLUGIN_DIR, or '' when it is not there.
+	 */
+	public static function plugin_dir_name() {
+		if ( ! defined( 'WP_PLUGIN_DIR' ) || ! defined( 'JISENTO_PATH' ) ) {
+			return '';
+		}
+		$plugins = rtrim( str_replace( '\\', '/', WP_PLUGIN_DIR ), '/' );
+		$own     = rtrim( str_replace( '\\', '/', JISENTO_PATH ), '/' );
+		if ( dirname( $own ) !== $plugins ) {
+			return '';
+		}
+		return basename( $own );
+	}
+
+	private static function job_running( $job_id ) {
+		if ( '' === $job_id ) {
 			return false;
 		}
-		foreach ( array( $live_home, $live_siteurl ) as $live ) {
-			$host = self::host_of( $live );
-			if ( '' === $host || $host === $request_host ) {
-				continue;
-			}
-			foreach ( $package_homes as $package ) {
-				if ( self::host_of( $package ) === $host ) {
-					return true;
-				}
-			}
+		global $wpdb;
+		$table    = $wpdb->prefix . 'jisento_jobs';
+		$suppress = method_exists( $wpdb, 'suppress_errors' ) ? $wpdb->suppress_errors( true ) : null;
+		$status   = $wpdb->get_var( $wpdb->prepare( "SELECT status FROM `{$table}` WHERE job_id = %s", $job_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( null !== $suppress ) {
+			$wpdb->suppress_errors( $suppress );
 		}
-		return false;
-	}
-
-	public static function url_with_host( $url, $host, $https ) {
-		$parts = function_exists( 'wp_parse_url' ) ? wp_parse_url( (string) $url ) : parse_url( (string) $url );
-		if ( ! is_array( $parts ) ) {
-			$parts = array();
+		if ( null === $status && '' !== (string) $wpdb->last_error ) {
+			// The jobs table cannot be read (for example mid-swap); keep the pin rather than guess.
+			return true;
 		}
-		$parts['scheme'] = $https ? 'https' : 'http';
-		$parts['host']   = $host;
-		$path            = isset( $parts['path'] ) ? $parts['path'] : '';
-		return $parts['scheme'] . '://' . $parts['host'] . $path;
-	}
-
-	public static function host_of( $url ) {
-		$parts = function_exists( 'wp_parse_url' ) ? wp_parse_url( (string) $url ) : parse_url( (string) $url );
-		if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
-			return '';
-		}
-		return strtolower( (string) $parts['host'] );
-	}
-
-	private static function heal_from_package() {
-		if ( defined( 'WP_HOME' ) || defined( 'WP_SITEURL' ) ) {
-			return;
-		}
-		$uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '';
-		$admin = ( function_exists( 'is_admin' ) && is_admin() ) || false !== strpos( $uri, '/wp-admin' ) || false !== strpos( $uri, '/wp-login.php' );
-		if ( ! $admin ) {
-			return;
-		}
-		$host = self::request_host();
-		if ( '' === $host ) {
-			return;
-		}
-		$homes = self::package_home_urls();
-		$home  = self::db_option( 'home' );
-		$site  = self::db_option( 'siteurl' );
-		if ( ! self::should_heal( $home, $site, $host, $homes ) ) {
-			return;
-		}
-		$https   = function_exists( 'is_ssl' ) ? is_ssl() : ( ! empty( $_SERVER['HTTPS'] ) && 'off' !== $_SERVER['HTTPS'] );
-		$restore = self::url_with_host( $home ? $home : $site, $host, $https );
-		self::force_option( 'home', $restore );
-		self::force_option( 'siteurl', $restore );
-	}
-
-	private static function package_home_urls() {
-		if ( ! defined( 'WP_CONTENT_DIR' ) ) {
-			return array();
-		}
-		$urls = array();
-		$dirs = array(
-			WP_CONTENT_DIR . '/jisento/packages',
-			WP_CONTENT_DIR . '/jisento/uploads',
-			WP_CONTENT_DIR . '/jisento/backups',
-		);
-		foreach ( $dirs as $dir ) {
-			if ( ! is_dir( $dir ) ) {
-				continue;
-			}
-			$files = glob( $dir . '/*.json' );
-			if ( ! $files ) {
-				continue;
-			}
-			foreach ( $files as $file ) {
-				$meta = json_decode( (string) file_get_contents( $file ), true );
-				if ( is_array( $meta ) && ! empty( $meta['home_url'] ) ) {
-					$urls[] = (string) $meta['home_url'];
-				}
-			}
-		}
-		return $urls;
-	}
-
-	private static function request_host() {
-		if ( empty( $_SERVER['HTTP_HOST'] ) ) {
-			return '';
-		}
-		$host = strtolower( (string) $_SERVER['HTTP_HOST'] );
-		$host = preg_replace( '/:\d+$/', '', $host );
-		return is_string( $host ) ? $host : '';
-	}
-
-	private static function pin_active() {
-		$pin = self::read();
-		return is_array( $pin ) && empty( $pin['released'] ) && ! empty( $pin['home'] );
+		return in_array( (string) $status, array( 'running', 'paused' ), true );
 	}
 
 	private static function force_option( $name, $value ) {
@@ -252,12 +229,8 @@ class Live_Url {
 		if ( ! $found ) {
 			return;
 		}
-		$stored = function_exists( 'maybe_serialize' ) ? maybe_serialize( $value ) : serialize( $value );
-		if ( is_array( $value ) || is_object( $value ) ) {
-			$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s", $stored, $name ) );
-		} else {
-			$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s", (string) $value, $name ) );
-		}
+		$stored = ( is_array( $value ) || is_object( $value ) ) ? serialize( $value ) : (string) $value;
+		$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s", $stored, $name ) );
 		if ( function_exists( 'wp_cache_delete' ) ) {
 			wp_cache_delete( $name, 'options' );
 			wp_cache_delete( 'alloptions', 'options' );
@@ -320,18 +293,72 @@ class Live_Url {
 	}
 
 	private static function install_guard() {
-		if ( ! defined( 'WPMU_PLUGIN_DIR' ) || ! defined( 'JISENTO_PATH' ) || ! function_exists( 'wp_mkdir_p' ) ) {
+		if ( ! defined( 'WPMU_PLUGIN_DIR' ) || ! function_exists( 'wp_mkdir_p' ) ) {
 			return;
 		}
-		if ( ! is_dir( WPMU_PLUGIN_DIR ) ) {
-			wp_mkdir_p( WPMU_PLUGIN_DIR );
+		$dir_name = self::plugin_dir_name();
+		if ( '' === $dir_name ) {
+			return;
 		}
-		$file = WPMU_PLUGIN_DIR . '/jisento-live-url.php';
-		$code = "<?php\n/**\n * Loads before normal plugins and puts the destination URL back if a package overwrote it.\n */\nif ( ! defined( 'ABSPATH' ) ) {\n\texit;\n}\nrequire_once " . var_export( JISENTO_PATH . 'includes/Core/Live_Url.php', true ) . ";\n\\Jisento\\Migration\\Core\\Live_Url::protect();\n";
+		if ( ! is_dir( WPMU_PLUGIN_DIR ) && ! wp_mkdir_p( WPMU_PLUGIN_DIR ) ) {
+			return;
+		}
+		$config = WPMU_PLUGIN_DIR . '/' . self::GUARD_CONFIG;
+		$json   = json_encode( array( 'plugin_dir' => $dir_name ) );
+		if ( ! is_file( $config ) || file_get_contents( $config ) !== $json ) {
+			file_put_contents( $config, $json );
+		}
+		$file = WPMU_PLUGIN_DIR . '/' . self::GUARD_FILE;
+		$code = self::guard_code();
 		if ( is_file( $file ) && file_get_contents( $file ) === $code ) {
 			return;
 		}
-		file_put_contents( $file, $code );
+		// Write beside the target and rename, so a request never loads a half-written mu-plugin.
+		$tmp = $file . '.jisento-tmp';
+		if ( false !== file_put_contents( $tmp, $code ) && strlen( $code ) === (int) filesize( $tmp ) ) {
+			@rename( $tmp, $file );
+		}
+		@unlink( $tmp );
+	}
+
+	/**
+	 * Remove the mu-plugin and its config. Also replaces a copy restored from an old package whose
+	 * require_once points at another server's path.
+	 */
+	public static function remove_guard() {
+		if ( ! defined( 'WPMU_PLUGIN_DIR' ) ) {
+			return;
+		}
+		foreach ( array( self::GUARD_FILE, self::GUARD_CONFIG ) as $name ) {
+			$path = WPMU_PLUGIN_DIR . '/' . $name;
+			if ( is_file( $path ) ) {
+				@unlink( $path );
+			}
+		}
+	}
+
+	/**
+	 * A mu-plugin from plugin versions up to 1.2.11 hard-codes an absolute require_once path.
+	 * If it was copied from another server it fatals every request; replace or remove it.
+	 */
+	public static function repair_guard() {
+		if ( ! defined( 'WPMU_PLUGIN_DIR' ) ) {
+			return;
+		}
+		$file = WPMU_PLUGIN_DIR . '/' . self::GUARD_FILE;
+		if ( ! is_file( $file ) ) {
+			return;
+		}
+		$code = (string) @file_get_contents( $file );
+		if ( $code === self::guard_code() ) {
+			return;
+		}
+		if ( self::read() ) {
+			@unlink( $file );
+			self::install_guard();
+		} else {
+			self::remove_guard();
+		}
 	}
 
 	private static function path() {

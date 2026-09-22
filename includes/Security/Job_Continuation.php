@@ -233,11 +233,54 @@ class Job_Continuation {
 		return \Jisento\Migration\Plugin::instance()->storage->root() . '/jobs';
 	}
 
+	/**
+	 * HMAC key from a random secret file. wp_salt() is not used: when salts live in the options
+	 * table, the database swap replaces them with the source site's, which would invalidate every
+	 * token mid-import.
+	 *
+	 * @return string
+	 */
 	private static function mac_key() {
-		if ( function_exists( 'wp_salt' ) ) {
-			return (string) wp_salt( 'auth' );
+		static $key = null;
+		if ( null !== $key ) {
+			return $key;
 		}
-		return 'jisento-continuation';
+		$path = self::directory() . '/.continuation-key';
+		$raw  = is_readable( $path ) ? trim( (string) file_get_contents( $path ) ) : '';
+		if ( ! preg_match( '/^[a-f0-9]{64}$/', $raw ) ) {
+			$dir = dirname( $path );
+			if ( ! is_dir( $dir ) ) {
+				if ( function_exists( 'wp_mkdir_p' ) ) {
+					wp_mkdir_p( $dir );
+				} else {
+					@mkdir( $dir, 0755, true );
+				}
+			}
+			try {
+				$fresh = bin2hex( random_bytes( 32 ) );
+			} catch ( \Exception $e ) {
+				throw new \RuntimeException( 'Operation: create the job token key. Reason: no secure random source is available. Recovery: enable a CSPRNG for PHP (random_bytes).' );
+			}
+			$handle = @fopen( $path, 'xb' );
+			if ( $handle ) {
+				@chmod( $path, 0600 );
+				fwrite( $handle, $fresh );
+				fclose( $handle );
+			}
+			// Another request may have won the race: always use what is on disk.
+			$raw = is_readable( $path ) ? trim( (string) file_get_contents( $path ) ) : '';
+			if ( ! preg_match( '/^[a-f0-9]{64}$/', $raw ) ) {
+				throw new \RuntimeException( sprintf( 'Operation: create the job token key. Reason: %s could not be written. Recovery: make wp-content/jisento/jobs writable by PHP.', $path ) );
+			}
+		}
+		$key = $raw;
+		return $key;
+	}
+
+	public static function forget( $job_id ) {
+		if ( self::valid_id( $job_id ) && is_file( self::path_for( $job_id ) ) ) {
+			@unlink( self::path_for( $job_id ) );
+		}
 	}
 
 	private static function valid_id( $job_id ) {
@@ -281,6 +324,10 @@ class Job_Continuation {
 			return false;
 		}
 		$path = self::path_for( $job_id );
+		if ( ! is_file( $path ) ) {
+			@touch( $path );
+		}
+		@chmod( $path, 0600 );
 		return false !== file_put_contents( $path, $encoded, LOCK_EX );
 	}
 

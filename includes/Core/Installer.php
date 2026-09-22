@@ -23,12 +23,14 @@ class Installer {
 		$keys    = $wpdb->prefix . 'jisento_keys';
 		$sess    = $wpdb->prefix . 'jisento_sessions';
 		$packs   = $wpdb->prefix . 'jisento_packages';
+		$locks   = $wpdb->prefix . 'jisento_locks';
 
 		$sql = "CREATE TABLE {$jobs} (
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			job_id varchar(64) NOT NULL,
 			type varchar(32) NOT NULL,
 			status varchar(32) NOT NULL,
+			version int(10) unsigned NOT NULL DEFAULT 0,
 			stage varchar(64) NOT NULL DEFAULT '',
 			progress tinyint(3) unsigned NOT NULL DEFAULT 0,
 			bytes_done bigint(20) unsigned NOT NULL DEFAULT 0,
@@ -100,6 +102,15 @@ class Installer {
 			PRIMARY KEY  (id),
 			KEY storage_key (storage_key),
 			KEY migration_id (migration_id)
+		) {$charset};
+
+		CREATE TABLE {$locks} (
+			name varchar(64) NOT NULL,
+			owner_job varchar(64) NOT NULL DEFAULT '',
+			token char(32) NOT NULL DEFAULT '',
+			heartbeat_at datetime NOT NULL,
+			expires_at datetime NOT NULL,
+			PRIMARY KEY  (name)
 		) {$charset};";
 
 		dbDelta( $sql );
@@ -111,9 +122,11 @@ class Installer {
 		$installed = get_option( 'jisento_db_version' );
 		$packs     = $wpdb->prefix . 'jisento_packages';
 		$jobs      = $wpdb->prefix . 'jisento_jobs';
+		$locks     = $wpdb->prefix . 'jisento_locks';
 		$have_packs = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $packs ) );
 		$have_jobs  = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $jobs ) );
-		if ( $installed !== \Jisento\Migration\Plugin::DB_VERSION || $packs !== $have_packs || $jobs !== $have_jobs ) {
+		$have_locks = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $locks ) );
+		if ( $installed !== \Jisento\Migration\Plugin::DB_VERSION || $packs !== $have_packs || $jobs !== $have_jobs || $locks !== $have_locks ) {
 			self::install();
 		}
 	}

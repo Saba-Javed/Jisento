@@ -174,6 +174,52 @@ class File_System {
 		);
 	}
 
+	/**
+	 * Files the running plugin writes into wp-content. They describe this install only and
+	 * are never exported or restored.
+	 *
+	 * @return string[] Paths relative to wp-content.
+	 */
+	public static function own_runtime_files() {
+		return array(
+			'mu-plugins/jisento-live-url.php',
+			'mu-plugins/jisento-live-url.json',
+		);
+	}
+
+	/**
+	 * @param string $header First bytes of a PHP file.
+	 * @return bool True for the Jisento Migration plugin header, under any folder name.
+	 */
+	public static function is_jisento_plugin_header( $header ) {
+		$header = (string) $header;
+		return 1 === preg_match( '/^[ \t\/*#@]*Plugin Name:/mi', $header )
+			&& 1 === preg_match( '/^[ \t\/*#@]*Text Domain:[ \t]*jisento[ \t]*\r?$/mi', $header );
+	}
+
+	/**
+	 * @param string $dir Plugin folder.
+	 * @return bool
+	 */
+	public static function is_jisento_plugin_dir( $dir ) {
+		$files = glob( rtrim( (string) $dir, '/\\' ) . '/*.php' );
+		if ( ! $files ) {
+			return false;
+		}
+		foreach ( array_slice( $files, 0, 50 ) as $file ) {
+			$handle = @fopen( $file, 'rb' );
+			if ( ! $handle ) {
+				continue;
+			}
+			$head = (string) fread( $handle, 8192 );
+			fclose( $handle );
+			if ( self::is_jisento_plugin_header( $head ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public static function readable_size( $bytes ) {
 		$bytes = (float) $bytes;
 		$units = array( 'B', 'KB', 'MB', 'GB', 'TB' );

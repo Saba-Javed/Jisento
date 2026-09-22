@@ -234,7 +234,7 @@ class Package_Registry {
 			'created_at'   => isset( $meta['created_at'] ) ? $meta['created_at'] : gmdate( 'c', $when ),
 			'manifest'     => array(
 				'package_version'   => isset( $meta['package_version'] ) ? $meta['package_version'] : '',
-				'signature'         => isset( $meta['signature'] ) ? $meta['signature'] : '',
+				'format_marker'     => isset( $meta['format_marker'] ) ? $meta['format_marker'] : ( isset( $meta['signature'] ) ? $meta['signature'] : '' ),
 				'home_url'          => isset( $meta['home_url'] ) ? $meta['home_url'] : '',
 				'database_size'     => isset( $meta['database_size'] ) ? (int) $meta['database_size'] : 0,
 				'files_size'        => isset( $meta['files_size'] ) ? (int) $meta['files_size'] : 0,
@@ -429,75 +429,41 @@ class Package_Registry {
 		}
 	}
 
+	/**
+	 * Listing status: cheap. Sidecar says completed and its size matches the file on disk.
+	 * Without a sidecar the format marker and manifest are read (central directory only).
+	 */
 	private function listing_check( $path, array $meta, $size ) {
-		$check = array(
-			'ok'     => false,
-			'zip'    => false,
-			'reason' => __( 'The backup record exists, but the package file is missing or corrupted.', 'jisento' ),
-			'size'   => (int) $size,
-		);
-		if ( ! is_file( $path ) || ! is_readable( $path ) ) {
-			$check['reason'] = __( 'The package file is not readable.', 'jisento' );
-			return $check;
-		}
-		if ( (int) $size <= 0 ) {
-			$check['reason'] = __( 'The package file is empty (0 bytes).', 'jisento' );
-			return $check;
-		}
-		$handle = fopen( $path, 'rb' );
-		$magic  = $handle ? (string) fread( $handle, 4 ) : '';
-		if ( $handle ) {
-			fclose( $handle );
-		}
-		$check['zip'] = ( "PK\x03\x04" === $magic || "PK\x05\x06" === $magic || "PK\x07\x08" === $magic );
-		if ( ! $check['zip'] ) {
-			$check['reason'] = __( 'The package file is not a valid archive.', 'jisento' );
-			return $check;
-		}
-
-		$sidecar_complete = isset( $meta['status'] ) && 'completed' === $meta['status'];
-		$sidecar_size     = isset( $meta['size'] ) && (int) $meta['size'] === (int) $size && (int) $meta['size'] > 0;
-		$sidecar_sum      = isset( $meta['checksum'] ) && preg_match( '/^[a-f0-9]{64}$/', (string) $meta['checksum'] );
-		if ( $sidecar_complete && $sidecar_size && $sidecar_sum ) {
-			$check['ok']     = true;
-			$check['reason'] = '';
-			return $check;
-		}
-		if ( $sidecar_complete && isset( $meta['size'] ) && (int) $meta['size'] > 0 && (int) $meta['size'] !== (int) $size ) {
-			$check['reason'] = __( 'The package size does not match its integrity record.', 'jisento' );
-			return $check;
-		}
-
-		try {
-			$full = $this->verify_file( $path );
-		} catch ( \Throwable $e ) {
-			$check['reason'] = $e->getMessage();
-			return $check;
-		}
-		$check['ok']     = ! empty( $full['ok'] );
-		$check['reason'] = $check['ok'] ? '' : ( ! empty( $full['reason'] ) ? $full['reason'] : __( 'Package verification failed.', 'jisento' ) );
-		return $check;
+		return $this->verify_file( $path, 'cheap', $meta );
 	}
 
-	public function verify_file( $path ) {
+	/**
+	 * @param string $path Package path.
+	 * @param string $mode "cheap" (sidecar + size, for listings, downloads and status polls) or
+	 *                     "full" (format marker, manifest, segment sizes, entry counts; before an import).
+	 * @param array|null $meta Sidecar, when the caller already read it.
+	 * @return array ok, reason, size, format_marker, manifest, structure, zip.
+	 */
+	public function verify_file( $path, $mode = 'cheap', $meta = null ) {
 		$result = array(
-			'exists'    => false,
-			'readable'  => false,
-			'size'      => 0,
-			'signature' => false,
-			'manifest'  => false,
-			'structure' => false,
-			'ok'        => false,
-			'reason'    => '',
+			'exists'        => false,
+			'readable'      => false,
+			'size'          => 0,
+			'zip'           => false,
+			'format_marker' => false,
+			'manifest'      => false,
+			'structure'     => false,
+			'ok'            => false,
+			'reason'        => '',
 		);
-		if ( ! is_string( $path ) || ! file_exists( $path ) ) {
-			$result['reason'] = __( 'The backup record exists, but the package file is missing or corrupted.', 'jisento' );
+		if ( ! is_string( $path ) || '' === $path || ! file_exists( $path ) ) {
+			$result['reason'] = __( 'The backup record exists, but the package file is missing.', 'jisento' );
 			return $result;
 		}
 		$result['exists']   = true;
 		$result['readable'] = is_readable( $path );
 		clearstatcache( true, $path );
-		$result['size']     = (int) filesize( $path );
+		$result['size'] = (int) filesize( $path );
 		if ( ! $result['readable'] ) {
 			$result['reason'] = __( 'The package file is not readable.', 'jisento' );
 			return $result;
@@ -506,20 +472,52 @@ class Package_Registry {
 			$result['reason'] = __( 'The package file is empty (0 bytes).', 'jisento' );
 			return $result;
 		}
-		$inspect = ( new Archive() )->inspect( $path );
+		$handle = fopen( $path, 'rb' );
+		$magic  = $handle ? (string) fread( $handle, 4 ) : '';
+		if ( $handle ) {
+			fclose( $handle );
+		}
+		$result['zip'] = ( "PK\x03\x04" === $magic || "PK\x05\x06" === $magic );
+		if ( ! $result['zip'] ) {
+			$result['reason'] = __( 'The package file is not a valid archive.', 'jisento' );
+			return $result;
+		}
+
+		if ( 'full' !== $mode ) {
+			if ( null === $meta ) {
+				$meta = array();
+				if ( is_readable( $path . '.json' ) ) {
+					$decoded = json_decode( (string) file_get_contents( $path . '.json' ), true );
+					$meta    = is_array( $decoded ) ? $decoded : array();
+				}
+			}
+			$complete = isset( $meta['status'] ) && 'completed' === $meta['status'];
+			$sized    = isset( $meta['size'] ) && (int) $meta['size'] > 0;
+			if ( $complete && $sized && (int) $meta['size'] === $result['size'] ) {
+				$result['format_marker'] = true;
+				$result['manifest']      = true;
+				$result['structure']     = true;
+				$result['ok']            = true;
+				return $result;
+			}
+			if ( $complete && $sized ) {
+				$result['reason'] = __( 'The package size does not match its integrity record, so the file was changed or is incomplete.', 'jisento' );
+				return $result;
+			}
+			$inspect = ( new Archive() )->inspect( $path );
+		} else {
+			$inspect = ( new Archive() )->verify_structure( $path );
+		}
 		if ( is_wp_error( $inspect ) ) {
 			$result['reason'] = $inspect->get_error_message();
 			return $result;
 		}
-		$result['signature'] = true;
-		$result['manifest']  = ! empty( $inspect['manifest'] );
-		$result['structure'] = ! empty( $inspect['has_db'] ) || ! empty( $inspect['has_files'] );
-		$result['checksums'] = is_array( $inspect['checksums'] ) && count( $inspect['checksums'] ) > 0;
-		$result['ok']        = $result['signature'] && $result['manifest'] && $result['structure'] && $result['checksums'] && $result['size'] > 0;
-		if ( ! $result['checksums'] ) {
-			$result['reason'] = __( 'Package integrity data is missing or invalid.', 'jisento' );
-		} elseif ( ! $result['ok'] ) {
-			$result['reason'] = __( 'The package structure is invalid.', 'jisento' );
+		$result['format_marker'] = true;
+		$result['manifest']      = ! empty( $inspect['manifest'] );
+		$result['structure']     = ! empty( $inspect['has_db'] ) || ! empty( $inspect['has_files'] );
+		$result['ok']            = $result['manifest'] && $result['structure'];
+		if ( ! $result['ok'] ) {
+			$result['reason'] = __( 'The package contains neither a database dump nor site files.', 'jisento' );
 		}
 		return $result;
 	}

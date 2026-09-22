@@ -13,8 +13,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Logger {
 
-	const REDACT_PATTERNS = '/(password|passwd|secret|token|authorization|migration[_-]?key|db_password|auth_key|nonce_key|logged_in_key|secure_auth)/i';
-
 	public function log( $migration_id, $stage, $operation, $item, $status, $message = '' ) {
 		global $wpdb;
 		$table = $wpdb->prefix . 'jisento_logs';
@@ -27,7 +25,7 @@ class Logger {
 				'operation'    => sanitize_text_field( (string) $operation ),
 				'item'         => sanitize_text_field( substr( (string) $item, 0, 255 ) ),
 				'status'       => sanitize_key( (string) $status ),
-				'message'      => $this->redact( (string) $message ),
+				'message'      => self::redact( (string) $message ),
 				'created_at'   => current_time( 'mysql' ),
 			),
 			array( '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
@@ -88,9 +86,35 @@ class Logger {
 		);
 	}
 
-	public function redact( $message ) {
-		$message = preg_replace( self::REDACT_PATTERNS, '[redacted]', $message );
+	/**
+	 * Redact the VALUE that follows a sensitive key, in the forms messages actually use:
+	 * key=value, key: value, "key":"value", 'key' => 'value', and SQL `user_pass` = '...'.
+	 * Key names stay readable; migration keys are masked wherever they appear.
+	 *
+	 * @param string $message Message.
+	 * @return string
+	 */
+	public static function redact( $message ) {
+		$message = (string) $message;
+		$key     = '(?:[A-Za-z0-9_-]*(?:password|passwd|pwd|secret|token|authorization|auth_key|nonce_key|logged_in_key|secure_auth|session_tokens|user_pass|user_activation_key|migration[_-]?key|api[_-]?key|cookie)[A-Za-z0-9_-]*)';
+		$patterns = array(
+			// "key":"value" or 'key' => 'value' (quoted value, escapes allowed).
+			'/(["\'`]?' . $key . '["\'`]?\s*(?:=>|[:=])\s*)(["\'])(?:\\\\.|(?!\2).)*\2/i',
+			// key=value / key: value (unquoted, up to whitespace, comma, semicolon or closing bracket).
+			'/(\b' . $key . '\s*[:=]\s*)(?!["\'])[^\s,;&)\]}]+/i',
+			// Authorization headers.
+			'/(\bBearer\s+)[A-Za-z0-9._~+\/=-]+/i',
+		);
+		$message = preg_replace_callback(
+			$patterns[0],
+			static function ( $m ) {
+				return $m[1] . $m[2] . '[redacted]' . $m[2];
+			},
+			$message
+		);
+		$message = preg_replace( $patterns[1], '$1[redacted]', $message );
+		$message = preg_replace( $patterns[2], '$1[redacted]', $message );
 		$message = preg_replace( '/JIS-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}/i', 'JIS-[redacted]', $message );
-		return $message;
+		return is_string( $message ) ? $message : '';
 	}
 }

@@ -3,7 +3,8 @@
  * Serialized-data-safe string replacement for PHP serialize and JSON.
  *
  * Does not use SQL REPLACE() on serialized payloads. String tokens of the
- * form s:N:"..." have their lengths rewritten after substitution.
+ * form s:N:"..." have their lengths rewritten after substitution. JSON is
+ * never decoded; the replacement map carries the "\/"-escaped URL forms.
  *
  * @package Jisento\Migration
  */
@@ -15,6 +16,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Serializer {
+
+	/**
+	 * Serialized values left unchanged because they could not be rebuilt safely.
+	 *
+	 * @var int
+	 */
+	private $skipped = 0;
+
+	/**
+	 * Compiled boundary patterns keyed by a hash of the source forms.
+	 *
+	 * @var string[]
+	 */
+	private $patterns = array();
+
+	public function skipped_count() {
+		return $this->skipped;
+	}
 
 	public function replace( $data, array $replacements ) {
 		if ( empty( $replacements ) ) {
@@ -45,152 +64,227 @@ class Serializer {
 	}
 
 	public function replace_string( $string, array $replacements ) {
-		if ( $this->looks_serialized( $string ) ) {
-			$offset  = 0;
-			$updated = $this->replace_serialized( $string, $replacements, $offset );
-			if ( is_string( $updated ) ) {
-				return $updated;
-			}
+		if ( ! is_string( $string ) || '' === $string || empty( $replacements ) || ! $this->contains_source( $string, $replacements ) ) {
+			return $string;
 		}
 
-		$trim = ltrim( $string );
-		if ( '' !== $trim && ( '{' === $trim[0] || '[' === $trim[0] ) ) {
-			$decoded = json_decode( $string, true );
-			if ( JSON_ERROR_NONE === json_last_error() && ( is_array( $decoded ) || is_string( $decoded ) || is_int( $decoded ) ) ) {
-				$replaced = $this->replace( $decoded, $replacements );
-				$flags    = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
-				if ( defined( 'JSON_INVALID_UTF8_SUBSTITUTE' ) ) {
-					$flags |= JSON_INVALID_UTF8_SUBSTITUTE;
-				}
-				$encoded = wp_json_encode( $replaced, $flags );
-				if ( is_string( $encoded ) ) {
-					return $encoded;
-				}
+		if ( $this->is_serialized_value( $string ) ) {
+			$rebuilt = $this->rebuild_serialized( $string, $replacements );
+			if ( null === $rebuilt ) {
+				$this->skipped++;
+				return $string;
 			}
+			return $rebuilt;
+		}
+
+		// Serialized-looking data PHP cannot read here (e.g. enums, broken lengths) must not have its lengths shifted.
+		if ( $this->looks_serialized( $string ) ) {
+			$this->skipped++;
+			return $string;
 		}
 
 		return $this->replace_plain( $string, $replacements );
 	}
 
 	public function replace_plain( $string, array $replacements ) {
-		return strtr( $string, $replacements );
+		if ( ! is_string( $string ) || '' === $string || empty( $replacements ) ) {
+			return $string;
+		}
+
+		$result = preg_replace_callback(
+			$this->pattern( $replacements ),
+			static function ( $m ) use ( $replacements ) {
+				return $replacements[ $m[0] ];
+			},
+			$string
+		);
+		if ( null === $result ) {
+			throw new \RuntimeException( 'URL replacement pattern failed with PCRE error ' . preg_last_error() );
+		}
+
+		return $result;
+	}
+
+	public function contains_source( $string, array $replacements ) {
+		foreach ( $replacements as $source => $dest ) {
+			if ( false !== strpos( $string, (string) $source ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	public function looks_serialized( $string ) {
-		if ( ! is_string( $string ) || strlen( $string ) < 4 ) {
+		if ( ! is_string( $string ) || strlen( $string ) < 2 ) {
 			return false;
 		}
 		$string = trim( $string );
 		if ( 'N;' === $string ) {
 			return true;
 		}
-		if ( ! preg_match( '/^(s|a|O|C|i|d|b|R|r):/', $string ) ) {
+		if ( ! preg_match( '/^(?:[aOC]:\d+:|[sSE]:\d+:"|[bid]:[^;]*;$|[Rr]:\d+;$)/', $string ) ) {
 			return false;
 		}
 		return ';' === substr( $string, -1 ) || '}' === substr( $string, -1 );
 	}
 
+	private function is_serialized_value( $string ) {
+		if ( 'b:0;' === $string ) {
+			return true;
+		}
+		if ( ! preg_match( '/^(?:[aOCsSidbE]:|N;)/', $string ) ) {
+			return false;
+		}
+		return false !== @unserialize( $string, array( 'allowed_classes' => false ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors,WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize
+	}
+
+	/**
+	 * @return string|null Rebuilt value, or null when any token is unknown or the result does not unserialize.
+	 */
+	private function rebuild_serialized( $string, array $replacements ) {
+		$offset = 0;
+		$out    = $this->replace_serialized( $string, $replacements, $offset );
+		if ( null === $out ) {
+			return null;
+		}
+
+		$tail = (string) substr( $string, $offset );
+		if ( '' !== trim( $tail ) ) {
+			return null;
+		}
+		$out .= $tail;
+
+		if ( 'b:0;' !== $out && false === @unserialize( $out, array( 'allowed_classes' => false ) ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors,WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize
+			return null;
+		}
+
+		return $out;
+	}
+
 	private function replace_serialized( $data, array $replacements, &$offset ) {
 		$len = strlen( $data );
 		if ( $offset >= $len ) {
-			return '';
+			return null;
 		}
 
-		$type = $data[ $offset ];
-
-		switch ( $type ) {
+		switch ( $data[ $offset ] ) {
 			case 's':
-				if ( ! preg_match( '/^s:(\d+):"/', substr( $data, $offset ), $m ) ) {
-					return $this->skip_unknown( $data, $offset );
+				if ( ! preg_match( '/\Gs:(\d+):"/', $data, $m, 0, $offset ) ) {
+					return null;
 				}
 				$claimed = (int) $m[1];
-				$head    = strlen( $m[0] );
-				$start   = $offset + $head;
-				$value   = substr( $data, $start, $claimed );
+				$start   = $offset + strlen( $m[0] );
 				$end     = $start + $claimed;
 				if ( $end + 2 > $len || '"' !== $data[ $end ] || ';' !== $data[ $end + 1 ] ) {
-					return $this->skip_unknown( $data, $offset );
+					return null;
 				}
-				$replaced     = $this->replace_string( $value, $replacements );
-				$offset       = $end + 2;
-				$encoded      = addcslashes( $replaced, "\0" );
+				$replaced = $this->replace_string( (string) substr( $data, $start, $claimed ), $replacements );
+				$offset   = $end + 2;
 				return 's:' . strlen( $replaced ) . ':"' . $replaced . '";';
 
-			case 'S':
-				return $this->skip_unknown( $data, $offset );
-
 			case 'a':
-				if ( ! preg_match( '/^a:(\d+):{/', substr( $data, $offset ), $m ) ) {
-					return $this->skip_unknown( $data, $offset );
+				if ( ! preg_match( '/\Ga:(\d+):\{/', $data, $m, 0, $offset ) ) {
+					return null;
 				}
-				$count  = (int) $m[1];
 				$offset += strlen( $m[0] );
-				$pairs  = '';
-				for ( $i = 0; $i < $count; $i++ ) {
-					$key    = $this->replace_serialized( $data, $replacements, $offset );
-					$value  = $this->replace_serialized( $data, $replacements, $offset );
-					$pairs .= $key . $value;
-				}
-				if ( $offset < $len && '}' === $data[ $offset ] ) {
-					$offset++;
-				}
-				return 'a:' . $count . ':{' . $pairs . '}';
+				$body    = $this->replace_pairs( $data, $replacements, $offset, (int) $m[1] );
+				return null === $body ? null : $m[0] . $body . '}';
 
 			case 'O':
-				if ( ! preg_match( '/^O:(\d+):"([^"]*)":(\d+):{/', substr( $data, $offset ), $m ) ) {
-					return $this->skip_unknown( $data, $offset );
+				if ( ! preg_match( '/\GO:(\d+):"([^"]*)":(\d+):\{/', $data, $m, 0, $offset ) || strlen( $m[2] ) !== (int) $m[1] ) {
+					return null;
 				}
-				$class  = $m[2];
-				$count  = (int) $m[3];
 				$offset += strlen( $m[0] );
-				$pairs  = '';
-				for ( $i = 0; $i < $count; $i++ ) {
-					$key    = $this->replace_serialized( $data, $replacements, $offset );
-					$value  = $this->replace_serialized( $data, $replacements, $offset );
-					$pairs .= $key . $value;
-				}
-				if ( $offset < $len && '}' === $data[ $offset ] ) {
-					$offset++;
-				}
-				return 'O:' . strlen( $class ) . ':"' . $class . '":' . $count . ':{' . $pairs . '}';
-
-			case 'C':
-				return $this->skip_unknown( $data, $offset );
+				$body    = $this->replace_pairs( $data, $replacements, $offset, (int) $m[3] );
+				return null === $body ? null : $m[0] . $body . '}';
 
 			case 'b':
 			case 'i':
 			case 'd':
-				if ( ! preg_match( '/^[bid]:([^;]*);/', substr( $data, $offset ), $m ) ) {
-					return $this->skip_unknown( $data, $offset );
+				if ( ! preg_match( '/\G[bid]:[^;:{}"]*;/', $data, $m, 0, $offset ) ) {
+					return null;
 				}
-				$chunk   = $m[0];
-				$offset += strlen( $chunk );
-				return $chunk;
+				$offset += strlen( $m[0] );
+				return $m[0];
 
 			case 'N':
 				if ( $offset + 1 < $len && ';' === $data[ $offset + 1 ] ) {
 					$offset += 2;
 					return 'N;';
 				}
-				return $this->skip_unknown( $data, $offset );
+				return null;
 
 			case 'R':
 			case 'r':
-				if ( ! preg_match( '/^[Rr]:(\d+);/', substr( $data, $offset ), $m ) ) {
-					return $this->skip_unknown( $data, $offset );
+				if ( ! preg_match( '/\G[Rr]:\d+;/', $data, $m, 0, $offset ) ) {
+					return null;
 				}
-				$chunk   = $m[0];
-				$offset += strlen( $chunk );
-				return $chunk;
+				$offset += strlen( $m[0] );
+				return $m[0];
 
 			default:
-				return $this->skip_unknown( $data, $offset );
+				return null;
 		}
 	}
 
-	private function skip_unknown( $data, &$offset ) {
-		$offset = strlen( $data );
-		return $data;
+	private function replace_pairs( $data, array $replacements, &$offset, $count ) {
+		$body = '';
+		for ( $i = 0; $i < $count; $i++ ) {
+			if ( ! isset( $data[ $offset ] ) || ( 's' !== $data[ $offset ] && 'i' !== $data[ $offset ] ) ) {
+				return null;
+			}
+			$key = $this->replace_serialized( $data, $replacements, $offset );
+			if ( null === $key ) {
+				return null;
+			}
+			$value = $this->replace_serialized( $data, $replacements, $offset );
+			if ( null === $value ) {
+				return null;
+			}
+			$body .= $key . $value;
+		}
+		if ( ! isset( $data[ $offset ] ) || '}' !== $data[ $offset ] ) {
+			return null;
+		}
+		$offset++;
+		return $body;
+	}
+
+	private function pattern( array $replacements ) {
+		$forms = array();
+		foreach ( array_keys( $replacements ) as $form ) {
+			$forms[] = (string) $form;
+		}
+		$hash = md5( implode( "\n", $forms ) );
+		if ( isset( $this->patterns[ $hash ] ) ) {
+			return $this->patterns[ $hash ];
+		}
+
+		usort(
+			$forms,
+			static function ( $a, $b ) {
+				return strlen( $b ) - strlen( $a );
+			}
+		);
+		$parts = array();
+		foreach ( $forms as $form ) {
+			$parts[] = preg_quote( $form, '~' ) . ( self::form_has_path( $form ) ? '(?![A-Za-z0-9._-])' : '(?![A-Za-z0-9.-])' );
+		}
+		$this->patterns[ $hash ] = '~(?:' . implode( '|', $parts ) . ')~';
+
+		return $this->patterns[ $hash ];
+	}
+
+	private static function form_has_path( $form ) {
+		$rest = $form;
+		foreach ( array( '\\/\\/', '//' ) as $separator ) {
+			$pos = strpos( $form, $separator );
+			if ( false !== $pos ) {
+				$rest = substr( $form, $pos + strlen( $separator ) );
+				break;
+			}
+		}
+		return false !== strpos( $rest, '/' );
 	}
 
 	public static function url_variants( $url ) {

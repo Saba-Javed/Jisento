@@ -239,7 +239,7 @@ class Admin_Guard {
 		if ( $table !== $found ) {
 			return false;
 		}
-		$job = $wpdb->get_var( "SELECT job_id FROM `{$table}` WHERE type = 'import' AND status IN ('running','preparing') LIMIT 1" );
+		$job = $wpdb->get_var( "SELECT job_id FROM `{$table}` WHERE type IN ('import','receive') AND status IN ('running','preparing') LIMIT 1" );
 		return is_string( $job ) && '' !== $job;
 	}
 
@@ -276,8 +276,38 @@ class Admin_Guard {
 			}
 		}
 		$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $data ) : json_encode( $data );
-		if ( is_string( $encoded ) ) {
-			file_put_contents( $path, $encoded, LOCK_EX );
+		if ( ! is_string( $encoded ) ) {
+			return;
 		}
+		// The snapshot holds password hashes and session tokens: make it owner-only before any byte is written.
+		$handle = @fopen( $path, 'xb' );
+		if ( ! $handle ) {
+			return;
+		}
+		@chmod( $path, 0600 );
+		$ok = fwrite( $handle, $encoded ) === strlen( $encoded );
+		fclose( $handle );
+		if ( ! $ok ) {
+			@unlink( $path );
+		}
+	}
+
+	/**
+	 * Delete the snapshot. Called when the job completes, fails or is cancelled.
+	 *
+	 * @param string $job_id Job id.
+	 */
+	public static function forget( $job_id ) {
+		if ( ! self::valid_id( $job_id ) ) {
+			return;
+		}
+		$path = self::path( $job_id );
+		if ( is_file( $path ) ) {
+			@unlink( $path );
+		}
+	}
+
+	public static function snapshot_path( $job_id ) {
+		return self::valid_id( $job_id ) ? self::path( $job_id ) : '';
 	}
 }

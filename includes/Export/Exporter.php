@@ -8,7 +8,10 @@
 namespace Jisento\Migration\Export;
 
 use Jisento\Migration\Database\Database_Exporter;
+use Jisento\Migration\Database\Dump_Writer;
 use Jisento\Migration\Filesystem\File_System;
+use Jisento\Migration\Jobs\Job_Conflict;
+use Jisento\Migration\Jobs\Job_Store;
 use Jisento\Migration\Package\Archive;
 use Jisento\Migration\Plugin;
 
@@ -20,15 +23,18 @@ class Exporter {
 
 	public function start( array $options ) {
 		$plugin = Plugin::instance();
-		$job    = $plugin->jobs->create(
+		$job    = \Jisento\Migration\Jobs\Job_Runner::open(
 			'export',
 			array(
 				'options' => $this->normalize_options( $options ),
 			)
 		);
+		if ( is_wp_error( $job ) ) {
+			return $job;
+		}
 		$plugin->logger->log( $job->job_id, 'created', 'export', '', 'info', 'Export job created' );
 		return $plugin->jobs->update(
-			$job->job_id,
+			$job,
 			array(
 				'status' => 'running',
 				'stage'  => 'preparing',
@@ -54,14 +60,17 @@ class Exporter {
 				default:
 					return $job;
 			}
+		} catch ( Job_Conflict $e ) {
+			throw $e;
 		} catch ( \Throwable $e ) {
 			$this->discard_unverified_package( $state );
-			$plugin->logger->log( $job->job_id, $job->stage, 'error', '', 'error', $e->getMessage() );
+			$message = self::stage_message( $job, $e->getMessage() );
+			$plugin->logger->log( $job->job_id, $job->stage, 'error', '', 'error', $message );
 			return $plugin->jobs->update(
-				$job->job_id,
+				$job,
 				array(
 					'status'        => 'failed',
-					'error_summary' => $e->getMessage(),
+					'error_summary' => $message,
 				)
 			);
 		}
@@ -108,20 +117,18 @@ class Exporter {
 					$meta[]   = $info;
 					$db_size += $info['data'] + $info['index'];
 				}
-			} else {
-				$handle = fopen( $tmp . '/database/database.sql', 'wb' );
-				$db->write_header( $handle );
-				$db->write_footer( $handle );
-				fclose( $handle );
+				$state['skipped_views'] = $db->skipped_views();
+				if ( $state['skipped_views'] ) {
+					$plugin->logger->log( $job->job_id, 'preparing', 'database', '', 'warning', 'Views are not exported (recreate them on the destination): ' . implode( ', ', $state['skipped_views'] ) );
+				}
 			}
+			$db->restore_connection_charset();
 
 			$state['tables']      = $tables;
 			$state['table_meta']  = $meta;
-			$state['table_index'] = 0;
-			$state['row_offset']  = 0;
 			$state['db_size']     = $db_size;
-			$state['sql_path']             = $tmp . '/database/database.sql';
-			$state['sql_complete_offset']  = 0;
+			$state['dump_dir']    = $tmp . '/database';
+			$state['dump']        = Dump_Writer::initial_state( $tables );
 			$state['contents']    = $options['mode'];
 			$state['file_list']   = $tmp . '/file-list.json';
 			$state['file_index']  = 0;
@@ -235,6 +242,11 @@ class Exporter {
 					if ( File_System::is_excluded( $rel, $excludes ) ) {
 						continue;
 					}
+					// Every copy of this plugin, under any folder name, describes this install only.
+					if ( preg_match( '#^plugins/[^/]+$#', $rel ) && is_dir( $full ) && File_System::is_jisento_plugin_dir( $full ) ) {
+						$state['skipped_plugin_copies'][] = $rel;
+						continue;
+					}
 				} elseif ( 0 === strpos( $full_slash, $abs_root . '/' ) ) {
 					$archive_rel = ltrim( substr( $full_slash, strlen( $abs_root ) ), '/' );
 				} else {
@@ -253,10 +265,14 @@ class Exporter {
 					'relative' => $archive_rel,
 					'size'     => $bytes,
 				);
-				fwrite( $list, wp_json_encode( $row ) . "\n" );
+				$line = Job_Store::encode_state( $row ) . "\n";
+				if ( fwrite( $list, $line ) !== strlen( $line ) ) {
+					fclose( $list );
+					throw new \RuntimeException( __( 'Operation: write the file list. Reason: the write failed (disk full or quota reached). Recovery: free disk space, then press Retry.', 'jisento' ) );
+				}
 				$found++;
 				$size += $bytes;
-				$state['scan_current'] = $row['relative'];
+				$state['scan_current'] = Job_Store::is_utf8( $archive_rel ) ? $archive_rel : 'hex:' . bin2hex( $archive_rel );
 			}
 		}
 		fclose( $list );
@@ -270,6 +286,14 @@ class Exporter {
 
 	private function build_excludes( array $options ) {
 		$excludes = array( 'jisento' );
+		foreach ( File_System::own_runtime_files() as $item ) {
+			$excludes[] = $item;
+		}
+		$own = rtrim( str_replace( '\\', '/', JISENTO_PATH ), '/' );
+		$content = rtrim( str_replace( '\\', '/', WP_CONTENT_DIR ), '/' );
+		if ( 0 === strpos( $own, $content . '/' ) ) {
+			$excludes[] = substr( $own, strlen( $content ) + 1 );
+		}
 		if ( ! empty( $options['skip_cache'] ) ) {
 			foreach ( File_System::default_cache_excludes() as $item ) {
 				$excludes[] = $this->strip_wp_content( $item );
@@ -300,91 +324,50 @@ class Exporter {
 		return $path;
 	}
 
+	/**
+	 * One database segment per step: database/part-NNNNN.sql is written as .partial, fsynced,
+	 * renamed, and only then is the cursor saved with the job state. Nothing is ever truncated.
+	 */
 	private function export_database( $job, array $state ) {
-		$plugin = Plugin::instance();
+		$tables = isset( $state['tables'] ) ? $state['tables'] : array();
+		$dump   = isset( $state['dump'] ) && is_array( $state['dump'] ) ? $state['dump'] : Dump_Writer::initial_state( $tables );
 		$db     = new Database_Exporter();
-		$path   = $state['sql_path'];
-		$exists = file_exists( $path );
-		if ( ! isset( $state['sql_complete_offset'] ) ) {
-			$state['sql_complete_offset'] = $exists ? (int) filesize( $path ) : 0;
+		$writer = new Dump_Writer( $state['dump_dir'], $db );
+		$next   = $writer->step( $dump, 8, 500 );
+		$db->restore_connection_charset();
+		if ( is_wp_error( $next ) ) {
+			throw new \RuntimeException( $next->get_error_message() );
 		}
-		if ( $exists ) {
-			Database_Exporter::reconcile_sql_file( $path, (int) $state['sql_complete_offset'] );
-			clearstatcache( true, $path );
-			if ( 0 === (int) $state['sql_complete_offset'] ) {
-				$state['sql_header'] = false;
-			}
-		}
-		$handle = fopen( $path, ( $exists && file_exists( $path ) && filesize( $path ) > 0 ) ? 'ab' : 'wb' );
-		if ( ! $handle ) {
-			throw new \RuntimeException( __( 'Unable to write the database dump.', 'jisento' ) );
-		}
+		$state['dump'] = $next;
 
-		if ( empty( $state['sql_header'] ) ) {
-			$db->write_header( $handle );
-			$state['sql_header'] = true;
-		}
-
-		$tables = $state['tables'];
-		$index  = (int) $state['table_index'];
-		$start  = time();
-
-		while ( $index < count( $tables ) && ( time() - $start ) < 8 ) {
-			$table = $tables[ $index ];
-			if ( empty( $state['structure_done'] ) || $state['structure_table'] !== $table ) {
-				$result = $db->export_table_structure( $handle, $table );
-				if ( is_wp_error( $result ) ) {
-					fclose( $handle );
-					throw new \RuntimeException( $result->get_error_message() );
-				}
-				$state['structure_done']  = true;
-				$state['structure_table'] = $table;
-				$state['row_offset']      = 0;
-				$state['row_cursor']      = null;
-			}
-
-			$cursor = isset( $state['row_cursor'] ) ? $state['row_cursor'] : null;
-			if ( null === $cursor && ! empty( $state['row_offset'] ) ) {
-				$cursor = array( '__offset' => (int) $state['row_offset'] );
-			}
-			$batch = $db->export_table_rows( $handle, $table, $cursor, 500 );
-			if ( is_wp_error( $batch ) ) {
-				fclose( $handle );
-				throw new \RuntimeException( $batch->get_error_message() );
-			}
-			if ( ! empty( $batch['done'] ) ) {
-				$index++;
-				$state['table_index']     = $index;
-				$state['structure_done']  = false;
-				$state['row_offset']      = 0;
-				$state['row_cursor']      = null;
-			} else {
-				$state['row_cursor'] = $batch['cursor'];
-				$state['row_offset'] = 0;
-			}
-		}
-
-		$mode = isset( $state['options']['mode'] ) ? $state['options']['mode'] : 'full';
-		if ( $index >= count( $tables ) ) {
-			$db->write_footer( $handle );
-			$progress = $this->export_percent( $mode, 'database', 1 );
-			$stage    = 'packaging';
-		} else {
-			$progress = $this->export_percent( $mode, 'database', $this->database_ratio( $state, $path, $index, count( $tables ) ) );
-			$stage    = 'exporting_database';
-		}
-		fflush( $handle );
-		fclose( $handle );
-		clearstatcache( true, $path );
-		$state['sql_complete_offset'] = is_file( $path ) ? (int) filesize( $path ) : 0;
-		if ( 'packaging' === $stage ) {
-			$state['sql_bytes'] = (int) $state['sql_complete_offset'];
-		}
-
+		$mode        = isset( $state['options']['mode'] ) ? $state['options']['mode'] : 'full';
+		$index       = (int) $next['index'];
 		$table_total = count( $tables );
-		$detail      = isset( $tables[ $index ] ) ? $tables[ $index ] : __( 'Database export complete', 'jisento' );
-		if ( isset( $tables[ $index ] ) && ! empty( $state['row_offset'] ) ) {
-			$detail .= ' (' . sprintf( __( 'row %s', 'jisento' ), number_format_i18n( (int) $state['row_offset'] ) ) . ')';
+		$sql_bytes   = 0;
+		foreach ( $next['segments'] as $segment ) {
+			$sql_bytes += (int) $segment['bytes'];
+		}
+		if ( ! empty( $next['done'] ) ) {
+			$state['sql_bytes'] = $sql_bytes;
+			$unstable = array();
+			foreach ( $next['table_stats'] as $table => $stat ) {
+				if ( empty( $stat['stable'] ) ) {
+					$unstable[] = $table;
+				}
+			}
+			if ( $unstable ) {
+				Plugin::instance()->logger->log( $job->job_id, 'exporting_database', 'pagination', '', 'warning', 'Exported without a stable key (no primary key and no unique NOT NULL index; rows ordered by every column): ' . implode( ', ', $unstable ) );
+			}
+			$stage    = 'packaging';
+			$progress = $this->export_percent( $mode, 'database', 1 );
+		} else {
+			$stage    = 'exporting_database';
+			$progress = $this->export_percent( $mode, 'database', $table_total > 0 ? $index / $table_total : 1 );
+		}
+
+		$detail = isset( $tables[ $index ] ) ? $tables[ $index ] : __( 'Database export complete', 'jisento' );
+		if ( isset( $tables[ $index ], $next['table_stats'][ $tables[ $index ] ] ) ) {
+			$detail .= ' (' . sprintf( __( 'row %s', 'jisento' ), number_format_i18n( (int) $next['table_stats'][ $tables[ $index ] ]['rows'] ) ) . ')';
 		}
 		$state['activity'] = $this->activity(
 			'exporting_database',
@@ -397,14 +380,7 @@ class Exporter {
 		);
 		$bytes_total = (int) ( $state['db_size'] ?? 0 ) + (int) ( $state['files_size'] ?? 0 );
 
-		return $this->save_work(
-			$job,
-			$state,
-			$stage,
-			$progress,
-			(int) filesize( $path ),
-			$bytes_total
-		);
+		return $this->save_work( $job, $state, $stage, $progress, $sql_bytes, $bytes_total );
 	}
 
 	private function export_files( $job, array $state ) {
@@ -419,7 +395,7 @@ class Exporter {
 
 		if ( $total < 1 ) {
 			return $plugin->jobs->update(
-				$job->job_id,
+				$job,
 				array(
 					'stage'        => 'packaging',
 					'progress'     => $this->export_percent( isset( $state['options']['mode'] ) ? $state['options']['mode'] : 'full', 'files', 1 ),
@@ -443,7 +419,7 @@ class Exporter {
 			if ( false === $line ) {
 				break;
 			}
-			$file = json_decode( trim( $line ), true );
+			$file = Job_Store::decode_value( json_decode( trim( $line ), true ) );
 			$index++;
 			if ( ! is_array( $file ) || empty( $file['relative'] ) || empty( $file['source'] ) ) {
 				continue;
@@ -487,10 +463,7 @@ class Exporter {
 			__( 'Files', 'jisento' ),
 			''
 		);
-		$sql_bytes = 0;
-		if ( ! empty( $state['sql_path'] ) && is_file( $state['sql_path'] ) ) {
-			$sql_bytes = (int) filesize( $state['sql_path'] );
-		}
+		$sql_bytes = (int) ( isset( $state['sql_bytes'] ) ? $state['sql_bytes'] : 0 );
 
 		return $this->save_work(
 			$job,
@@ -529,27 +502,8 @@ class Exporter {
 		}
 
 		if ( empty( $state['zip_ready'] ) ) {
-			$manifest = array(
-				'plugin_version'    => JISENTO_VERSION,
-				'package_version'   => JISENTO_PACKAGE_VERSION,
-				'signature'         => JISENTO_SIGNATURE,
-				'wordpress_version' => get_bloginfo( 'version' ),
-				'php_version'       => PHP_VERSION,
-				'site_url'          => site_url(),
-				'home_url'          => home_url(),
-				'database_prefix'   => $GLOBALS['wpdb']->prefix,
-				'charset'           => $GLOBALS['wpdb']->charset,
-				'collate'           => $GLOBALS['wpdb']->collate,
-				'created_at'        => gmdate( 'c' ),
-				'database_size'     => (int) ( $state['db_size'] ?? 0 ),
-				'files_size'        => (int) ( $state['files_size'] ?? 0 ),
-				'uncompressed_size' => (int) ( $state['db_size'] ?? 0 ) + (int) ( $state['files_size'] ?? 0 ),
-				'table_count'       => isset( $state['tables'] ) ? count( $state['tables'] ) : 0,
-				'file_count'        => (int) ( $state['file_count'] ?? 0 ),
-				'contents'          => $mode,
-			);
-			file_put_contents( $tmp . '/manifest.json', wp_json_encode( $manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) );
-			$begun = $archive->begin( $partial, $manifest );
+			$manifest = $this->manifest( $state, $mode, 0, 0 );
+			$begun    = $archive->begin( $partial, $manifest );
 			if ( is_wp_error( $begun ) ) {
 				throw new \RuntimeException( $begun->get_error_message() );
 			}
@@ -566,23 +520,37 @@ class Exporter {
 		}
 
 		if ( 'database' === ( $state['zip_phase'] ?? '' ) ) {
-			$sql = isset( $state['sql_path'] ) ? $state['sql_path'] : '';
-			if ( 'files' !== $mode ) {
-				if ( ! is_file( $sql ) || filesize( $sql ) <= 0 ) {
-					throw new \RuntimeException( __( 'The database dump is missing, so the package was not created.', 'jisento' ) );
+			$segments = isset( $state['dump']['segments'] ) ? $state['dump']['segments'] : array();
+			if ( 'files' !== $mode && ! $segments ) {
+				throw new \RuntimeException( __( 'Operation: add the database to the package. Reason: no database segments were written. Recovery: start a new export.', 'jisento' ) );
+			}
+			$seg_index = (int) ( $state['zip_seg_index'] ?? 0 );
+			$batch     = array();
+			$bytes     = 0;
+			while ( $seg_index < count( $segments ) && ( ! $batch || $bytes < 33554432 ) ) {
+				$segment = $segments[ $seg_index ];
+				$source  = $state['dump_dir'] . '/' . basename( $segment['entry'] );
+				clearstatcache( true, $source );
+				if ( ! is_file( $source ) || (int) filesize( $source ) !== (int) $segment['bytes'] ) {
+					throw new \RuntimeException( sprintf( __( 'Operation: add the database to the package. Reason: segment %s is missing or changed size after it was written. Recovery: start a new export.', 'jisento' ), $segment['entry'] ) );
 				}
-				$added = $archive->add_batch(
-					$partial,
-					array(
-						array(
-							'source' => $sql,
-							'local'  => 'database/database.sql',
-						),
-					)
+				$batch[] = array(
+					'source' => $source,
+					'local'  => $segment['entry'],
 				);
+				$bytes += (int) $segment['bytes'];
+				$seg_index++;
+			}
+			if ( $batch ) {
+				$added = $archive->add_batch( $partial, $batch );
 				if ( is_wp_error( $added ) ) {
 					throw new \RuntimeException( $added->get_error_message() );
 				}
+			}
+			$state['zip_seg_index'] = $seg_index;
+			if ( $seg_index < count( $segments ) ) {
+				$state['activity'] = $this->activity( 'packaging', __( 'Adding database to package', 'jisento' ), sprintf( __( 'Segment %1$d of %2$d', 'jisento' ), $seg_index, count( $segments ) ), $seg_index, count( $segments ), __( 'Segments', 'jisento' ), '' );
+				return $this->save_progress( $job, $state, 'packaging', $this->export_percent( $mode, 'zip', 0.02 ), __( 'Adding database to package', 'jisento' ), (int) filesize( $partial ) );
 			}
 			$state['zip_phase'] = ( 'database' === $mode ) ? 'finalize' : 'files';
 			$state['zip_index'] = 0;
@@ -619,7 +587,7 @@ class Exporter {
 					if ( false === $line ) {
 						break;
 					}
-					$row = json_decode( trim( $line ), true );
+					$row = Job_Store::decode_value( json_decode( trim( $line ), true ) );
 					$index++;
 					if ( ! is_array( $row ) || empty( $row['relative'] ) ) {
 						continue;
@@ -627,7 +595,7 @@ class Exporter {
 					$source = ( isset( $row['source'] ) && is_file( $row['source'] ) ) ? $row['source'] : ( $tmp . '/files/' . $row['relative'] );
 					if ( ! is_file( $source ) ) {
 						fclose( $fh );
-						throw new \RuntimeException( sprintf( __( 'Source file is missing: %s', 'jisento' ), $row['relative'] ) );
+						throw new \RuntimeException( sprintf( __( 'Operation: add files to the package. Reason: the source file disappeared or is unreadable: %s. Recovery: make sure the file exists and is readable, then start a new export.', 'jisento' ), Job_Store::is_utf8( $row['relative'] ) ? $row['relative'] : 'hex:' . bin2hex( $row['relative'] ) ) );
 					}
 					$batch[] = array(
 						'source' => $source,
@@ -690,42 +658,20 @@ class Exporter {
 		$name = $state['package_name'];
 		$key  = 'packages/' . $name;
 		$dest = $plugin->storage->get_path( $key );
-		$step = isset( $state['finalize_step'] ) ? $state['finalize_step'] : 'checksum_sql';
+		$step = isset( $state['finalize_step'] ) ? $state['finalize_step'] : 'manifest';
 
-		if ( 'checksum_sql' === $step ) {
-			if ( empty( $state['checksum_announced'] ) ) {
-				$state['checksum_announced'] = true;
-				$state['activity']           = $this->activity( 'checksum', __( 'Calculating checksum', 'jisento' ), __( 'Database dump', 'jisento' ), 0, 1, __( 'Database', 'jisento' ), '' );
-				return $this->save_work( $job, $state, 'packaging', $this->export_percent( $mode, 'finalize', 0.04 ), (int) filesize( $partial ), (int) filesize( $partial ) );
+		if ( 'manifest' === $step ) {
+			// The final counts come from the package's own central directory, so the manifest
+			// describes exactly what was written and an import can detect any later change.
+			$counted = $this->count_file_entries( $partial );
+			if ( 'database' !== $mode && $counted['count'] !== $expected_files ) {
+				throw new \RuntimeException( sprintf( __( 'Operation: finalize the package. Reason: %1$d files were scanned but %2$d are in the package. Recovery: start a new export.', 'jisento' ), $expected_files, $counted['count'] ) );
 			}
-			$sql    = isset( $state['sql_path'] ) ? $state['sql_path'] : '';
-			$checks = array(
-				'contents'   => $mode,
-				'file_count' => $expected_files,
-			);
-			if ( 'files' !== $mode ) {
-				if ( ! is_file( $sql ) || filesize( $sql ) <= 0 ) {
-					throw new \RuntimeException( __( 'The database dump is missing, so the package was not created.', 'jisento' ) );
-				}
-				$checks['database/database.sql'] = hash_file( 'sha256', $sql );
-				if ( empty( $checks['database/database.sql'] ) ) {
-					throw new \RuntimeException( __( 'Unable to checksum the database dump.', 'jisento' ) );
-				}
+			$written = $archive->write_manifest( $partial, $this->manifest( $state, $mode, $counted['count'], $counted['bytes'] ) );
+			if ( is_wp_error( $written ) ) {
+				throw new \RuntimeException( $written->get_error_message() );
 			}
-			$checks_path = $tmp . '/checksums.json';
-			file_put_contents( $checks_path, wp_json_encode( $checks ) );
-			$added = $archive->add_batch(
-				$partial,
-				array(
-					array(
-						'source' => $checks_path,
-						'local'  => 'checksums.json',
-					),
-				)
-			);
-			if ( is_wp_error( $added ) ) {
-				throw new \RuntimeException( $added->get_error_message() );
-			}
+			$state['files_bytes'] = $counted['bytes'];
 			wp_mkdir_p( dirname( $dest ) );
 			if ( file_exists( $dest ) ) {
 				@unlink( $dest );
@@ -798,7 +744,7 @@ class Exporter {
 			'status'       => 'completed',
 			'created_at'         => current_time( 'mysql' ),
 			'package_version'    => JISENTO_PACKAGE_VERSION,
-			'signature'          => JISENTO_SIGNATURE,
+			'format_marker'      => JISENTO_FORMAT_MARKER,
 			'home_url'           => home_url(),
 			'database_size'      => (int) ( $state['db_size'] ?? 0 ),
 			'files_size'         => (int) ( $state['files_size'] ?? 0 ),
@@ -851,7 +797,7 @@ class Exporter {
 		$plugin->logger->log( $job->job_id, 'packaging', 'package', $name, 'ok', 'Verified package bytes=' . $size );
 
 		$saved = $plugin->jobs->update(
-			$job->job_id,
+			$job,
 			array(
 				'status'       => 'completed',
 				'stage'        => 'completed',
@@ -870,6 +816,86 @@ class Exporter {
 		return $saved;
 	}
 
+	/**
+	 * @return array{count:int,bytes:int}
+	 */
+	private function count_file_entries( $zip_path ) {
+		$zip = new \ZipArchive();
+		if ( true !== $zip->open( $zip_path ) ) {
+			throw new \RuntimeException( __( 'Operation: finalize the package. Reason: the package could not be reopened. Recovery: start a new export.', 'jisento' ) );
+		}
+		$count = 0;
+		$bytes = 0;
+		for ( $i = 0; $i < $zip->numFiles; $i++ ) {
+			$stat = $zip->statIndex( $i );
+			if ( $stat && 0 === strpos( (string) $stat['name'], 'files/' ) && '/' !== substr( (string) $stat['name'], -1 ) ) {
+				$count++;
+				$bytes += (int) $stat['size'];
+			}
+		}
+		$zip->close();
+		return array(
+			'count' => $count,
+			'bytes' => $bytes,
+		);
+	}
+
+	private function manifest( array $state, $mode, $file_count, $files_bytes ) {
+		$dump   = isset( $state['dump'] ) && is_array( $state['dump'] ) ? $state['dump'] : array();
+		$tables = array();
+		if ( ! empty( $dump['table_stats'] ) ) {
+			foreach ( $dump['table_stats'] as $table => $stat ) {
+				$tables[ $table ] = array(
+					'rows'   => (int) $stat['rows'],
+					'bytes'  => (int) $stat['bytes'],
+					'sha256' => (string) $stat['sha256'],
+					'key'    => (string) $stat['key'],
+					'stable' => (bool) $stat['stable'],
+				);
+			}
+		}
+		return array(
+			'package_version'   => JISENTO_PACKAGE_VERSION,
+			'plugin_version'    => JISENTO_VERSION,
+			'format_marker'     => JISENTO_FORMAT_MARKER,
+			'wordpress_version' => get_bloginfo( 'version' ),
+			'php_version'       => PHP_VERSION,
+			'site_url'          => site_url(),
+			'home_url'          => home_url(),
+			'database_prefix'   => $GLOBALS['wpdb']->prefix,
+			'charset'           => $GLOBALS['wpdb']->charset,
+			'collate'           => $GLOBALS['wpdb']->collate,
+			'created_at'        => gmdate( 'c' ),
+			'include_core'      => ! empty( $state['options']['include_core'] ),
+			'database_size'     => (int) ( $state['db_size'] ?? 0 ),
+			'files_size'        => (int) ( $state['files_size'] ?? 0 ),
+			'uncompressed_size' => (int) ( $state['sql_bytes'] ?? 0 ) + (int) $files_bytes,
+			'table_count'       => count( $tables ),
+			'file_count'        => (int) $file_count,
+			'files_bytes'       => (int) $files_bytes,
+			'contents'          => $mode,
+			'database'          => array(
+				'segments'      => isset( $dump['segments'] ) ? array_values( $dump['segments'] ) : array(),
+				'tables'        => (object) $tables,
+				'skipped_views' => isset( $state['skipped_views'] ) ? array_values( $state['skipped_views'] ) : array(),
+			),
+		);
+	}
+
+	private static function stage_message( $job, $message ) {
+		$message = trim( (string) $message );
+		if ( '' === $message ) {
+			$message = __( 'The export stopped but PHP supplied no error message. Check the server PHP error log.', 'jisento' );
+		}
+		if ( false === strpos( $message, 'Stage:' ) ) {
+			$message = 'Stage: ' . $job->stage . '. ' . $message;
+		}
+		if ( false === strpos( $message, 'Job: ' ) ) {
+			$message .= ' Job: ' . $job->job_id;
+		}
+		return $message;
+	}
+
 	private function assert_package( $path ) {
 		clearstatcache( true, $path );
 		if ( ! is_file( $path ) || ! is_readable( $path ) ) {
@@ -879,7 +905,7 @@ class Exporter {
 		if ( $size <= 0 ) {
 			throw new \RuntimeException( __( 'The .jisento file is empty (0 bytes).', 'jisento' ) );
 		}
-		$verify = ( new \Jisento\Migration\Package\Package_Registry() )->verify_file( $path );
+		$verify = ( new \Jisento\Migration\Package\Package_Registry() )->verify_file( $path, 'full' );
 		if ( empty( $verify['ok'] ) ) {
 			throw new \RuntimeException( $verify['reason'] ? $verify['reason'] : __( 'Package verification failed.', 'jisento' ) );
 		}
@@ -905,7 +931,7 @@ class Exporter {
 			}
 		}
 		try {
-			$check = ( new \Jisento\Migration\Package\Package_Registry() )->verify_file( $dest );
+			$check = ( new \Jisento\Migration\Package\Package_Registry() )->verify_file( $dest, 'full' );
 		} catch ( \Throwable $e ) {
 			$check = array( 'ok' => false );
 		}
@@ -1024,7 +1050,7 @@ class Exporter {
 		if ( null !== $bytes_total ) {
 			$fields['bytes_total'] = max( 0, (int) $bytes_total );
 		}
-		return Plugin::instance()->jobs->update( $job->job_id, $fields );
+		return Plugin::instance()->jobs->update( $job, $fields );
 	}
 
 	private function save_progress( $job, array $state, $stage, $progress, $item, $bytes ) {

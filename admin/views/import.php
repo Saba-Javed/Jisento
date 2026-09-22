@@ -47,7 +47,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 <section class="jisento-card jisento-warning" id="jisento-replace-warning" hidden>
 	<h2><?php esc_html_e( 'WARNING', 'jisento' ); ?></h2>
-	<p><?php esc_html_e( 'This operation will replace the existing destination WordPress website. Tables included in the package are replaced. Tables that exist only on this site are left in place. Plugins, themes, and uploads from the package are restored. Make sure you have a backup before continuing.', 'jisento' ); ?></p>
+	<p><?php esc_html_e( 'This operation will replace the existing destination WordPress website. Every table included in the package is replaced (the restore runs into work tables and they are swapped in at the end). Tables that exist only on this site are left in place. Plugins, themes, and uploads from the package are restored. Make sure you have a backup before continuing.', 'jisento' ); ?></p>
 	<label><input type="checkbox" id="jisento-confirm-replace"> <?php esc_html_e( 'I understand and want to continue', 'jisento' ); ?></label>
 </section>
 
@@ -56,9 +56,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	<label><input type="checkbox" class="jisento-preserve" data-key="preserve_plugins" checked> <?php esc_html_e( 'Preserve existing plugin files', 'jisento' ); ?></label>
 	<label><input type="checkbox" class="jisento-preserve" data-key="preserve_themes" checked> <?php esc_html_e( 'Preserve existing theme files', 'jisento' ); ?></label>
 	<label><input type="checkbox" class="jisento-preserve" data-key="preserve_uploads" checked> <?php esc_html_e( 'Preserve existing uploads (keep destination files on conflict)', 'jisento' ); ?></label>
-	<label><input type="checkbox" class="jisento-preserve" data-key="preserve_tables"> <?php esc_html_e( 'Skip database tables that already exist on this site', 'jisento' ); ?></label>
-	<label><input type="checkbox" class="jisento-preserve" data-key="preserve_users" checked> <?php esc_html_e( 'Preserve WordPress users (users table is kept)', 'jisento' ); ?></label>
-	<label><input type="checkbox" class="jisento-preserve" data-key="preserve_options"> <?php esc_html_e( 'Preserve destination options table', 'jisento' ); ?></label>
+	<h3><?php esc_html_e( 'Database tables', 'jisento' ); ?></h3>
+	<p><?php esc_html_e( 'Preserve mode never changes a table that already exists on this site. Tables from the package that do not exist here are added. To replace an existing table, list it below.', 'jisento' ); ?></p>
+	<label><?php esc_html_e( 'Existing tables to replace (comma separated, e.g. wp_posts, wp_postmeta)', 'jisento' ); ?> <input type="text" id="jisento-replace-tables" class="regular-text"></label>
 	<h3><?php esc_html_e( 'Source Plugin Handling', 'jisento' ); ?></h3>
 	<label><input type="radio" name="jisento_plugin_strategy" value="replace_matching"> <?php esc_html_e( 'Replace matching plugins', 'jisento' ); ?></label>
 	<label><input type="radio" name="jisento_plugin_strategy" value="keep_destination" checked> <?php esc_html_e( 'Keep destination version', 'jisento' ); ?></label>
@@ -76,6 +76,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	<label><?php esc_html_e( 'Source', 'jisento' ); ?> <input type="url" id="jisento-source-url" class="regular-text"></label>
 	<label><?php esc_html_e( 'Destination', 'jisento' ); ?> <input type="url" id="jisento-dest-url" class="regular-text" value="<?php echo esc_attr( home_url() ); ?>"></label>
 	<label><input type="checkbox" id="jisento-replace-urls" checked> <?php esc_html_e( 'Replace source URLs with destination URLs', 'jisento' ); ?></label>
+	<label><input type="checkbox" id="jisento-replace-guids"> <?php esc_html_e( 'Also replace post GUIDs (not recommended; feed readers use them as permanent IDs)', 'jisento' ); ?></label>
+	<h3><?php esc_html_e( 'Advanced', 'jisento' ); ?></h3>
+	<label><input type="checkbox" id="jisento-repair-placeholders"> <?php esc_html_e( 'Repair % characters in packages made by version 1.2.11 or older (only if the import reports placeholder tokens)', 'jisento' ); ?></label>
+	<label><input type="checkbox" id="jisento-restore-engines"> <?php esc_html_e( 'Convert MyISAM/Aria tables back to their original engine after the restore', 'jisento' ); ?></label>
 	<p><button type="button" class="button button-primary" id="jisento-start-import"><?php esc_html_e( 'Start Import', 'jisento' ); ?></button></p>
 </section>
 

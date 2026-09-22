@@ -26,7 +26,7 @@ class Migration_Key_Store {
 			$wpdb->prefix . 'jisento_keys',
 			array(
 				'key_hash'   => $hash,
-				'key_hint'   => substr( $key, 0, 11 ) . '…',
+				'key_hint'   => self::hint( $key ),
 				'status'     => 'active',
 				'single_use' => $single_use ? 1 : 0,
 				'expires_at' => $exp,
@@ -44,7 +44,7 @@ class Migration_Key_Store {
 			'key'        => $key,
 			'expires_at' => $exp,
 			'single_use' => (bool) $single_use,
-			'hint'       => substr( $key, 0, 11 ) . '…',
+			'hint'       => self::hint( $key ),
 			'connect'    => home_url() . '#' . $key,
 		);
 	}
@@ -100,9 +100,26 @@ class Migration_Key_Store {
 
 	public function list_keys() {
 		global $wpdb;
-		return $wpdb->get_results(
+		$rows = $wpdb->get_results(
 			'SELECT id, key_hint, status, single_use, expires_at, used_at, created_at FROM ' . $wpdb->prefix . 'jisento_keys ORDER BY id DESC LIMIT 50'
 		);
+		foreach ( (array) $rows as $row ) {
+			// Hints stored by 1.2.x hold the first characters of the key; never show those.
+			if ( isset( $row->key_hint ) && 0 !== strpos( (string) $row->key_hint, '…' ) ) {
+				$row->key_hint = '…';
+			}
+		}
+		return $rows;
+	}
+
+	/**
+	 * Only the last four characters are ever shown.
+	 *
+	 * @param string $key Plain key.
+	 * @return string
+	 */
+	public static function hint( $key ) {
+		return '…' . substr( (string) $key, -4 );
 	}
 
 	public function expire_stale() {

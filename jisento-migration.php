@@ -3,7 +3,7 @@
  * Plugin Name:       Jisento Migration
  * Plugin URI:        https://jisento.com/migration
  * Description:       Full WordPress site migration and backup system. Export and import .jisento packages, migrate with a short-lived key, and restore with replace or preserve modes.
- * Version:           1.2.11
+ * Version:           1.3.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Jisento
@@ -19,18 +19,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JISENTO_VERSION', '1.2.11' );
-define( 'JISENTO_PACKAGE_VERSION', '1.0' );
+define( 'JISENTO_VERSION', '1.3.0' );
+define( 'JISENTO_PACKAGE_VERSION', '2.0' );
 define( 'JISENTO_FILE', __FILE__ );
 define( 'JISENTO_PATH', plugin_dir_path( __FILE__ ) );
 define( 'JISENTO_URL', plugin_dir_url( __FILE__ ) );
 define( 'JISENTO_BASENAME', plugin_basename( __FILE__ ) );
 define( 'JISENTO_MAGIC', "JISENTO\x1A" );
-define( 'JISENTO_SIGNATURE', 'JISENTO-PACKAGE-v1' );
+// Format marker only: it identifies the container layout and proves nothing about who built the package.
+// v1 packages carry "JISENTO-PACKAGE-v1". v2 uses a new marker so older plugin versions refuse v2 packages
+// instead of importing only their files.
+define( 'JISENTO_FORMAT_MARKER', 'JISENTO-PACKAGE-v2' );
+define( 'JISENTO_FORMAT_MARKER_V1', 'JISENTO-PACKAGE-v1' );
 
 require_once JISENTO_PATH . 'includes/Autoloader.php';
 
 Jisento\Migration\Autoloader::register();
+Jisento\Migration\Core\Live_Url::repair_guard();
 Jisento\Migration\Core\Live_Url::protect();
 
 register_activation_hook( __FILE__, array( 'Jisento\Migration\Plugin', 'activate' ) );

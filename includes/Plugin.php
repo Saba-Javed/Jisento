@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Plugin {
 
-	const DB_VERSION = '1.0.1';
+	const DB_VERSION = '1.1.0';
 
 	/**
 	 * @var Plugin

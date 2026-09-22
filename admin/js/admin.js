@@ -1,11 +1,110 @@
 (function () {
 	'use strict';
 
+	const TOKEN_PREFIX = 'jisento-job-token:';
+	const ACTIVE_JOB_KEY = 'jisento-active-job';
+	const TRANSIENT_STATUSES = [502, 503, 504, 524];
+
+	function jobIdFromPath(path) {
+		const match = /^jobs\/([A-Za-z0-9_]+)/.exec(String(path || ''));
+		return match ? match[1] : '';
+	}
+
+	function nonJsonMessage(status, path) {
+		const id = jobIdFromPath(path);
+		return 'The server returned a PHP error (HTTP ' + status + '). Check error_log.' + (id ? ' Job: ' + id : '');
+	}
+
+	function isTransient(err) {
+		if (!err) {
+			return false;
+		}
+		if (err.timeout || err.network) {
+			return true;
+		}
+		if (err.status) {
+			return TRANSIENT_STATUSES.indexOf(Number(err.status)) !== -1;
+		}
+		const message = String(err.message ? err.message : err);
+		return /504|502|503|524|timeout|timed out|Gateway|Failed to fetch|NetworkError|Load failed|AbortError|aborted/i.test(message);
+	}
+
+	function csv(val) {
+		return String(val || '')
+			.split(',')
+			.map(function (s) {
+				return s.trim();
+			})
+			.filter(Boolean);
+	}
+
+	const helpers = {
+		jobIdFromPath: jobIdFromPath,
+		nonJsonMessage: nonJsonMessage,
+		isTransient: isTransient,
+		csv: csv
+	};
+	if (typeof module === 'object' && module.exports) {
+		module.exports = helpers;
+	}
+	if (typeof window !== 'undefined') {
+		window.JisentoAdminHelpers = helpers;
+	}
+
 	if (typeof jisentoAdmin === 'undefined') {
 		return;
 	}
 
 	const jobTokens = {};
+
+	function appendChildren(node, children) {
+		if (children == null || children === false || children === '') {
+			return node;
+		}
+		if (Array.isArray(children)) {
+			children.forEach(function (child) {
+				appendChildren(node, child);
+			});
+			return node;
+		}
+		if (children instanceof Node) {
+			node.appendChild(children);
+			return node;
+		}
+		node.appendChild(document.createTextNode(String(children)));
+		return node;
+	}
+
+	function el(tag, attrs, children) {
+		const node = document.createElement(tag);
+		const values = attrs || {};
+		Object.keys(values).forEach(function (key) {
+			const value = values[key];
+			if (value == null || value === false) {
+				return;
+			}
+			if (key.indexOf('on') === 0 && typeof value === 'function') {
+				node.addEventListener(key.slice(2).toLowerCase(), value);
+			} else if (key === 'className') {
+				node.className = value;
+			} else if (key === 'style' && typeof value === 'object') {
+				Object.assign(node.style, value);
+			} else if (key === 'hidden' || key === 'checked' || key === 'disabled') {
+				node[key] = !!value;
+			} else {
+				node.setAttribute(key, value === true ? '' : String(value));
+			}
+		});
+		return appendChildren(node, children);
+	}
+
+	function fill(target, children) {
+		if (!target) {
+			return;
+		}
+		target.replaceChildren();
+		appendChildren(target, children);
+	}
 
 	function plainError(value, fallback) {
 		let text = '';
@@ -15,12 +114,30 @@
 			text = value;
 		}
 		if (/<[a-z][\s\S]*>/i.test(text)) {
-			const wrapper = document.createElement('div');
-			wrapper.innerHTML = text;
-			text = wrapper.textContent || wrapper.innerText || '';
+			text = new DOMParser().parseFromString(text, 'text/html').body.textContent || '';
 		}
 		text = String(text || '').replace(/\s+/g, ' ').trim();
 		return text || fallback || 'The server returned an empty error response.';
+	}
+
+	function storageGet(key) {
+		try {
+			return localStorage.getItem(key) || '';
+		} catch (e) {
+			return '';
+		}
+	}
+
+	function storageSet(key, value) {
+		try {
+			localStorage.setItem(key, value);
+		} catch (e) {}
+	}
+
+	function storageRemove(key) {
+		try {
+			localStorage.removeItem(key);
+		} catch (e) {}
 	}
 
 	function rememberJob(job) {
@@ -28,29 +145,50 @@
 			return;
 		}
 		jobTokens[job.job_id] = job.continuation_token;
+		storageSet(TOKEN_PREFIX + job.job_id, job.continuation_token);
+		storageSet(ACTIVE_JOB_KEY, JSON.stringify({ id: job.job_id, type: job.type || '' }));
+	}
+
+	function activeJob() {
+		const raw = storageGet(ACTIVE_JOB_KEY);
+		if (!raw) {
+			return null;
+		}
 		try {
-			sessionStorage.setItem('jisento-job-token:' + job.job_id, job.continuation_token);
-		} catch (e) {}
+			const parsed = JSON.parse(raw);
+			return parsed && parsed.id ? parsed : null;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function forgetActiveJob(id, dropToken) {
+		const active = activeJob();
+		if (active && active.id === id) {
+			storageRemove(ACTIVE_JOB_KEY);
+		}
+		if (dropToken) {
+			delete jobTokens[id];
+			storageRemove(TOKEN_PREFIX + id);
+		}
 	}
 
 	function storedJobToken(id) {
 		if (jobTokens[id]) {
 			return jobTokens[id];
 		}
-		try {
-			return sessionStorage.getItem('jisento-job-token:' + id) || '';
-		} catch (e) {
-			return '';
-		}
+		return storageGet(TOKEN_PREFIX + id);
 	}
 
 	function withJobAuth(id, options) {
 		const opts = Object.assign({}, options || {});
-		const token = storedJobToken(id);
-		if (token) {
-			opts.jobToken = token;
-		}
+		opts.jobAuth = true;
+		opts.jobToken = storedJobToken(id);
 		return opts;
+	}
+
+	function jobRoute(id, action) {
+		return 'jobs/' + id + (action ? '/' + action : '');
 	}
 
 	const api = {
@@ -58,14 +196,20 @@
 			const opts = options || {};
 			const timeout = opts.timeout || 0;
 			const headers = Object.assign({}, opts.headers || {});
-			if (opts.jobToken) {
+			if (opts.jobAuth) {
+				if (!opts.jobToken) {
+					const missing = new Error('This job can no longer be controlled from this browser because its job token is missing. Job: ' + (jobIdFromPath(path) || 'unknown'));
+					missing.missingToken = true;
+					throw missing;
+				}
 				headers['X-Jisento-Job-Token'] = opts.jobToken;
 			} else {
 				headers['X-WP-Nonce'] = jisentoAdmin.nonce;
 			}
-			if (opts.body && !(opts.body instanceof FormData) && !headers['Content-Type']) {
+			let body = opts.body;
+			if (body && !(body instanceof FormData) && !headers['Content-Type']) {
 				headers['Content-Type'] = 'application/json';
-				opts.body = JSON.stringify(opts.body);
+				body = JSON.stringify(body);
 			}
 			const sep = path.indexOf('?') === -1 ? '?' : '&';
 			const fetchOpts = {
@@ -74,55 +218,80 @@
 				cache: 'no-store',
 				headers: headers
 			};
-			if (opts.body) {
-				fetchOpts.body = opts.body;
+			if (body) {
+				fetchOpts.body = body;
 			}
+			let timer = null;
 			if (timeout) {
 				const controller = new AbortController();
 				fetchOpts.signal = controller.signal;
-				setTimeout(function () {
+				timer = setTimeout(function () {
 					controller.abort();
 				}, timeout);
 			}
 			let res;
+			let text = '';
 			try {
 				res = await fetch(jisentoAdmin.root + path + sep + '_=' + Date.now(), fetchOpts);
+				text = await res.text();
 			} catch (err) {
-				const name = err && err.name ? err.name : '';
-				throw new Error(name === 'AbortError' ? 'Request timed out' : ((err && err.message) || 'Failed to fetch'));
+				const aborted = err && err.name === 'AbortError';
+				const netErr = new Error(aborted ? 'Request timed out' : ((err && err.message) || 'Failed to fetch'));
+				netErr.timeout = aborted;
+				netErr.network = !aborted;
+				throw netErr;
+			} finally {
+				if (timer) {
+					clearTimeout(timer);
+				}
 			}
-			const text = await res.text();
 			let data = {};
-			try {
-				data = text ? JSON.parse(text) : {};
-			} catch (e) {
-				data = { message: plainError(text.slice(0, 1000), '') };
+			if (text) {
+				try {
+					data = JSON.parse(text);
+				} catch (e) {
+					const phpErr = new Error(nonJsonMessage(res.status, path));
+					phpErr.phpError = true;
+					phpErr.status = res.status;
+					phpErr.body = plainError(text.slice(0, 1000), '');
+					throw phpErr;
+				}
 			}
 			if (!res.ok) {
-				const detail = plainError(data.message, 'The server returned an empty error response.');
-				throw new Error('Request failed (HTTP ' + res.status + ', ' + path + '): ' + detail);
+				const detail = plainError(data && data.message, 'The server returned an empty error response.');
+				const err = new Error('Request failed (HTTP ' + res.status + ', ' + path + '): ' + detail);
+				err.status = res.status;
+				err.code = data && data.code ? data.code : '';
+				err.detail = detail;
+				err.data = data;
+				throw err;
 			}
 			return data;
 		}
 	};
 
-	let currentJob = null;
 	let paused = false;
+	let runGeneration = 0;
 	let uploadedPackage = '';
 	let remoteSession = null;
 
 	function $(sel) {
 		return document.querySelector(sel);
 	}
-	function show(el) {
-		if (el) {
-			el.hidden = false;
+	function show(node) {
+		if (node) {
+			node.hidden = false;
 		}
 	}
-	function hide(el) {
-		if (el) {
-			el.hidden = true;
+	function hide(node) {
+		if (node) {
+			node.hidden = true;
 		}
+	}
+	function wait(ms) {
+		return new Promise(function (r) {
+			setTimeout(r, ms);
+		});
 	}
 	function headlines(job) {
 		const type = job && job.type;
@@ -181,7 +350,7 @@
 			cancelled: 'Cancelled',
 			paused: 'Paused'
 		};
-		return map[stage] || stage;
+		return map[stage] || stage || '';
 	}
 	function bytes(n) {
 		n = Number(n) || 0;
@@ -196,11 +365,70 @@
 	function num(n) {
 		return Number(n || 0).toLocaleString();
 	}
-	function esc(value) {
-		return String(value == null ? '' : value)
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;');
+	function percentValue(value) {
+		const n = Number(value) || 0;
+		return Math.max(0, Math.min(100, n));
+	}
+
+	function showNotice(anchor, message) {
+		if (!anchor) {
+			return;
+		}
+		const host = anchor.closest('p') || anchor;
+		let notice = host.nextElementSibling;
+		if (!notice || !notice.classList.contains('jisento-start-notice')) {
+			notice = el('div', { className: 'notice notice-error inline jisento-start-notice', role: 'alert' });
+			host.after(notice);
+		}
+		fill(notice, el('p', null, message));
+		show(notice);
+	}
+
+	function clearNotice(anchor) {
+		if (!anchor) {
+			return;
+		}
+		const host = anchor.closest('p') || anchor;
+		const notice = host.nextElementSibling;
+		if (notice && notice.classList.contains('jisento-start-notice')) {
+			notice.remove();
+		}
+	}
+
+	async function createJob(body, button, noticeAnchor) {
+		const anchor = noticeAnchor || button;
+		if (button) {
+			button.disabled = true;
+		}
+		clearNotice(anchor);
+		let job = null;
+		try {
+			job = await api.req('jobs', { method: 'POST', body: body });
+		} catch (err) {
+			const message = err.status === 409 ? (err.detail || plainError(err, 'Another import or export is already running on this site.')) : plainError(err, 'The job could not be started.');
+			showNotice(anchor, message);
+			alert(message);
+			return null;
+		} finally {
+			if (button) {
+				button.disabled = false;
+			}
+		}
+		rememberJob(job);
+		runJob(job.job_id);
+		return job;
+	}
+
+	function setStatusLine(box, text) {
+		if (!box) {
+			return;
+		}
+		let line = box.querySelector('.jisento-reconnect');
+		if (!line) {
+			line = el('p', { className: 'jisento-reconnect', role: 'status' });
+			box.appendChild(line);
+		}
+		line.textContent = text;
 	}
 
 	function renderProgress(job) {
@@ -211,64 +439,80 @@
 		show(box);
 		const act = (job.state && job.state.activity) || {};
 		const label = act.label || stageLabel(job.stage);
-		const pct = job.progress || 0;
-		let counts = '';
-		if (act.count_total > 0 && act.count_unit) {
-			counts = '<p>' + esc(act.count_unit) + ': ' + num(act.count_done) + ' / ' + num(act.count_total) + (act.count_suffix ? ' ' + esc(act.count_suffix) : '') + '</p>';
-		} else if (act.count_done > 0 && act.count_unit) {
-			counts = '<p>' + esc(act.count_unit) + ': ' + num(act.count_done) + '</p>';
+		const pct = percentValue(job.progress);
+		const parts = [];
+		const titles = headlines(job);
+		parts.push(el('h2', null, titles.running));
+		parts.push(el('p', null, el('strong', null, label)));
+		if (act.detail) {
+			parts.push(el('p', null, act.detail));
 		}
-		const detail = act.detail ? '<p>' + esc(act.detail) + '</p>' : '';
-		const item = act.item && act.item !== act.detail ? '<p>Current: ' + esc(act.item) + '</p>' : '';
+		if (act.count_total > 0 && act.count_unit) {
+			parts.push(el('p', null, act.count_unit + ': ' + num(act.count_done) + ' / ' + num(act.count_total) + (act.count_suffix ? ' ' + act.count_suffix : '')));
+		} else if (act.count_done > 0 && act.count_unit) {
+			parts.push(el('p', null, act.count_unit + ': ' + num(act.count_done)));
+		}
+		if (act.item && act.item !== act.detail) {
+			parts.push(el('p', null, 'Current: ' + act.item));
+		}
 		const sizes = (job.state && job.state.sizes) || act.sizes || {};
-		let sizeHtml = '';
 		if (sizes.package > 0) {
-			sizeHtml += '<p>Package: ' + bytes(sizes.package) + '</p>';
+			parts.push(el('p', null, 'Package: ' + bytes(sizes.package)));
 		}
 		if (sizes.database > 0) {
-			sizeHtml += '<p>Database: ' + bytes(sizes.database) + '</p>';
+			parts.push(el('p', null, 'Database: ' + bytes(sizes.database)));
 		}
 		if (sizes.files > 0) {
-			sizeHtml += '<p>Files: ' + bytes(sizes.files) + '</p>';
+			parts.push(el('p', null, 'Files: ' + bytes(sizes.files)));
 		}
 		if (sizes.contents > 0) {
-			sizeHtml += '<p>Uncompressed contents: ' + bytes(sizes.contents) + '</p>';
+			parts.push(el('p', null, 'Uncompressed contents: ' + bytes(sizes.contents)));
 		}
-		let measure = '';
 		if (act.measure_kind === 'bytes' && act.measure_total > 0) {
-			measure = '<p>' + esc(act.measure_label || 'Progress') + ': ' + bytes(act.measure_done || 0) + ' / ' + bytes(act.measure_total) + '</p>';
+			parts.push(el('p', null, (act.measure_label || 'Progress') + ': ' + bytes(act.measure_done || 0) + ' / ' + bytes(act.measure_total)));
 		}
-		const stagePct = typeof act.stage_progress === 'number' ? '<p>This stage: ' + act.stage_progress + '%</p>' : '';
-		const titles = headlines(job);
-		box.innerHTML =
-			'<h2>' + esc(titles.running) + '</h2>' +
-			'<p><strong>' + esc(label) + '</strong></p>' +
-			detail +
-			counts +
-			item +
-			sizeHtml +
-			measure +
-			'<div class="jisento-progress-bar"><span style="width:' + pct + '%"></span></div>' +
-			'<p>Overall Progress: ' + pct + '%</p>' +
-			stagePct +
-			'<p>Last update: ' + esc(job.updated_at || '—') + '</p>' +
-			'<p><button type="button" class="button" id="jisento-pause">Pause</button> ' +
-			'<button type="button" class="button" id="jisento-cancel">Cancel</button></p>';
-		const pause = $('#jisento-pause');
-		const cancel = $('#jisento-cancel');
-		if (pause) {
-			pause.addEventListener('click', async function () {
-				paused = true;
-				await api.req('jobs/' + job.job_id + '/pause', withJobAuth(job.job_id, { method: 'POST', body: {} }));
-			});
+		parts.push(el('div', { className: 'jisento-progress-bar' }, el('span', { style: { width: pct + '%' } })));
+		parts.push(el('p', null, 'Overall Progress: ' + pct + '%'));
+		if (typeof act.stage_progress === 'number') {
+			parts.push(el('p', null, 'This stage: ' + percentValue(act.stage_progress) + '%'));
 		}
-		if (cancel) {
-			cancel.addEventListener('click', async function () {
-				paused = true;
-				await api.req('jobs/' + job.job_id + '/cancel', withJobAuth(job.job_id, { method: 'POST', body: {} }));
-				box.innerHTML = '<p>Cancelled.</p>';
-			});
-		}
+		parts.push(el('p', null, 'Last update: ' + (job.updated_at || '—')));
+		const id = job.job_id;
+		parts.push(el('p', null, [
+			el('button', {
+				type: 'button',
+				className: 'button',
+				id: 'jisento-pause',
+				onClick: async function (e) {
+					paused = true;
+					e.currentTarget.disabled = true;
+					try {
+						const latest = await api.req(jobRoute(id, 'pause'), withJobAuth(id, { method: 'POST', body: {} }));
+						showJob(latest && latest.job_id ? latest : await api.req(jobRoute(id), withJobAuth(id, { method: 'GET', timeout: 20000 })));
+					} catch (err) {
+						setStatusLine(box, plainError(err, 'Pause failed.'));
+					}
+				}
+			}, 'Pause'),
+			' ',
+			el('button', {
+				type: 'button',
+				className: 'button',
+				id: 'jisento-cancel',
+				onClick: async function (e) {
+					paused = true;
+					e.currentTarget.disabled = true;
+					try {
+						await api.req(jobRoute(id, 'cancel'), withJobAuth(id, { method: 'POST', body: {} }));
+						forgetActiveJob(id, false);
+						fill(box, el('p', null, 'Cancelled.'));
+					} catch (err) {
+						setStatusLine(box, plainError(err, 'Cancel failed.'));
+					}
+				}
+			}, 'Cancel')
+		]));
+		fill(box, parts);
 	}
 
 	function renderComplete(job) {
@@ -286,83 +530,193 @@
 				return;
 			}
 			const dl = (window.jisentoDownloadBase || '') + '&file=' + encodeURIComponent('packages/' + job.package_name);
-			box.innerHTML =
-				'<div class="jisento-card"><h2>' + esc(headlines(job).complete) + '</h2>' +
-				'<p>Name: <code>' + job.package_name + '</code></p>' +
-				'<p>Size: ' + bytes(job.package_size) + '</p>' +
-				'<p>Status: Completed</p>' +
-				'<p>Saved in wp-content/jisento/packages/</p>' +
-				'<p><a class="button button-primary" href="' + dl + '">Download</a></p></div>';
+			fill(box, el('div', { className: 'jisento-card' }, [
+				el('h2', null, headlines(job).complete),
+				el('p', null, ['Name: ', el('code', null, job.package_name || '')]),
+				el('p', null, 'Size: ' + bytes(job.package_size)),
+				el('p', null, 'Status: Completed'),
+				el('p', null, 'Saved in wp-content/jisento/packages/'),
+				el('p', null, el('a', { className: 'button button-primary', href: dl }, 'Download'))
+			]));
 			loadBackups().catch(function (err) {
 				const table = $('#jisento-backups-table');
 				if (table) {
-					table.querySelector('tbody').innerHTML = '<tr><td colspan="6">' + err.message + '</td></tr>';
+					fill(table.querySelector('tbody'), messageRow(plainError(err, 'Could not load backups.')));
 				}
 			});
 			return;
 		}
 		const report = (job.state && job.state.report) || {};
 		const done = headlines(job);
-		box.innerHTML =
-			'<div class="jisento-card"><h2>' + esc(done.complete) + '</h2>' +
-			'<p>Source: ' + (report.source || '') + '</p>' +
-			'<p>Destination: ' + (report.destination || jisentoAdmin.home) + '</p>' +
-			(report.package ? '<p>Package: <code>' + report.package + '</code></p>' : '') +
-			timingLines(report.timings) +
-			'<p><a class="button button-primary" href="' + jisentoAdmin.home + '" target="_blank">Open Website</a> ' +
-			'<a class="button" href="admin.php?page=jisento-logs">' + esc(done.report) + '</a></p></div>';
+		const isImport = job.type === 'import' || job.type === 'receive';
+		fill(box, el('div', { className: 'jisento-card' }, [
+			el('h2', null, done.complete),
+			isImport && report.users_replaced === true
+				? el('p', { className: 'jisento-login-hint' }, el('strong', null, "Log in with the SOURCE site's username and password."))
+				: null,
+			el('p', null, 'Source: ' + (report.source || '')),
+			el('p', null, 'Destination: ' + (report.destination || jisentoAdmin.home)),
+			report.package ? el('p', null, ['Package: ', el('code', null, report.package)]) : null,
+			timingLines(report.timings),
+			el('p', null, [
+				el('a', { className: 'button button-primary', href: jisentoAdmin.home, target: '_blank', rel: 'noopener' }, 'Open Website'),
+				' ',
+				el('a', { className: 'button', href: 'admin.php?page=jisento-logs' }, done.report)
+			])
+		]));
+	}
+
+	async function downloadDebugLog(id, fallbackHref) {
+		try {
+			const data = await api.req(jobRoute(id, 'log'), withJobAuth(id, { method: 'GET', timeout: 60000 }));
+			if (!data || typeof data.text !== 'string') {
+				throw new Error('The log response was empty.');
+			}
+			const url = URL.createObjectURL(new Blob([data.text], { type: 'text/plain;charset=utf-8' }));
+			const link = el('a', { href: url, download: 'jisento-' + id + '-debug-log.txt', hidden: true });
+			document.body.appendChild(link);
+			link.click();
+			link.remove();
+			setTimeout(function () {
+				URL.revokeObjectURL(url);
+			}, 1000);
+		} catch (err) {
+			window.location.href = fallbackHref;
+		}
 	}
 
 	function renderFailed(job) {
 		const box = $('#jisento-result');
 		hide($('#jisento-progress'));
 		show(box);
+		const id = job.job_id;
+		const serverFailed = job.status === 'failed';
 		const problem = plainError(job && job.error_summary, 'Unknown error. Check the Jisento debug log and the server PHP error log.');
-		box.innerHTML =
-			'<div class="jisento-card jisento-warning"><h2>' + esc(headlines(job).failed) + '</h2>' +
-			'<p>Stage: ' + stageLabel(job.stage) + '</p>' +
-			'<p>Problem: ' + esc(problem) + '</p>' +
-			'<p><button type="button" class="button button-primary" id="jisento-retry">Retry</button> ' +
-			'<a class="button" href="admin.php?page=jisento-logs">Download Debug Log</a></p></div>';
-		const retry = $('#jisento-retry');
-		if (retry) {
-			retry.addEventListener('click', function () {
+		const placeholders = job.state && job.state.v1_placeholders && typeof job.state.v1_placeholders === 'object' ? job.state.v1_placeholders : null;
+		const status = el('p', { className: 'jisento-action-status', role: 'status' });
+		const logsHref = 'admin.php?page=jisento-logs';
+
+		async function recover(route, button, label) {
+			button.disabled = true;
+			status.textContent = label;
+			try {
+				if (route) {
+					await api.req(route, withJobAuth(id, { method: 'POST', body: {}, timeout: 60000 }));
+				}
 				paused = false;
-				runJob(job.job_id);
-			});
+				hide(box);
+				runJob(id);
+			} catch (err) {
+				button.disabled = false;
+				status.textContent = plainError(err, 'The request failed.');
+			}
 		}
+
+		const children = [
+			el('h2', null, headlines(job).failed),
+			el('p', null, 'Stage: ' + stageLabel(job.stage)),
+			el('p', null, 'Problem: ' + problem)
+		];
+		if (placeholders && id) {
+			children.push(el('div', { className: 'jisento-card jisento-warning jisento-placeholder-warning' }, [
+				el('p', null, 'This package was created by an older Jisento version that replaced every % character with a placeholder. Re-export the source site with this version (recommended), or repair the placeholders and continue.'),
+				placeholders.tokens || placeholders.occurrences
+					? el('p', null, 'Placeholder tokens: ' + num(placeholders.tokens) + ', occurrences: ' + num(placeholders.occurrences))
+					: null,
+				el('p', null, el('button', {
+					type: 'button',
+					className: 'button',
+					id: 'jisento-repair-placeholders',
+					onClick: function (e) {
+						recover('jobs/' + id + '/repair-placeholders', e.currentTarget, 'Repairing placeholders…');
+					}
+				}, 'Repair placeholders and continue'))
+			]));
+		}
+		children.push(el('p', null, [
+			id ? el('button', {
+				type: 'button',
+				className: 'button button-primary',
+				id: 'jisento-retry',
+				onClick: function (e) {
+					recover(serverFailed ? 'jobs/' + id + '/retry' : '', e.currentTarget, 'Retrying…');
+				}
+			}, 'Retry') : null,
+			' ',
+			el('a', {
+				className: 'button',
+				href: logsHref,
+				onClick: function (e) {
+					if (!id) {
+						return;
+					}
+					e.preventDefault();
+					downloadDebugLog(id, logsHref);
+				}
+			}, 'Download Debug Log')
+		]));
+		children.push(status);
+		fill(box, el('div', { className: 'jisento-card jisento-warning' }, children));
 	}
 
 	function renderInterrupted(job) {
 		const box = $('#jisento-result');
 		hide($('#jisento-progress'));
 		show(box);
-		const pausedTitles = headlines(job);
-		box.innerHTML =
-			'<div class="jisento-card"><h2>' + esc(pausedTitles.paused) + '</h2>' +
-			'<p>Progress: ' + (job.progress || 0) + '%</p>' +
-			'<p><button type="button" class="button button-primary" id="jisento-resume">' + esc(pausedTitles.resume) + '</button> ' +
-			'<button type="button" class="button" id="jisento-cancel-2">' + esc(pausedTitles.cancel) + '</button></p></div>';
-		$('#jisento-resume').addEventListener('click', async function () {
-			paused = false;
-			await api.req('jobs/' + job.job_id + '/resume', withJobAuth(job.job_id, { method: 'POST', body: {} }));
-			hide(box);
-			runJob(job.job_id);
-		});
-		$('#jisento-cancel-2').addEventListener('click', async function () {
-			await api.req('jobs/' + job.job_id + '/cancel', withJobAuth(job.job_id, { method: 'POST', body: {} }));
-			box.innerHTML = '<p>Cancelled.</p>';
-		});
-	}
-
-	function isTransient(err) {
-		const message = String(err && err.message ? err.message : err || '');
-		return /504|502|503|524|timeout|timed out|Gateway|nginx|Failed to fetch|NetworkError|Load failed|AbortError|aborted/i.test(message);
+		const id = job.job_id;
+		const titles = headlines(job);
+		const status = el('p', { className: 'jisento-action-status', role: 'status' });
+		fill(box, el('div', { className: 'jisento-card' }, [
+			el('h2', null, titles.paused),
+			el('p', null, 'Progress: ' + percentValue(job.progress) + '%'),
+			el('p', null, [
+				el('button', {
+					type: 'button',
+					className: 'button button-primary',
+					id: 'jisento-resume',
+					onClick: async function (e) {
+						const button = e.currentTarget;
+						button.disabled = true;
+						try {
+							const resumed = await api.req(jobRoute(id, 'resume'), withJobAuth(id, { method: 'POST', body: {} }));
+							if (resumed && resumed.job_id) {
+								storageSet(ACTIVE_JOB_KEY, JSON.stringify({ id: id, type: resumed.type || job.type || '' }));
+							}
+							paused = false;
+							hide(box);
+							runJob(id);
+						} catch (err) {
+							button.disabled = false;
+							status.textContent = plainError(err, 'Resume failed.');
+						}
+					}
+				}, titles.resume),
+				' ',
+				el('button', {
+					type: 'button',
+					className: 'button',
+					id: 'jisento-cancel-2',
+					onClick: async function (e) {
+						const button = e.currentTarget;
+						button.disabled = true;
+						try {
+							await api.req(jobRoute(id, 'cancel'), withJobAuth(id, { method: 'POST', body: {} }));
+							forgetActiveJob(id, false);
+							fill(box, el('p', null, 'Cancelled.'));
+						} catch (err) {
+							button.disabled = false;
+							status.textContent = plainError(err, 'Cancel failed.');
+						}
+					}
+				}, titles.cancel)
+			]),
+			status
+		]));
 	}
 
 	function timingLines(timings) {
 		if (!timings) {
-			return '';
+			return null;
 		}
 		const labels = {
 			validating: 'Validation',
@@ -373,13 +727,13 @@
 			replacing_urls: 'URL replacement',
 			finalizing: 'Finalization'
 		};
-		let html = '';
+		const lines = [];
 		Object.keys(labels).forEach(function (key) {
 			if (timings[key] > 0) {
-				html += '<p>' + labels[key] + ': ' + Math.round(timings[key]) + 's</p>';
+				lines.push(el('p', null, labels[key] + ': ' + Math.round(timings[key]) + 's'));
 			}
 		});
-		return html;
+		return lines;
 	}
 
 	function showJob(job) {
@@ -387,6 +741,7 @@
 			return false;
 		}
 		if (job.status === 'completed') {
+			forgetActiveJob(job.job_id, true);
 			if (job.type === 'export' && !job.package_ok) {
 				renderFailed({
 					type: 'export',
@@ -404,6 +759,9 @@
 			return true;
 		}
 		if (job.status === 'cancelled' || job.status === 'paused') {
+			if (job.status === 'cancelled') {
+				forgetActiveJob(job.job_id, false);
+			}
 			renderInterrupted(job);
 			return true;
 		}
@@ -411,69 +769,86 @@
 		return false;
 	}
 
-	async function runJob(id) {
-		currentJob = id;
+	async function runJob(id, runOptions) {
+		const settings = runOptions || {};
+		const generation = ++runGeneration;
 		paused = false;
 		let lastJob = null;
 		let misses = 0;
+
+		function alive() {
+			return !paused && generation === runGeneration;
+		}
+
+		async function reconnect(err) {
+			misses++;
+			if (lastJob) {
+				renderProgress(lastJob);
+			}
+			const reason = err && err.status ? 'HTTP ' + err.status : (err && err.timeout ? 'request timed out' : 'network error');
+			setStatusLine($('#jisento-progress'), 'Reconnecting (' + reason + ', attempt ' + misses + '). The job is still running on the server.');
+			await wait(Math.min(15000, 2000 + misses * 1000));
+		}
+
 		try {
-			while (!paused) {
+			while (alive()) {
 				let job = null;
 				try {
-					job = await api.req('jobs/' + id, withJobAuth(id, { method: 'GET', timeout: 20000 }));
-					misses = 0;
+					job = await api.req(jobRoute(id), withJobAuth(id, { method: 'GET', timeout: 20000 }));
 				} catch (err) {
-					if (isTransient(err) && misses < 12) {
-						misses++;
-						if (lastJob) {
-							renderProgress(lastJob);
-						}
-						const box = $('#jisento-progress');
-						if (box) {
-							box.insertAdjacentHTML('beforeend', '<p>Reconnecting. The import is still running.</p>');
-						}
-						await new Promise(function (r) { setTimeout(r, 2000); });
+					if (isTransient(err)) {
+						await reconnect(err);
 						continue;
 					}
 					throw err;
 				}
+				if (!alive()) {
+					break;
+				}
+				misses = 0;
 				lastJob = job;
 				if (showJob(job)) {
 					return job;
 				}
 				let stepped = null;
 				try {
-					stepped = await api.req('jobs/' + id, withJobAuth(id, { method: 'POST', body: {}, timeout: 45000 }));
-					misses = 0;
+					stepped = await api.req(jobRoute(id), withJobAuth(id, { method: 'POST', body: {}, timeout: 45000 }));
 				} catch (err) {
-					if (isTransient(err) && misses < 12) {
-						misses++;
-						renderProgress(lastJob);
-						const box = $('#jisento-progress');
-						if (box) {
-							box.insertAdjacentHTML('beforeend', '<p>The status request timed out. The import is still running.</p>');
-						}
-						await new Promise(function (r) { setTimeout(r, 2000); });
+					if (isTransient(err)) {
+						await reconnect(err);
 						continue;
 					}
 					throw err;
 				}
+				if (!alive()) {
+					break;
+				}
+				misses = 0;
 				if (stepped && stepped.worker_busy) {
-					await new Promise(function (r) { setTimeout(r, 1500); });
+					await wait(1500);
 					continue;
 				}
-				if (stepped) {
+				if (stepped && stepped.job_id) {
 					lastJob = stepped;
 					if (showJob(stepped)) {
 						return stepped;
 					}
 				}
-				await new Promise(function (r) { setTimeout(r, 200); });
+				await wait(200);
 			}
 		} catch (err) {
+			if (generation !== runGeneration) {
+				return null;
+			}
+			if (settings.resumed && !lastJob && (err.missingToken || err.status === 401 || err.status === 403 || err.status === 404)) {
+				forgetActiveJob(id, true);
+				hide($('#jisento-progress'));
+				return null;
+			}
 			renderFailed({
 				stage: 'runtime',
-				type: lastJob ? lastJob.type : '',
+				status: 'runtime_error',
+				type: lastJob ? lastJob.type : (activeJob() && activeJob().id === id ? activeJob().type : ''),
 				error_summary: plainError(err, 'The runtime request failed without an error message. Check the server PHP error log.'),
 				job_id: id
 			});
@@ -481,13 +856,15 @@
 		return null;
 	}
 
-	function csv(val) {
-		return (val || '')
-			.split(',')
-			.map(function (s) {
-				return s.trim();
-			})
-			.filter(Boolean);
+	function resumeActiveJob() {
+		if (!$('#jisento-progress')) {
+			return;
+		}
+		const active = activeJob();
+		if (!active || !storedJobToken(active.id)) {
+			return;
+		}
+		runJob(active.id, { resumed: true });
 	}
 
 	function destMode() {
@@ -511,32 +888,32 @@
 
 	async function showValidatedPackage(pkg, manifest) {
 		uploadedPackage = pkg;
-		document.querySelectorAll('input[name="jisento_dest_mode"]').forEach(function (el) {
-			el.checked = false;
+		document.querySelectorAll('input[name="jisento_dest_mode"]').forEach(function (input) {
+			input.checked = false;
 		});
 		const box = $('#jisento-validation');
 		if (box) {
 			show(box);
 			const info = manifest || {};
-			let sizes = '';
+			const items = [
+				el('li', null, '✓ Format marker: ' + (info.format_marker || info.signature || 'JISENTO-PACKAGE-v1')),
+				el('li', null, '✓ manifest.json'),
+				el('li', null, '✓ Package version ' + (info.package_version || '1.0'))
+			];
 			if (info.database_size > 0) {
-				sizes += '<li>Database: ' + bytes(info.database_size) + '</li>';
+				items.push(el('li', null, 'Database: ' + bytes(info.database_size)));
 			}
 			if (info.files_size > 0) {
-				sizes += '<li>Files: ' + bytes(info.files_size) + '</li>';
+				items.push(el('li', null, 'Files: ' + bytes(info.files_size)));
 			}
 			if (info.uncompressed_size > 0) {
-				sizes += '<li>Uncompressed contents: ' + bytes(info.uncompressed_size) + '</li>';
+				items.push(el('li', null, 'Uncompressed contents: ' + bytes(info.uncompressed_size)));
 			}
-			box.innerHTML =
-				'<h2>Package validated ✓</h2>' +
-				'<ul class="jisento-steps">' +
-				'<li>✓ ' + esc(info.signature || 'JISENTO-PACKAGE-v1') + ' signature</li>' +
-				'<li>✓ manifest.json</li>' +
-				'<li>✓ Package version ' + esc((info.package_version) || '1.0') + '</li>' +
-				sizes +
-				'</ul>' +
-				'<p>Choose how this site should handle the destination.</p>';
+			fill(box, [
+				el('h2', null, 'Package validated ✓'),
+				el('ul', { className: 'jisento-steps' }, items),
+				el('p', null, 'Choose how this site should handle the destination.')
+			]);
 		}
 		if ($('#jisento-source-url') && manifest && manifest.home_url) {
 			$('#jisento-source-url').value = manifest.home_url;
@@ -552,8 +929,8 @@
 		hide($('#jisento-replace-warning'));
 		hide($('#jisento-preserve-options'));
 		hide($('#jisento-url-options'));
-		document.querySelectorAll('input[name="jisento_dest_mode"]').forEach(function (el) {
-			el.checked = false;
+		document.querySelectorAll('input[name="jisento_dest_mode"]').forEach(function (input) {
+			input.checked = false;
 		});
 		const confirmReplace = $('#jisento-confirm-replace');
 		if (confirmReplace) {
@@ -573,29 +950,21 @@
 					hide(modal);
 				});
 			});
-			$('#jisento-start-export').addEventListener('click', async function () {
+			const startExport = $('#jisento-start-export');
+			startExport.addEventListener('click', function () {
 				hide(modal);
-				try {
-					const job = await api.req('jobs', {
-						method: 'POST',
-						body: {
-							type: 'export',
-							options: {
-								mode: 'full',
-								backup_type: 'manual',
-								skip_cache: $('#jisento-skip-cache') ? $('#jisento-skip-cache').checked : true,
-								skip_backups: $('#jisento-skip-backups') ? $('#jisento-skip-backups').checked : true,
-								exclude_plugins: csv($('#jisento-exclude-plugins') ? $('#jisento-exclude-plugins').value : ''),
-								exclude_dirs: csv($('#jisento-exclude-dirs') ? $('#jisento-exclude-dirs').value : ''),
-								exclude_tables: csv($('#jisento-exclude-tables') ? $('#jisento-exclude-tables').value : '')
-							}
-						}
-					});
-					rememberJob(job);
-					runJob(job.job_id);
-				} catch (err) {
-					alert(err.message);
-				}
+				createJob({
+					type: 'export',
+					options: {
+						mode: 'full',
+						backup_type: 'manual',
+						skip_cache: $('#jisento-skip-cache') ? $('#jisento-skip-cache').checked : true,
+						skip_backups: $('#jisento-skip-backups') ? $('#jisento-skip-backups').checked : true,
+						exclude_plugins: csv($('#jisento-exclude-plugins') ? $('#jisento-exclude-plugins').value : ''),
+						exclude_dirs: csv($('#jisento-exclude-dirs') ? $('#jisento-exclude-dirs').value : ''),
+						exclude_tables: csv($('#jisento-exclude-tables') ? $('#jisento-exclude-tables').value : '')
+					}
+				}, startExport, open);
 			});
 		}
 		const bOpen = $('#jisento-open-backup');
@@ -609,18 +978,19 @@
 					hide(bModal);
 				});
 			});
-			$('#jisento-start-backup').addEventListener('click', async function () {
+			const startBackup = $('#jisento-start-backup');
+			startBackup.addEventListener('click', async function () {
 				hide(bModal);
 				const mode = (document.querySelector('input[name="jisento_backup_mode"]:checked') || {}).value || 'full';
+				bOpen.disabled = true;
 				try {
-					const job = await api.req('jobs', {
-						method: 'POST',
-						body: { type: 'export', options: { mode: mode, backup_type: 'manual', skip_cache: true, skip_backups: true } }
-					});
-					rememberJob(job);
-					runJob(job.job_id);
-				} catch (err) {
-					alert(err.message);
+					await createJob(
+						{ type: 'export', options: { mode: mode, backup_type: 'manual', skip_cache: true, skip_backups: true } },
+						startBackup,
+						bOpen
+					);
+				} finally {
+					bOpen.disabled = false;
 				}
 			});
 		}
@@ -637,48 +1007,58 @@
 				}
 			});
 		}
-		document.querySelectorAll('input[name="jisento_dest_mode"]').forEach(function (el) {
-			el.addEventListener('change', toggleModeUi);
+		document.querySelectorAll('input[name="jisento_dest_mode"]').forEach(function (input) {
+			input.addEventListener('change', toggleModeUi);
 		});
 		const start = $('#jisento-start-import');
 		if (start) {
-			start.addEventListener('click', async function () {
-				try {
-					const mode = destMode();
-					if (!mode) {
-						alert('Choose Replace Destination or Preserve Destination.');
-						return;
-					}
-					if (mode === 'replace' && !$('#jisento-confirm-replace').checked) {
-						alert('Please confirm that you understand this will replace the destination site.');
-						return;
-					}
-					if (!uploadedPackage) {
-						alert('Select or upload a package first.');
-						return;
-					}
-					const strategy = document.querySelector('input[name="jisento_plugin_strategy"]:checked');
-					const theme = document.querySelector('input[name="jisento_theme_strategy"]:checked');
-					const options = {
-						package: uploadedPackage,
-						destination_mode: mode,
-						confirm_replace: mode === 'replace' && $('#jisento-confirm-replace').checked,
-						safety_backup: false,
-						replace_urls: $('#jisento-replace-urls').checked,
-						source_url: $('#jisento-source-url').value,
-						dest_url: $('#jisento-dest-url').value,
-						plugin_strategy: strategy ? strategy.value : 'keep_destination',
-						theme_strategy: theme ? theme.value : 'keep_destination'
-					};
-					document.querySelectorAll('.jisento-preserve').forEach(function (cb) {
-						options[cb.getAttribute('data-key')] = cb.checked;
-					});
-					const job = await api.req('jobs', { method: 'POST', body: { type: 'import', options: options } });
-					rememberJob(job);
-					runJob(job.job_id);
-				} catch (err) {
-					alert(err.message);
+			start.addEventListener('click', function () {
+				const mode = destMode();
+				if (!mode) {
+					alert('Choose Replace Destination or Preserve Destination.');
+					return;
 				}
+				const confirmReplace = $('#jisento-confirm-replace');
+				if (mode === 'replace' && !(confirmReplace && confirmReplace.checked)) {
+					alert('Please confirm that you understand this will replace the destination site.');
+					return;
+				}
+				if (!uploadedPackage) {
+					alert('Select or upload a package first.');
+					return;
+				}
+				const strategy = document.querySelector('input[name="jisento_plugin_strategy"]:checked');
+				const theme = document.querySelector('input[name="jisento_theme_strategy"]:checked');
+				const replaceUrls = $('#jisento-replace-urls');
+				const sourceUrl = $('#jisento-source-url');
+				const destUrl = $('#jisento-dest-url');
+				const options = {
+					package: uploadedPackage,
+					destination_mode: mode,
+					confirm_replace: mode === 'replace' && !!(confirmReplace && confirmReplace.checked),
+					safety_backup: false,
+					replace_urls: replaceUrls ? replaceUrls.checked : true,
+					source_url: sourceUrl ? sourceUrl.value : '',
+					dest_url: destUrl ? destUrl.value : '',
+					plugin_strategy: strategy ? strategy.value : 'keep_destination',
+					theme_strategy: theme ? theme.value : 'keep_destination'
+				};
+				const replaceTables = $('#jisento-replace-tables');
+				if (replaceTables) {
+					options.replace_tables = csv(replaceTables.value);
+				}
+				const replaceGuids = $('#jisento-replace-guids');
+				if (replaceGuids) {
+					options.replace_guids = !!replaceGuids.checked;
+				}
+				const repair = $('#jisento-repair-placeholders');
+				options.repair_placeholders = !!(repair && repair.checked);
+				const engines = $('#jisento-restore-engines');
+				options.restore_original_engines = !!(engines && engines.checked);
+				document.querySelectorAll('.jisento-preserve').forEach(function (cb) {
+					options[cb.getAttribute('data-key')] = cb.checked;
+				});
+				createJob({ type: 'import', options: options }, start);
 			});
 		}
 		const useExisting = $('#jisento-use-existing');
@@ -701,7 +1081,7 @@
 						await showValidatedPackage(res.package, res.manifest);
 					}
 				} catch (err) {
-					alert(err.message);
+					alert(plainError(err, 'The package could not be validated.'));
 				}
 			});
 		}
@@ -714,33 +1094,33 @@
 		}
 		try {
 			const rows = await api.req('backups');
-			const available = rows.filter(function (r) {
-				return r.available;
-			});
+			const available = Array.isArray(rows)
+				? rows.filter(function (r) {
+					return r.available;
+				})
+				: [];
 			if (!available.length) {
-				box.innerHTML = '<p>No local backups found.</p>';
+				fill(box, el('p', null, 'No local backups found.'));
 				return;
 			}
-			box.innerHTML = available
-				.map(function (row) {
-					return (
-						'<label class="jisento-choice"><input type="radio" name="jisento_existing" value="' +
-						row.storage_key +
-						'" data-manifest="' +
-						encodeURIComponent(JSON.stringify(row.manifest || {})) +
-						'"> ' +
-						row.name +
-						' — ' +
-						row.size_label +
-						' (' +
-						row.type_label +
-						')</label>'
-					);
-				})
-				.join('');
+			fill(box, available.map(function (row) {
+				return el('label', { className: 'jisento-choice' }, [
+					el('input', {
+						type: 'radio',
+						name: 'jisento_existing',
+						value: row.storage_key || '',
+						'data-manifest': encodeURIComponent(JSON.stringify(row.manifest || {}))
+					}),
+					' ' + (row.name || '') + ' — ' + (row.size_label || '') + ' (' + (row.type_label || '') + ')'
+				]);
+			}));
 		} catch (err) {
-			box.innerHTML = '<p>Could not load backups: ' + err.message + '</p>';
+			fill(box, el('p', null, 'Could not load backups: ' + plainError(err, '')));
 		}
+	}
+
+	function messageRow(text) {
+		return el('tr', null, el('td', { colspan: '6' }, text));
 	}
 
 	async function loadBackups() {
@@ -750,74 +1130,81 @@
 		}
 		const rows = await api.req('backups');
 		const tbody = table.querySelector('tbody');
-		tbody.innerHTML = '';
 		if (!Array.isArray(rows)) {
-			tbody.innerHTML = '<tr><td colspan="6">Could not load backups.</td></tr>';
+			fill(tbody, messageRow('Could not load backups.'));
 			return;
 		}
 		if (!rows.length) {
-			tbody.innerHTML = '<tr><td colspan="6">No backups yet.</td></tr>';
+			fill(tbody, messageRow('No backups yet.'));
 			return;
 		}
-		rows.forEach(function (row) {
-			const tr = document.createElement('tr');
+		fill(tbody, rows.map(function (row) {
 			const dl = row.id
 				? window.jisentoDownloadBase + '&id=' + encodeURIComponent(row.id)
-				: window.jisentoDownloadBase + '&file=' + encodeURIComponent(row.storage_key || row.name);
-			let actions = '';
+				: window.jisentoDownloadBase + '&file=' + encodeURIComponent(row.storage_key || row.name || '');
+			const actions = [];
 			if (row.available) {
-				actions =
-					'<a class="button" href="' +
-					dl +
-					'">Download</a> ' +
-					'<button type="button" class="button" data-import="' +
-					row.storage_key +
-					'">Import</button> ';
+				actions.push(
+					el('a', { className: 'button', href: dl }, 'Download'),
+					' ',
+					el('button', {
+						type: 'button',
+						className: 'button',
+						onClick: function () {
+							window.location = 'admin.php?page=jisento-import&package=' + encodeURIComponent(row.storage_key || '');
+						}
+					}, 'Import'),
+					' '
+				);
 			} else {
-				actions = '<em>Backup unavailable</em> <button type="button" class="button" id="x" data-recreate="1">Recreate Backup</button> ';
+				actions.push(
+					el('em', null, 'Backup unavailable'),
+					' ',
+					el('button', {
+						type: 'button',
+						className: 'button',
+						onClick: function () {
+							const open = $('#jisento-open-backup');
+							if (open) {
+								open.click();
+							}
+						}
+					}, 'Recreate Backup'),
+					' '
+				);
 			}
-			actions += '<button type="button" class="button" data-del="' + (row.id || '') + '" data-name="' + row.name + '">Delete</button>';
-			tr.innerHTML =
-				'<td>' +
-				esc(row.name) +
-				'</td><td>' +
-				esc(row.type_label || '') +
-				'</td><td>' +
-				esc(row.size_label || '') +
-				'</td><td>' +
-				esc(row.date_label || '') +
-				'</td><td>' +
-				esc(row.status_label || (row.available ? 'Completed' : 'Missing / corrupted')) +
-				'</td><td>' +
-				actions +
-				'</td>';
-			tbody.appendChild(tr);
-		});
-		tbody.querySelectorAll('[data-del]').forEach(function (btn) {
-			btn.addEventListener('click', async function () {
-				if (!confirm('Delete this backup?')) {
-					return;
+			actions.push(el('button', {
+				type: 'button',
+				className: 'button',
+				onClick: async function (e) {
+					if (!confirm('Delete this backup?')) {
+						return;
+					}
+					const button = e.currentTarget;
+					button.disabled = true;
+					try {
+						await api.req('backups/delete', {
+							method: 'POST',
+							body: { id: row.id || '', name: row.name || '' }
+						});
+					} catch (err) {
+						button.disabled = false;
+						alert(plainError(err, 'The backup could not be deleted.'));
+						return;
+					}
+					loadBackups().catch(function () {});
 				}
-				await api.req('backups/delete', {
-					method: 'POST',
-					body: { id: btn.getAttribute('data-del'), name: btn.getAttribute('data-name') }
-				});
-				loadBackups();
-			});
-		});
-		tbody.querySelectorAll('[data-import]').forEach(function (btn) {
-			btn.addEventListener('click', function () {
-				window.location = 'admin.php?page=jisento-import&package=' + encodeURIComponent(btn.getAttribute('data-import'));
-			});
-		});
-		tbody.querySelectorAll('[data-recreate]').forEach(function (btn) {
-			btn.addEventListener('click', function () {
-				const open = $('#jisento-open-backup');
-				if (open) {
-					open.click();
-				}
-			});
-		});
+			}, 'Delete'));
+			const statusText = (row.status_label || (row.available ? 'Completed' : 'Missing / corrupted')) + (!row.available && row.reason ? ' — ' + row.reason : '');
+			return el('tr', null, [
+				el('td', null, row.name || ''),
+				el('td', null, row.type_label || ''),
+				el('td', null, row.size_label || ''),
+				el('td', null, row.date_label || ''),
+				el('td', null, statusText),
+				el('td', null, actions)
+			]);
+		}));
 	}
 
 	async function loadKeys() {
@@ -827,50 +1214,68 @@
 		}
 		const rows = await api.req('keys');
 		const tbody = table.querySelector('tbody');
-		tbody.innerHTML = '';
-		rows.forEach(function (row) {
-			const tr = document.createElement('tr');
-			tr.innerHTML =
-				'<td>' +
-				row.key_hint +
-				'</td><td>' +
-				row.status +
-				'</td><td>' +
-				row.expires_at +
-				'</td><td>' +
-				(row.status === 'active' ? '<button class="button" data-revoke="' + row.id + '">Revoke</button>' : '') +
-				'</td>';
-			tbody.appendChild(tr);
-		});
-		tbody.querySelectorAll('[data-revoke]').forEach(function (btn) {
-			btn.addEventListener('click', async function () {
-				await api.req('keys/' + btn.getAttribute('data-revoke') + '/revoke', { method: 'POST', body: {} });
-				loadKeys();
-			});
-		});
+		fill(tbody, (Array.isArray(rows) ? rows : []).map(function (row) {
+			return el('tr', null, [
+				el('td', null, row.key_hint == null ? '' : String(row.key_hint)),
+				el('td', null, row.status || ''),
+				el('td', null, row.expires_at || ''),
+				el('td', null, row.status === 'active'
+					? el('button', {
+						type: 'button',
+						className: 'button',
+						onClick: async function (e) {
+							e.currentTarget.disabled = true;
+							try {
+								await api.req('keys/' + encodeURIComponent(row.id) + '/revoke', { method: 'POST', body: {} });
+							} catch (err) {
+								alert(plainError(err, 'The key could not be revoked.'));
+							}
+							loadKeys().catch(function () {});
+						}
+					}, 'Revoke')
+					: null)
+			]);
+		}));
 	}
 
 	function bindKeys() {
 		const gen = $('#jisento-generate-key');
 		if (gen) {
 			gen.addEventListener('click', async function () {
-				const created = await api.req('keys', { method: 'POST', body: {} });
 				const box = $('#jisento-key-display');
+				gen.disabled = true;
+				let created;
+				try {
+					created = await api.req('keys', { method: 'POST', body: {} });
+				} catch (err) {
+					show(box);
+					fill(box, el('p', null, plainError(err, 'The key could not be generated.')));
+					return;
+				} finally {
+					gen.disabled = false;
+				}
 				show(box);
-				box.innerHTML =
-					'<div>Key:</div><div>' +
-					created.key +
-					'</div><p>Expires: ' +
-					created.expires_at +
-					'</p><p>Connection: <code>' +
-					created.connect +
-					'</code></p><button type="button" class="button" id="jisento-revoke-new">Revoke Key</button>';
-				$('#jisento-revoke-new').addEventListener('click', async function () {
-					await api.req('keys/' + created.id + '/revoke', { method: 'POST', body: {} });
-					box.textContent = 'Key revoked.';
-					loadKeys();
-				});
-				loadKeys();
+				fill(box, [
+					el('div', null, 'Key:'),
+					el('div', null, created.key || ''),
+					el('p', null, 'Expires: ' + (created.expires_at || '')),
+					el('p', null, ['Connection: ', el('code', null, created.connect || '')]),
+					el('button', {
+						type: 'button',
+						className: 'button',
+						id: 'jisento-revoke-new',
+						onClick: async function () {
+							try {
+								await api.req('keys/' + encodeURIComponent(created.id) + '/revoke', { method: 'POST', body: {} });
+								box.textContent = 'Key revoked.';
+							} catch (err) {
+								box.textContent = plainError(err, 'The key could not be revoked.');
+							}
+							loadKeys().catch(function () {});
+						}
+					}, 'Revoke Key')
+				]);
+				loadKeys().catch(function () {});
 			});
 		}
 		const test = $('#jisento-test-connection');
@@ -884,77 +1289,77 @@
 						method: 'POST',
 						body: { source_url: $('#jisento-connect-url').value, key: $('#jisento-connect-key').value }
 					});
-					box.innerHTML = (data.checks || [])
-						.map(function (c) {
-							return '<p>' + (c.ok ? '✓' : '✗') + ' ' + c.label + (c.detail ? ' — ' + c.detail : '') + '</p>';
-						})
-						.join('');
+					const lines = (data.checks || []).map(function (c) {
+						return el('p', null, (c.ok ? '✓' : '✗') + ' ' + (c.label || '') + (c.detail ? ' — ' + c.detail : ''));
+					});
 					if (data.ok) {
-						box.innerHTML += '<p><strong>Connection OK. You can continue to migration.</strong></p>';
+						lines.push(el('p', null, el('strong', null, 'Connection OK. You can continue to migration.')));
 					}
+					fill(box, lines);
 				} catch (err) {
-					box.textContent = err.message;
+					box.textContent = plainError(err, 'The connection test failed.');
 				}
 			});
 		}
 		const connect = $('#jisento-connect');
 		if (connect) {
 			connect.addEventListener('click', async function () {
+				let data;
 				try {
-					const data = await api.req('connect', {
+					data = await api.req('connect', {
 						method: 'POST',
 						body: { source_url: $('#jisento-connect-url').value, key: $('#jisento-connect-key').value }
 					});
-					remoteSession = data;
-					const info = data.source || {};
-					const box = $('#jisento-source-info');
-					show(box);
-					box.innerHTML =
-						'<h3>Source Site</h3>' +
-						'<p>Domain: ' +
-						(info.domain || '') +
-						'</p><p>WordPress: ' +
-						(info.wordpress_version || '') +
-						'</p><p>PHP: ' +
-						(info.php_version || '') +
-						'</p><p>Database: ' +
-						(info.database || '') +
-						'</p><p>Files: ' +
-						(info.files || '') +
-						'</p><p>Total: ' +
-						(info.total || '') +
-						'</p>' +
-						'<div class="jisento-grid">' +
-						'<label class="jisento-mode-card"><input type="radio" name="jisento_dest_mode" value="replace"> <strong>Completely Replace Destination</strong></label>' +
-						'<label class="jisento-mode-card"><input type="radio" name="jisento_dest_mode" value="preserve" checked> <strong>Preserve Existing Destination</strong></label>' +
-						'</div><p><button type="button" class="button button-primary" id="jisento-continue-remote">Continue to Migration</button></p>';
-					$('#jisento-continue-remote').addEventListener('click', async function () {
-						const mode = destMode();
-						if (mode === 'replace' && !confirm('This will replace the destination site. Continue?')) {
-							return;
-						}
-						const job = await api.req('jobs', {
-							method: 'POST',
-							body: {
-								type: 'receive',
-								options: {
-									destination_mode: mode,
-									confirm_replace: mode === 'replace',
-									safety_backup: false,
-									replace_urls: true,
-									source_url: info.home_url || $('#jisento-connect-url').value,
-									dest_url: jisentoAdmin.home,
-									session_id: data.session_id,
-									token: data.token
-								}
-							}
-						});
-						rememberJob(job);
-						runJob(job.job_id);
-					});
 				} catch (err) {
-					alert(err.message);
+					alert(plainError(err, 'The connection failed.'));
+					return;
 				}
+				remoteSession = data;
+				const info = data.source || {};
+				const box = $('#jisento-source-info');
+				show(box);
+				const continueRemote = el('button', { type: 'button', className: 'button button-primary', id: 'jisento-continue-remote' }, 'Continue to Migration');
+				continueRemote.addEventListener('click', function () {
+					const mode = destMode();
+					if (mode === 'replace' && !confirm('This will replace the destination site. Continue?')) {
+						return;
+					}
+					createJob({
+						type: 'receive',
+						options: {
+							destination_mode: mode,
+							confirm_replace: mode === 'replace',
+							safety_backup: false,
+							replace_urls: true,
+							source_url: info.home_url || $('#jisento-connect-url').value,
+							dest_url: jisentoAdmin.home,
+							session_id: data.session_id,
+							token: data.token
+						}
+					}, continueRemote);
+				});
+				fill(box, [
+					el('h3', null, 'Source Site'),
+					el('p', null, 'Domain: ' + (info.domain || '')),
+					el('p', null, 'WordPress: ' + (info.wordpress_version || '')),
+					el('p', null, 'PHP: ' + (info.php_version || '')),
+					el('p', null, 'Database: ' + (info.database || '')),
+					el('p', null, 'Files: ' + (info.files || '')),
+					el('p', null, 'Total: ' + (info.total || '')),
+					el('div', { className: 'jisento-grid' }, [
+						el('label', { className: 'jisento-mode-card' }, [
+							el('input', { type: 'radio', name: 'jisento_dest_mode', value: 'replace' }),
+							' ',
+							el('strong', null, 'Completely Replace Destination')
+						]),
+						el('label', { className: 'jisento-mode-card' }, [
+							el('input', { type: 'radio', name: 'jisento_dest_mode', value: 'preserve', checked: true }),
+							' ',
+							el('strong', null, 'Preserve Existing Destination')
+						])
+					]),
+					el('p', null, continueRemote)
+				]);
 			});
 		}
 		const send = $('#jisento-open-key-send');
@@ -977,14 +1382,18 @@
 			form.addEventListener('submit', async function (e) {
 				e.preventDefault();
 				const data = {};
-				form.querySelectorAll('input, select').forEach(function (el) {
-					if (!el.name) {
+				form.querySelectorAll('input, select').forEach(function (input) {
+					if (!input.name) {
 						return;
 					}
-					data[el.name] = el.type === 'checkbox' ? el.checked : el.value;
+					data[input.name] = input.type === 'checkbox' ? input.checked : input.value;
 				});
-				await api.req('settings', { method: 'POST', body: data });
-				alert('Settings saved.');
+				try {
+					await api.req('settings', { method: 'POST', body: data });
+					alert('Settings saved.');
+				} catch (err) {
+					alert(plainError(err, 'Settings could not be saved.'));
+				}
 			});
 		}
 		const diag = $('#jisento-run-diagnostics');
@@ -994,13 +1403,15 @@
 				box.textContent = 'Running…';
 				try {
 					const data = await api.req('diagnostics');
-					box.innerHTML = (data.items || [])
-						.map(function (i) {
-							return '<p>' + (i.ok ? '✓' : '✗') + ' <strong>' + i.label + ':</strong> ' + i.value + '</p>';
-						})
-						.join('');
+					fill(box, (data.items || []).map(function (i) {
+						return el('p', null, [
+							(i.ok ? '✓' : '✗') + ' ',
+							el('strong', null, (i.label || '') + ':'),
+							' ' + (i.value == null ? '' : String(i.value))
+						]);
+					}));
 				} catch (err) {
-					box.textContent = err.message;
+					box.textContent = plainError(err, 'Diagnostics failed.');
 				}
 			});
 		}
@@ -1014,11 +1425,12 @@
 		loadBackups().catch(function (err) {
 			const table = $('#jisento-backups-table');
 			if (table && table.querySelector('tbody')) {
-				table.querySelector('tbody').innerHTML = '<tr><td colspan="6">' + err.message + '</td></tr>';
+				fill(table.querySelector('tbody'), messageRow(plainError(err, 'Could not load backups.')));
 			}
 		});
 		loadKeys().catch(function () {});
 		loadExistingBackups().catch(function () {});
+		resumeActiveJob();
 		const params = new URLSearchParams(window.location.search);
 		if (params.get('package') && $('#jisento-dest-mode')) {
 			api.req('packages/validate', { method: 'POST', body: { package: params.get('package') } })
@@ -1026,7 +1438,7 @@
 					return showValidatedPackage(res.package, res.manifest);
 				})
 				.catch(function (err) {
-					alert(err.message);
+					alert(plainError(err, 'The package could not be validated.'));
 				});
 		}
 	});

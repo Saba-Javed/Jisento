@@ -64,24 +64,46 @@ class Session_Store {
 			$wpdb->update( $wpdb->prefix . 'jisento_sessions', array( 'status' => 'expired' ), array( 'id' => $row->id ) );
 			return new \WP_Error( 'jisento_session_expired', __( 'The migration session has expired.', 'jisento' ), array( 'status' => 410 ) );
 		}
-		if ( ! hash_equals( $row->token_hash, $this->hash( $token ) ) ) {
+		if ( ! is_string( $token ) || '' === $token || ! hash_equals( $row->token_hash, $this->hash( $token ) ) ) {
 			return new \WP_Error( 'jisento_session', __( 'Invalid migration session.', 'jisento' ), array( 'status' => 401 ) );
 		}
-		$this->touch( $row->session_id );
+		// The lifetime is fixed at creation; using the session never extends it.
 		return $row;
 	}
 
-	public function touch( $session_id, $extend = 7200 ) {
+	/**
+	 * @param object $row Session row.
+	 * @return string Export job this session created, or ''.
+	 */
+	public static function bound_job( $row ) {
+		$meta = isset( $row->meta_json ) ? json_decode( (string) $row->meta_json, true ) : null;
+		return ( is_array( $meta ) && ! empty( $meta['export_job'] ) ) ? (string) $meta['export_job'] : '';
+	}
+
+	/**
+	 * Bind the session to the one export job it may drive. A session can only be bound once.
+	 *
+	 * @param object $row    Session row.
+	 * @param string $job_id Export job.
+	 * @return bool
+	 */
+	public function bind_job( $row, $job_id ) {
 		global $wpdb;
-		$exp = get_date_from_gmt( gmdate( 'Y-m-d H:i:s', time() + 28800 ) );
-		$wpdb->update(
-			$wpdb->prefix . 'jisento_sessions',
-			array( 'expires_at' => $exp ),
-			array(
-				'session_id' => $session_id,
-				'status'     => 'active',
+		if ( '' !== self::bound_job( $row ) ) {
+			return false;
+		}
+		$meta = json_decode( (string) $row->meta_json, true );
+		$meta = is_array( $meta ) ? $meta : array();
+		$meta['export_job'] = (string) $job_id;
+		$updated = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$wpdb->prefix}jisento_sessions SET meta_json = %s WHERE session_id = %s AND meta_json = %s",
+				wp_json_encode( $meta ),
+				$row->session_id,
+				(string) $row->meta_json
 			)
 		);
+		return 1 === (int) $updated;
 	}
 
 	public function revoke( $session_id ) {

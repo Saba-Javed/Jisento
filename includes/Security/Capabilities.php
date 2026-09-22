@@ -27,6 +27,10 @@ class Capabilities {
 	}
 
 	public static function current_user_can() {
+		// On multisite, a site administrator has manage_options but must not be able to replace network tables.
+		if ( function_exists( 'is_multisite' ) && is_multisite() ) {
+			return function_exists( 'is_super_admin' ) && is_super_admin();
+		}
 		return current_user_can( self::CAP ) || current_user_can( 'manage_options' );
 	}
 }

@@ -1,6 +1,10 @@
 <?php
 /**
- * Streaming SQL importer with destination prefix rewriting.
+ * Streaming SQL restore into shadow tables.
+ *
+ * Every table from the package is restored into "<table>__js". Live tables are only
+ * touched by swap_shadows(), which renames all restored tables in one RENAME TABLE.
+ * A statement, its ledger row and the resume cursor commit in one transaction.
  *
  * @package Jisento\Migration
  */
@@ -13,10 +17,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Database_Importer {
 
+	const SHADOW_SUFFIX  = '__js';
+	const RETIRED_SUFFIX = '__jo';
+
+	/**
+	 * Tables whose row values must never appear in an error message or log.
+	 */
+	const SENSITIVE_TABLE_PATTERN = '/(^|_)(users|usermeta|sessions|woocommerce_sessions|woocommerce_api_keys|wc_webhooks|application_passwords)$/i';
+
 	/**
 	 * @var \wpdb
 	 */
 	private $wpdb;
+
+	/**
+	 * @var \mysqli
+	 */
+	private $dbh;
 
 	/**
 	 * @var string
@@ -29,43 +46,69 @@ class Database_Importer {
 	private $dest_prefix;
 
 	/**
-	 * @var array
-	 */
-	private $skip_tables = array();
-
-	/**
-	 * @var bool
-	 */
-	private $replace = false;
-
-	/**
-	 * Replace mode writes into shadow tables and swaps them only after the dump finishes.
+	 * Destination table name => true for tables restored from the package.
 	 *
-	 * @var bool
+	 * @var array<string,bool>|null Null restores every table.
 	 */
-	private $shadow = false;
+	private $restore = null;
 
 	/**
-	 * Live table name => shadow table name.
+	 * Destination table name => true for package tables that stay as they are on the destination.
 	 *
-	 * @var array<string,string>
+	 * @var array<string,bool>
 	 */
-	private $shadow_map = array();
-
-	/**
-	 * @var array
-	 */
-	private $cleared = array();
-
-	/**
-	 * @var int
-	 */
-	private $repeated_keys = 0;
+	private $keep = array();
 
 	/**
 	 * @var string
 	 */
-	private $job_id = '';
+	private $job_id = 'import';
+
+	/**
+	 * v1 packages quoted BINARY values and may contain wpdb placeholder tokens.
+	 *
+	 * @var bool
+	 */
+	private $legacy = false;
+
+	/**
+	 * Placeholder tokens to turn back into "%" (explicit opt-in only).
+	 *
+	 * @var string[]
+	 */
+	private $placeholder_tokens = array();
+
+	/**
+	 * Session variables the dump asked for, replayed at the start of each request.
+	 *
+	 * @var array<string,string>
+	 */
+	private $session = array();
+
+	/**
+	 * @var array<string,string>
+	 */
+	private $saved_session = array();
+
+	/**
+	 * @var string[]|null
+	 */
+	private $collations = null;
+
+	/**
+	 * @var string[]|null
+	 */
+	private $charsets = null;
+
+	/**
+	 * @var bool|null
+	 */
+	private $mariadb = null;
+
+	/**
+	 * @var array Notes collected during the chunk: engine conversions, collation mappings, constraint renames.
+	 */
+	private $notes = array();
 
 	/**
 	 * @var int
@@ -73,64 +116,9 @@ class Database_Importer {
 	private $statement_no = 0;
 
 	/**
-	 * @var resource|null
+	 * @var int
 	 */
-	private $cursor_handle = null;
-
-	/**
-	 * @var string
-	 */
-	private $sql_path = '';
-
-	/**
-	 * @var callable|null
-	 */
-	private $progress = null;
-
-	/**
-	 * @var callable|null
-	 */
-	private $after_statement = null;
-
-	/**
-	 * @var bool
-	 */
-	private $txn_open = false;
-
-	/**
-	 * @var bool
-	 */
-	private $cursor_ready = false;
-
-	/**
-	 * @var array
-	 */
-	private $pk_cache = array();
-
-	/**
-	 * @var array{offset:int,piece:int}
-	 */
-	private $stmt_at = array(
-		'offset' => 0,
-		'piece'  => 0,
-	);
-
-	/**
-	 * @var string
-	 */
-	private $lookup_note = '';
-
-	/**
-	 * @var string
-	 */
-	private $stmt_source = '';
-
-	/**
-	 * SQL bytes passed to the driver, after binary literals are rewritten.
-	 *
-	 * @var string
-	 */
-	private $executed_sql = '';
+	private $placeholders_repaired = 0;
 
 	/**
 	 * @var array<string,array<string,bool>>
@@ -138,965 +126,1078 @@ class Database_Importer {
 	private $binary_columns = array();
 
 	/**
+	 * @var callable|null Test hook: called with a point name. It may throw to simulate a killed worker.
+	 */
+	private $fault = null;
+
+	/**
+	 * @var bool
+	 */
+	private $tables_ready = false;
+
+	/**
 	 * @var string
 	 */
-	private $repeated_note = '';
+	private $last_errno = '0';
 
-	public function set_job_id( $job_id ) {
-		$this->job_id = (string) $job_id;
+	/**
+	 * @var string
+	 */
+	private $last_error = '';
+
+	/**
+	 * @var Sql_Escaper
+	 */
+	private $escaper;
+
+	/**
+	 * @param string $source_prefix Prefix in the package.
+	 * @param string $dest_prefix   Prefix on this site.
+	 * @param array  $options       job_id, legacy, placeholder_tokens, restore (list), keep (list), session (array).
+	 */
+	public function __construct( $source_prefix, $dest_prefix, array $options = array() ) {
+		global $wpdb;
+		$this->wpdb          = $wpdb;
+		$this->dbh           = ( isset( $wpdb->dbh ) && $wpdb->dbh instanceof \mysqli ) ? $wpdb->dbh : null;
+		$this->source_prefix = (string) $source_prefix;
+		$this->dest_prefix   = (string) $dest_prefix;
+		$this->escaper       = new Sql_Escaper( null );
+		if ( ! empty( $options['job_id'] ) ) {
+			$this->job_id = preg_replace( '/[^A-Za-z0-9_]/', '', (string) $options['job_id'] );
+		}
+		$this->legacy = ! empty( $options['legacy'] );
+		if ( ! empty( $options['placeholder_tokens'] ) && is_array( $options['placeholder_tokens'] ) ) {
+			foreach ( $options['placeholder_tokens'] as $token ) {
+				if ( is_string( $token ) && preg_match( '/^\{[a-f0-9]{64}\}$/', $token ) ) {
+					$this->placeholder_tokens[] = $token;
+				}
+			}
+		}
+		if ( isset( $options['restore'] ) && is_array( $options['restore'] ) ) {
+			$this->restore = array();
+			foreach ( $options['restore'] as $table ) {
+				$this->restore[ (string) $table ] = true;
+			}
+		}
+		if ( isset( $options['keep'] ) && is_array( $options['keep'] ) ) {
+			foreach ( $options['keep'] as $table ) {
+				$this->keep[ (string) $table ] = true;
+			}
+		}
+		if ( isset( $options['session'] ) && is_array( $options['session'] ) ) {
+			$this->session = $options['session'];
+		}
+		if ( isset( $options['statement_no'] ) ) {
+			$this->statement_no = (int) $options['statement_no'];
+		}
 	}
 
-	public function set_statement_no( $number ) {
-		$this->statement_no = (int) $number;
+	public function set_fault_hook( $callback ) {
+		$this->fault = is_callable( $callback ) ? $callback : null;
+	}
+
+	public function session() {
+		return $this->session;
 	}
 
 	public function statement_no() {
 		return (int) $this->statement_no;
 	}
 
-	public function set_progress( $progress ) {
-		$this->progress = is_callable( $progress ) ? $progress : null;
-	}
-
-	public function set_after_statement( $callback ) {
-		$this->after_statement = is_callable( $callback ) ? $callback : null;
-	}
-
-	public function __construct( $source_prefix, $dest_prefix, array $skip_tables = array() ) {
-		global $wpdb;
-		$this->wpdb          = $wpdb;
-		$this->source_prefix = $source_prefix;
-		$this->dest_prefix   = $dest_prefix;
-		$this->skip_tables   = $skip_tables;
-	}
-
-	public function use_replace( $replace ) {
-		$this->replace = (bool) $replace;
-	}
-
-	public function use_shadow( $shadow ) {
-		$this->shadow = (bool) $shadow && $this->replace;
-	}
-
-	public function set_cleared( array $tables ) {
-		$this->cleared = array();
-		foreach ( $tables as $table ) {
-			$this->cleared[ (string) $table ] = true;
+	/**
+	 * @return true|\WP_Error
+	 */
+	public function assert_driver() {
+		if ( ! $this->dbh ) {
+			return new \WP_Error( 'jisento_driver', __( 'The database restore needs the mysqli driver, but $wpdb is not using a mysqli connection (a db.php drop-in may replace it).', 'jisento' ) . $this->job_suffix() );
 		}
+		return true;
 	}
 
-	public function cleared_tables() {
-		return array_keys( $this->cleared );
-	}
+	/* ------------------------------------------------------------------
+	 * Names
+	 * ------------------------------------------------------------------ */
 
-	public function repeated_keys() {
-		return (int) $this->repeated_keys;
+	/**
+	 * A shadow name stays a legal identifier and never replaces the live table in place.
+	 *
+	 * @param string $table Live table name.
+	 * @return string
+	 */
+	public static function shadow_name( $table ) {
+		return self::suffixed( $table, self::SHADOW_SUFFIX, '' );
 	}
 
 	/**
-	 * Process SQL from a file starting at byte offset. Returns new offset and done flag.
-	 *
-	 * @return array{offset:int,done:bool,statements:int,error?:string}
+	 * @param string $table Live table name.
+	 * @return string
 	 */
-	public function import_chunk( $sql_path, $byte_offset, $time_budget = 12, $max_statements = 800, $piece_index = 0 ) {
-		$handle = fopen( $sql_path, 'rb' );
-		if ( ! $handle ) {
-			return new \WP_Error( 'jisento_sql_open', __( 'Unable to open the database dump.', 'jisento' ) );
+	public static function retired_name( $table ) {
+		return self::suffixed( $table, self::RETIRED_SUFFIX, 'old:' );
+	}
+
+	/**
+	 * InnoDB constraint names are unique per database, so the shadow copy needs its own.
+	 *
+	 * @param string $name Constraint name.
+	 * @return string
+	 */
+	public static function shadow_constraint_name( $name ) {
+		return self::suffixed( $name, self::SHADOW_SUFFIX, 'fk:' );
+	}
+
+	private static function suffixed( $name, $suffix, $salt ) {
+		$name = str_replace( '`', '', (string) $name );
+		if ( strlen( $name . $suffix ) <= 64 ) {
+			return $name . $suffix;
 		}
+		$hash = substr( md5( $salt . $name ), 0, 10 );
+		$keep = 64 - strlen( $suffix ) - 1 - strlen( $hash );
+		return substr( $name, 0, max( 1, $keep ) ) . '_' . $hash . $suffix;
+	}
 
-		fseek( $handle, (int) $byte_offset );
-		$this->wpdb->query( 'SET FOREIGN_KEY_CHECKS=0' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$this->wpdb->query( "SET SQL_MODE='NO_AUTO_VALUE_ON_ZERO'" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$this->use_binary_client();
+	/**
+	 * Rename a package table name from the source prefix to the destination prefix.
+	 *
+	 * @param string $name Table name from the dump.
+	 * @return string
+	 */
+	public function dest_table( $name ) {
+		$name = (string) $name;
+		if ( '' !== $this->source_prefix && $this->source_prefix !== $this->dest_prefix && 0 === strpos( $name, $this->source_prefix ) ) {
+			return $this->dest_prefix . substr( $name, strlen( $this->source_prefix ) );
+		}
+		return $name;
+	}
 
-		$deadline    = microtime( true ) + max( 2, (float) $time_budget );
-		$pending     = '';
-		$statements  = 0;
-		$last_table  = '';
-		$creates     = 0;
-		$started     = microtime( true );
-		$piece_index = (int) $piece_index;
-		$this->sql_path = $sql_path;
-		$this->load_shadow_map();
-		$this->ensure_cursor_table();
+	/**
+	 * @param string $table Destination table name.
+	 * @return bool
+	 */
+	public function will_restore( $table ) {
+		if ( isset( $this->keep[ $table ] ) ) {
+			return false;
+		}
+		if ( null === $this->restore ) {
+			return true;
+		}
+		return isset( $this->restore[ $table ] );
+	}
 
-		while ( ! feof( $handle ) ) {
-			if ( $statements > 0 && ( microtime( true ) >= $deadline || $statements >= $max_statements ) ) {
-				break;
+	/* ------------------------------------------------------------------
+	 * Ledger and cursor
+	 * ------------------------------------------------------------------ */
+
+	public static function cursor_table() {
+		global $wpdb;
+		return $wpdb->prefix . 'jisento_import_cursor';
+	}
+
+	public static function applied_table() {
+		global $wpdb;
+		return $wpdb->prefix . 'jisento_import_applied';
+	}
+
+	/**
+	 * Tables from 1.2.x have no segment column. Their rows only belong to jobs that this
+	 * version cannot resume, so they are recreated with the new layout.
+	 *
+	 * @return true|\WP_Error
+	 */
+	public function ensure_tables() {
+		if ( $this->tables_ready ) {
+			return true;
+		}
+		$cursor  = self::cursor_table();
+		$applied = self::applied_table();
+		foreach ( array( $cursor, $applied ) as $table ) {
+			$cols = $this->rows( 'SHOW COLUMNS FROM `' . $table . '`' );
+			if ( is_array( $cols ) && $cols ) {
+				$names = array();
+				foreach ( $cols as $col ) {
+					$names[] = $col['Field'];
+				}
+				if ( ! in_array( 'segment', $names, true ) && ! $this->exec_sql( 'DROP TABLE `' . $table . '`' ) ) {
+					return $this->driver_error( 'prepare restore log', $table );
+				}
 			}
+		}
+		$ok = $this->exec_sql(
+			'CREATE TABLE IF NOT EXISTS `' . $cursor . '` (
+				job_id varchar(64) NOT NULL,
+				segment int(10) unsigned NOT NULL DEFAULT 0,
+				byte_offset bigint(20) unsigned NOT NULL DEFAULT 0,
+				piece_index int(10) unsigned NOT NULL DEFAULT 0,
+				statement_no int(10) unsigned NOT NULL DEFAULT 0,
+				PRIMARY KEY (job_id)
+			) ENGINE=InnoDB'
+		) && $this->exec_sql(
+			'CREATE TABLE IF NOT EXISTS `' . $applied . '` (
+				job_id varchar(64) NOT NULL,
+				segment int(10) unsigned NOT NULL,
+				byte_offset bigint(20) unsigned NOT NULL,
+				piece_index int(10) unsigned NOT NULL,
+				statement_no int(10) unsigned NOT NULL DEFAULT 0,
+				PRIMARY KEY (job_id, segment, byte_offset, piece_index)
+			) ENGINE=InnoDB'
+		);
+		if ( ! $ok ) {
+			return $this->driver_error( 'prepare restore log', $cursor );
+		}
+		$this->tables_ready = true;
+		return true;
+	}
 
-			$read = fread( $handle, 262144 );
-			if ( false === $read || '' === $read ) {
-				break;
+	/**
+	 * The committed resume point. This row is the only source of truth for where the restore is.
+	 *
+	 * @return array{segment:int,offset:int,piece_index:int,statement_no:int}|null
+	 */
+	public function read_cursor() {
+		$ready = $this->ensure_tables();
+		if ( is_wp_error( $ready ) ) {
+			return null;
+		}
+		$rows = $this->rows( 'SELECT segment, byte_offset, piece_index, statement_no FROM `' . self::cursor_table() . "` WHERE job_id = '" . $this->job_id . "'" );
+		if ( ! is_array( $rows ) || ! $rows ) {
+			return null;
+		}
+		return array(
+			'segment'      => (int) $rows[0]['segment'],
+			'offset'       => (int) $rows[0]['byte_offset'],
+			'piece_index'  => (int) $rows[0]['piece_index'],
+			'statement_no' => (int) $rows[0]['statement_no'],
+		);
+	}
+
+	/**
+	 * @return true|\WP_Error
+	 */
+	public function start_segment( $segment ) {
+		$ready = $this->ensure_tables();
+		if ( is_wp_error( $ready ) ) {
+			return $ready;
+		}
+		if ( ! $this->write_cursor( (int) $segment, 0, 0 ) ) {
+			return $this->driver_error( 'save resume point', self::cursor_table() );
+		}
+		return true;
+	}
+
+	/**
+	 * Remove this job's ledger and cursor rows. Called when a job finishes, fails or is cancelled.
+	 *
+	 * @param string $job_id Job id.
+	 */
+	public static function forget_job( $job_id ) {
+		global $wpdb;
+		$job_id = preg_replace( '/[^A-Za-z0-9_]/', '', (string) $job_id );
+		if ( '' === $job_id || ! isset( $wpdb ) ) {
+			return;
+		}
+		foreach ( array( self::cursor_table(), self::applied_table() ) as $table ) {
+			$found = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+			if ( $found === $table ) {
+				$wpdb->query( $wpdb->prepare( 'DELETE FROM `' . $table . '` WHERE job_id = %s', $job_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			}
-			$pending .= $read;
+		}
+	}
 
-			if ( strlen( $pending ) > 33554432 && null === Sql_Scanner::statement_end( $pending ) ) {
-				fclose( $handle );
-				$this->restore_connection_charset();
-				return new \WP_Error( 'jisento_sql_large', __( 'A single SQL statement is larger than 32MB, so it cannot be restored safely. Export the package again with this version of Jisento.', 'jisento' ) . $this->job_suffix() );
+	private function write_cursor( $segment, $offset, $piece ) {
+		return $this->exec_sql(
+			sprintf(
+				'INSERT INTO `%1$s` (job_id, segment, byte_offset, piece_index, statement_no) VALUES (\'%2$s\', %3$d, %4$d, %5$d, %6$d) ON DUPLICATE KEY UPDATE segment = %3$d, byte_offset = %4$d, piece_index = %5$d, statement_no = %6$d',
+				self::cursor_table(),
+				$this->job_id,
+				(int) $segment,
+				(int) $offset,
+				(int) $piece,
+				(int) $this->statement_no
+			)
+		);
+	}
+
+	private function was_applied( $segment, $offset, $piece ) {
+		$found = $this->scalar(
+			sprintf(
+				'SELECT statement_no FROM `%s` WHERE job_id = \'%s\' AND segment = %d AND byte_offset = %d AND piece_index = %d',
+				self::applied_table(),
+				$this->job_id,
+				(int) $segment,
+				(int) $offset,
+				(int) $piece
+			)
+		);
+		return null !== $found;
+	}
+
+	private function write_ledger( $segment, $offset, $piece ) {
+		return $this->exec_sql(
+			sprintf(
+				'INSERT INTO `%s` (job_id, segment, byte_offset, piece_index, statement_no) VALUES (\'%s\', %d, %d, %d, %d)',
+				self::applied_table(),
+				$this->job_id,
+				(int) $segment,
+				(int) $offset,
+				(int) $piece,
+				(int) $this->statement_no
+			)
+		);
+	}
+
+	/* ------------------------------------------------------------------
+	 * Session
+	 * ------------------------------------------------------------------ */
+
+	private function open_session() {
+		$row = $this->rows( 'SELECT @@SESSION.sql_mode AS sql_mode, @@SESSION.foreign_key_checks AS fk, @@SESSION.time_zone AS tz' );
+		$this->saved_session = is_array( $row ) && $row ? $row[0] : array();
+		$names = isset( $this->session['names'] ) ? $this->session['names'] : 'utf8mb4';
+		if ( ! mysqli_set_charset( $this->dbh, $names ) ) {
+			return $this->driver_error( 'set connection charset ' . $names, '' );
+		}
+		$mode = isset( $this->session['sql_mode'] ) ? $this->session['sql_mode'] : 'NO_AUTO_VALUE_ON_ZERO';
+		$sets = array(
+			'SET SESSION FOREIGN_KEY_CHECKS = 0',
+			"SET SESSION sql_mode = '" . Sql_Escaper::escape_manual( $mode ) . "'",
+		);
+		if ( isset( $this->session['time_zone'] ) ) {
+			$sets[] = "SET SESSION time_zone = '" . Sql_Escaper::escape_manual( $this->session['time_zone'] ) . "'";
+		}
+		foreach ( $sets as $sql ) {
+			if ( ! $this->exec_sql( $sql ) ) {
+				return $this->driver_error( 'prepare restore session', '' );
 			}
+		}
+		return true;
+	}
 
-			while ( '' !== $pending ) {
-				$split = Sql_Scanner::next_statement( $pending );
-				if ( null === $split ) {
+	private function close_session() {
+		if ( ! $this->dbh ) {
+			return;
+		}
+		$this->exec_sql( 'ROLLBACK' );
+		if ( isset( $this->saved_session['sql_mode'] ) ) {
+			$this->exec_sql( "SET SESSION sql_mode = '" . Sql_Escaper::escape_manual( $this->saved_session['sql_mode'] ) . "'" );
+		}
+		if ( isset( $this->saved_session['fk'] ) ) {
+			$this->exec_sql( 'SET SESSION FOREIGN_KEY_CHECKS = ' . ( (int) $this->saved_session['fk'] ? 1 : 0 ) );
+		}
+		if ( isset( $this->saved_session['tz'] ) ) {
+			$this->exec_sql( "SET SESSION time_zone = '" . Sql_Escaper::escape_manual( $this->saved_session['tz'] ) . "'" );
+		}
+		if ( method_exists( $this->wpdb, 'set_charset' ) ) {
+			$this->wpdb->set_charset( $this->dbh );
+		}
+	}
+
+	/* ------------------------------------------------------------------
+	 * Restore
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * Restore statements from one segment, starting at the committed cursor.
+	 *
+	 * @param int    $segment     Segment index.
+	 * @param string $path        Extracted segment file.
+	 * @param float  $time_budget Seconds.
+	 * @param int    $max_statements Maximum statements in this call.
+	 * @return array|\WP_Error
+	 */
+	public function import_chunk( $segment, $path, $time_budget = 12, $max_statements = 800 ) {
+		$driver = $this->assert_driver();
+		if ( is_wp_error( $driver ) ) {
+			return $driver;
+		}
+		$ready = $this->ensure_tables();
+		if ( is_wp_error( $ready ) ) {
+			return $ready;
+		}
+		$cursor = $this->read_cursor();
+		if ( ! $cursor || (int) $cursor['segment'] !== (int) $segment ) {
+			return new \WP_Error( 'jisento_sql_cursor', sprintf( __( 'The restore cursor is not on segment %d. The restore stopped instead of guessing where to continue.', 'jisento' ), (int) $segment ) . $this->job_suffix() );
+		}
+		$this->statement_no = max( $this->statement_no, (int) $cursor['statement_no'] );
+		$handle = fopen( $path, 'rb' );
+		if ( ! $handle ) {
+			return new \WP_Error( 'jisento_sql_open', sprintf( __( 'Unable to open database segment %s.', 'jisento' ), basename( $path ) ) . $this->job_suffix() );
+		}
+		clearstatcache( true, $path );
+		$size = (int) filesize( $path );
+		if ( (int) $cursor['offset'] > $size || 0 !== fseek( $handle, (int) $cursor['offset'] ) ) {
+			fclose( $handle );
+			return new \WP_Error( 'jisento_sql_cursor', sprintf( __( 'The restore cursor (byte %1$d) is past the end of segment %2$s (%3$d bytes).', 'jisento' ), (int) $cursor['offset'], basename( $path ), $size ) . $this->job_suffix() );
+		}
+		$opened = $this->open_session();
+		if ( is_wp_error( $opened ) ) {
+			fclose( $handle );
+			return $opened;
+		}
+		$this->notes                 = array();
+		$this->placeholders_repaired = 0;
+		$result = $this->run_segment( $handle, (int) $segment, $cursor, $size, $time_budget, $max_statements );
+		fclose( $handle );
+		$this->close_session();
+		return $result;
+	}
+
+	private function run_segment( $handle, $segment, array $cursor, $size, $time_budget, $max_statements ) {
+		$started      = microtime( true );
+		$deadline     = $started + max( 1, (float) $time_budget );
+		$buffer_start = (int) $cursor['offset'];
+		$first_piece  = (int) $cursor['piece_index'];
+		$pending      = '';
+		$statements   = 0;
+		$last_table   = '';
+		$eof          = false;
+		while ( true ) {
+			$split = Sql_Scanner::next_statement( $pending );
+			if ( null === $split ) {
+				if ( $eof ) {
 					break;
 				}
-				if ( $statements > 0 && ( microtime( true ) >= $deadline || $statements >= $max_statements ) ) {
-					break 2;
+				if ( strlen( $pending ) > 33554432 ) {
+					return new \WP_Error( 'jisento_sql_large', __( 'A single SQL statement is larger than 32 MB, so it cannot be restored safely. Export the package again with this version of Jisento.', 'jisento' ) . $this->job_suffix() );
 				}
-				$sql     = $split[0];
-				$pending = $split[1];
-				$clean   = $this->strip_leading_comments( $sql );
-				$end     = ftell( $handle ) - strlen( $pending );
-				if ( '' === $clean ) {
-					$this->remember_cursor( $end, 0, 0 );
+				$read = fread( $handle, 1048576 );
+				if ( false === $read ) {
+					return new \WP_Error( 'jisento_sql_read', __( 'Reading the database segment failed.', 'jisento' ) . $this->job_suffix() );
+				}
+				if ( '' === $read ) {
+					$eof = true;
 					continue;
 				}
-				$ran = $this->run_pieces( $clean, $deadline, $piece_index, $end - strlen( $sql ), $end );
-				$piece_index = 0;
-				if ( is_wp_error( $ran ) ) {
-					fclose( $handle );
-					$this->restore_connection_charset();
-					return $ran;
-				}
-				$statements += (int) $ran['statements'];
-				$creates    += (int) $ran['creates'];
-				if ( '' !== $ran['table'] ) {
-					$last_table = $ran['table'];
-				}
-				if ( ! empty( $ran['partial'] ) ) {
-					fclose( $handle );
-					return $this->chunk_result( $ran['offset'], false, $statements, $last_table, $creates, $started, $ran['piece_index'], $ran['stmt_end'] );
-				}
+				$pending .= $read;
+				continue;
 			}
-		}
-
-		$pos = ftell( $handle );
-		clearstatcache( true, $sql_path );
-		$size = filesize( $sql_path );
-		$eof  = feof( $handle ) || ( false !== $pos && false !== $size && $pos >= $size );
-		fclose( $handle );
-
-		$tail = $this->strip_leading_comments( $pending );
-		if ( $eof && '' === $tail ) {
-			$pending = '';
-		}
-		if ( $eof && '' !== $tail ) {
-			$ran = $this->run_pieces( $tail, $deadline, $piece_index, (int) $pos - strlen( $pending ), (int) $pos );
+			if ( $statements > 0 && ( microtime( true ) >= $deadline || $statements >= $max_statements ) ) {
+				return $this->chunk_result( false, $statements, $last_table, $started, $buffer_start, $size );
+			}
+			$raw     = $split[0];
+			$pending = $split[1];
+			$start   = $buffer_start;
+			$end     = $start + strlen( $raw );
+			$buffer_start = $end;
+			$ran = $this->run_statement( $segment, $start, $end, $raw, $first_piece, $deadline );
+			$first_piece = 0;
 			if ( is_wp_error( $ran ) ) {
-				$this->restore_connection_charset();
 				return $ran;
 			}
-			$statements += (int) $ran['statements'];
-			$creates    += (int) $ran['creates'];
+			$statements += $ran['statements'];
 			if ( '' !== $ran['table'] ) {
 				$last_table = $ran['table'];
 			}
 			if ( ! empty( $ran['partial'] ) ) {
-				return $this->chunk_result( $ran['offset'], false, $statements, $last_table, $creates, $started, $ran['piece_index'], $ran['stmt_end'] );
+				return $this->chunk_result( false, $statements, $last_table, $started, $start, $size );
 			}
-			$pending = '';
 		}
-
-		$offset = max( (int) $byte_offset, (int) $pos - strlen( $pending ) );
-		if ( $eof && '' === $pending ) {
-			$this->remember_cursor( $offset, 0, 0 );
+		if ( '' !== trim( self::strip_leading_comments( $pending ) ) ) {
+			return new \WP_Error( 'jisento_sql_truncated', sprintf( __( 'Database segment %d ends in the middle of a statement. The package is incomplete; export it again.', 'jisento' ), $segment ) . $this->job_suffix() );
 		}
+		if ( ! $this->write_cursor( $segment, $size, 0 ) ) {
+			return $this->driver_error( 'save resume point', self::cursor_table() );
+		}
+		return $this->chunk_result( true, $statements, $last_table, $started, $size, $size );
+	}
 
-		return $this->chunk_result( $offset, $eof && '' === $pending, $statements, $last_table, $creates, $started, 0, 0 );
+	private function chunk_result( $done, $statements, $table, $started, $offset, $size ) {
+		return array(
+			'done'                  => (bool) $done,
+			'statements'            => (int) $statements,
+			'statement_no'          => (int) $this->statement_no,
+			'table'                 => (string) $table,
+			'offset'                => (int) $offset,
+			'size'                  => (int) $size,
+			'seconds'               => round( microtime( true ) - $started, 3 ),
+			'session'               => $this->session,
+			'notes'                 => $this->notes,
+			'placeholders_repaired' => (int) $this->placeholders_repaired,
+		);
 	}
 
 	/**
-	 * A semicolon ends a statement only outside quoted values.
-	 * Backslash escapes are preserved, so binary bytes such as 0x1E stay inside the value.
-	 *
-	 * @return array{0:string,1:string}|null
+	 * @return array{statements:int,table:string,partial?:bool}|\WP_Error
 	 */
-	private function take_statement( $buffer ) {
-		$len    = strlen( $buffer );
-		$in     = false;
-		$escape = false;
-		$quote  = '';
-		for ( $i = 0; $i < $len; $i++ ) {
-			$ch = $buffer[ $i ];
-			if ( $in ) {
-				if ( $escape ) {
-					$escape = false;
-					continue;
+	private function run_statement( $segment, $start, $end, $raw, $first_piece, $deadline ) {
+		$sql = self::strip_leading_comments( $raw );
+		if ( '' === $sql || ';' === $sql ) {
+			return $this->advance( $segment, $end, 0, '' );
+		}
+		$plan = $this->classify( $sql );
+		if ( is_wp_error( $plan ) ) {
+			return $plan;
+		}
+		if ( 'skip' === $plan['kind'] ) {
+			return $this->advance( $segment, $end, 0, $plan['table'] );
+		}
+		if ( 'set' === $plan['kind'] ) {
+			$applied = $this->apply_set( $plan );
+			if ( is_wp_error( $applied ) ) {
+				return $applied;
+			}
+			return $this->advance( $segment, $end, 0, '' );
+		}
+		if ( 'ddl' === $plan['kind'] ) {
+			if ( $first_piece > 0 ) {
+				return $this->advance( $segment, $end, 0, $plan['table'] );
+			}
+			$this->fire( 'before_exec' );
+			// DDL commits implicitly. A CREATE repeated after a crash must not fail on its own half-made shadow.
+			if ( ! empty( $plan['pre'] ) && ! $this->exec_sql( $plan['pre'] ) ) {
+				return $this->statement_error( $plan, $plan['pre'], $segment, $start, 0 );
+			}
+			if ( ! $this->exec_sql( $plan['sql'] ) ) {
+				return $this->statement_error( $plan, $plan['sql'], $segment, $start, 0 );
+			}
+			$this->fire( 'after_exec' );
+			$this->statement_no++;
+			if ( ! $this->exec_sql( 'START TRANSACTION' ) || ! $this->commit_progress( $segment, $start, 0, $end, 0 ) ) {
+				return $this->driver_error( 'save resume point', self::cursor_table() );
+			}
+			$this->fire( 'after_commit' );
+			return array(
+				'statements' => 1,
+				'table'      => $plan['table'],
+			);
+		}
+
+		$pieces = Sql_Scanner::split_insert( $plan['sql'] );
+		$count  = 0;
+		$total  = count( $pieces );
+		foreach ( $pieces as $index => $piece ) {
+			if ( $index < $first_piece ) {
+				continue;
+			}
+			if ( $count > 0 && microtime( true ) >= $deadline ) {
+				return array(
+					'statements' => $count,
+					'table'      => $plan['table'],
+					'partial'    => true,
+				);
+			}
+			$next_offset = ( $index + 1 >= $total ) ? $end : $start;
+			$next_piece  = ( $index + 1 >= $total ) ? 0 : $index + 1;
+			if ( $this->was_applied( $segment, $start, $index ) ) {
+				if ( ! $this->write_cursor( $segment, $next_offset, $next_piece ) ) {
+					return $this->driver_error( 'save resume point', self::cursor_table() );
 				}
-				if ( '\\' === $ch ) {
-					$escape = true;
+				$count++;
+				continue;
+			}
+			$piece = $this->prepare_insert( $piece, $plan['shadow'] );
+			if ( ! $this->exec_sql( 'START TRANSACTION' ) ) {
+				return $this->driver_error( 'start transaction', $plan['table'] );
+			}
+			$this->fire( 'before_exec' );
+			if ( ! $this->exec_sql( $piece ) ) {
+				$error = $this->statement_error( $plan, $piece, $segment, $start, $index );
+				$this->exec_sql( 'ROLLBACK' );
+				return $error;
+			}
+			$this->fire( 'after_exec' );
+			$this->statement_no++;
+			if ( ! $this->commit_progress( $segment, $start, $index, $next_offset, $next_piece ) ) {
+				$error = $this->driver_error( 'save resume point', self::cursor_table() );
+				$this->exec_sql( 'ROLLBACK' );
+				return $error;
+			}
+			$this->fire( 'after_commit' );
+			$count++;
+		}
+		return array(
+			'statements' => $count,
+			'table'      => $plan['table'],
+		);
+	}
+
+	/**
+	 * Ledger row plus cursor, then COMMIT. For INSERT the statement is already inside this transaction.
+	 */
+	private function commit_progress( $segment, $offset, $piece, $next_offset, $next_piece ) {
+		if ( ! $this->write_ledger( $segment, $offset, $piece ) || ! $this->write_cursor( $segment, $next_offset, $next_piece ) ) {
+			return false;
+		}
+		$this->fire( 'before_commit' );
+		return $this->exec_sql( 'COMMIT' );
+	}
+
+	private function advance( $segment, $offset, $piece, $table ) {
+		if ( ! $this->write_cursor( $segment, $offset, $piece ) ) {
+			return $this->driver_error( 'save resume point', self::cursor_table() );
+		}
+		return array(
+			'statements' => 0,
+			'table'      => (string) $table,
+		);
+	}
+
+	private function fire( $point ) {
+		if ( $this->fault ) {
+			call_user_func( $this->fault, $point );
+		}
+	}
+
+	/**
+	 * Decide what one dump statement becomes. Only the statement kinds a Jisento dump contains are accepted.
+	 *
+	 * @param string $sql Statement without leading comments.
+	 * @return array|\WP_Error
+	 */
+	public function classify( $sql ) {
+		$sql = rtrim( $sql );
+		if ( preg_match( '/^SET\s+/i', $sql ) ) {
+			return $this->classify_set( $sql );
+		}
+		if ( preg_match( '/^(LOCK\s+TABLES|UNLOCK\s+TABLES)\b/i', $sql ) ) {
+			return array(
+				'kind'  => 'skip',
+				'table' => '',
+			);
+		}
+		if ( preg_match( '/^DROP\s+TABLE\s+IF\s+EXISTS\s+`([^`]+)`\s*;?$/i', $sql, $m ) ) {
+			$live = $this->dest_table( $m[1] );
+			if ( ! $this->will_restore( $live ) ) {
+				return array(
+					'kind'  => 'skip',
+					'table' => $live,
+				);
+			}
+			return array(
+				'kind'   => 'ddl',
+				'table'  => $live,
+				'shadow' => self::shadow_name( $live ),
+				'sql'    => 'DROP TABLE IF EXISTS `' . self::shadow_name( $live ) . '`',
+			);
+		}
+		if ( preg_match( '/^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`([^`]+)`/i', $sql, $m ) ) {
+			$live = $this->dest_table( $m[1] );
+			if ( ! $this->will_restore( $live ) ) {
+				return array(
+					'kind'  => 'skip',
+					'table' => $live,
+				);
+			}
+			$create = $this->shadow_create( $sql, $live );
+			if ( is_wp_error( $create ) ) {
+				return $create;
+			}
+			return array(
+				'kind'   => 'ddl',
+				'table'  => $live,
+				'shadow' => self::shadow_name( $live ),
+				'pre'    => 'DROP TABLE IF EXISTS `' . self::shadow_name( $live ) . '`',
+				'sql'    => $create,
+			);
+		}
+		if ( preg_match( '/^INSERT\s+INTO\s+`([^`]+)`/i', $sql, $m ) ) {
+			$live = $this->dest_table( $m[1] );
+			if ( ! $this->will_restore( $live ) ) {
+				return array(
+					'kind'  => 'skip',
+					'table' => $live,
+				);
+			}
+			$shadow = self::shadow_name( $live );
+			return array(
+				'kind'   => 'insert',
+				'table'  => $live,
+				'shadow' => $shadow,
+				'sql'    => self::replace_target( $sql, $m[1], $shadow ),
+			);
+		}
+		return new \WP_Error(
+			'jisento_sql_unsupported',
+			sprintf(
+				/* translators: %s: statement start */
+				__( 'The package contains a statement type the restore does not run: %s. Only SET, DROP TABLE IF EXISTS, CREATE TABLE and INSERT are accepted, so nothing can touch a live table directly.', 'jisento' ),
+				self::statement_preview( $sql, 60 )
+			) . $this->job_suffix()
+		);
+	}
+
+	/**
+	 * @param string $sql Statement.
+	 * @param string $from Table name as written.
+	 * @param string $to   Replacement.
+	 * @return string
+	 */
+	private static function replace_target( $sql, $from, $to ) {
+		$token = '`' . $from . '`';
+		$pos   = strpos( $sql, $token );
+		if ( false === $pos ) {
+			return $sql;
+		}
+		return substr( $sql, 0, $pos ) . '`' . $to . '`' . substr( $sql, $pos + strlen( $token ) );
+	}
+
+	private function classify_set( $sql ) {
+		$body = trim( preg_replace( '/^SET\s+/i', '', rtrim( $sql, "; \t\r\n" ) ) );
+		if ( preg_match( '/^NAMES\s+\'?([A-Za-z0-9_]+)\'?(?:\s+COLLATE\s+\'?([A-Za-z0-9_]+)\'?)?$/i', $body, $m ) ) {
+			return array(
+				'kind'  => 'set',
+				'var'   => 'names',
+				'value' => strtolower( $m[1] ),
+			);
+		}
+		if ( preg_match( '/^(?:SESSION\s+)?(FOREIGN_KEY_CHECKS|UNIQUE_CHECKS)\s*=\s*\w+$/i', $body ) ) {
+			return array(
+				'kind'  => 'skip',
+				'table' => '',
+			);
+		}
+		if ( preg_match( '/^(?:SESSION\s+)?(SQL_MODE|TIME_ZONE)\s*=\s*\'([^\'\\\\]*)\'$/i', $body, $m ) ) {
+			return array(
+				'kind'  => 'set',
+				'var'   => strtolower( $m[1] ),
+				'value' => $m[2],
+			);
+		}
+		if ( preg_match( '/^@[A-Za-z0-9_]+\s*=/', $body ) ) {
+			return array(
+				'kind'  => 'skip',
+				'table' => '',
+			);
+		}
+		return new \WP_Error( 'jisento_sql_unsupported', sprintf( __( 'The package contains a SET statement the restore does not run: %s', 'jisento' ), self::statement_preview( $sql, 80 ) ) . $this->job_suffix() );
+	}
+
+	private function apply_set( array $plan ) {
+		if ( 'names' === $plan['var'] ) {
+			if ( ! mysqli_set_charset( $this->dbh, $plan['value'] ) ) {
+				return $this->driver_error( 'SET NAMES ' . $plan['value'], '' );
+			}
+			$this->session['names'] = $plan['value'];
+			return true;
+		}
+		$sql = 'SET SESSION ' . $plan['var'] . " = '" . Sql_Escaper::escape_manual( $plan['value'] ) . "'";
+		if ( ! $this->exec_sql( $sql ) ) {
+			return $this->driver_error( $sql, '' );
+		}
+		$this->session[ $plan['var'] ] = $plan['value'];
+		return true;
+	}
+
+	/**
+	 * Shadow CREATE TABLE: target renamed, foreign keys pointed at shadows of restored parents,
+	 * constraint names made unique, unsupported collations mapped, non-InnoDB engines converted.
+	 *
+	 * @param string $sql  CREATE TABLE statement.
+	 * @param string $live Destination table name.
+	 * @return string|\WP_Error
+	 */
+	public function shadow_create( $sql, $live ) {
+		$sql = rtrim( $sql, "; \t\r\n" );
+		if ( ! preg_match( '/^(CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?)`([^`]+)`/i', $sql, $m ) ) {
+			return $sql;
+		}
+		$shadow = self::shadow_name( $live );
+		$sql    = 'CREATE TABLE `' . $shadow . '`' . substr( $sql, strlen( $m[0] ) );
+		$split  = self::split_create( $sql );
+		if ( null === $split ) {
+			return new \WP_Error( 'jisento_sql_create', sprintf( __( 'The CREATE TABLE statement for %s could not be parsed.', 'jisento' ), $live ) . $this->job_suffix() );
+		}
+		list( $body, $tail ) = $split;
+
+		$self  = $this;
+		$body  = preg_replace_callback(
+			'/(\bREFERENCES\s+)`([^`]+)`/i',
+			static function ( $ref ) use ( $self ) {
+				$parent = $self->dest_table( $ref[2] );
+				return $ref[1] . '`' . ( $self->will_restore( $parent ) ? Database_Importer::shadow_name( $parent ) : $parent ) . '`';
+			},
+			$body
+		);
+		$notes = &$this->notes;
+		$body  = preg_replace_callback(
+			'/(\bCONSTRAINT\s+)`([^`]+)`/i',
+			static function ( $c ) use ( $live, &$notes ) {
+				$renamed = Database_Importer::shadow_constraint_name( $c[2] );
+				$notes['constraints'][ $live ][ $renamed ] = $c[2];
+				return $c[1] . '`' . $renamed . '`';
+			},
+			$body
+		);
+
+		if ( $this->is_mariadb() ) {
+			$tail = preg_replace( '#/\*!80\d{3}.*?\*/#s', '', $tail );
+			$body = preg_replace( '#/\*!80\d{3}.*?\*/#s', '', $body );
+		}
+
+		if ( preg_match( '/\bENGINE\s*=\s*([A-Za-z0-9_]+)/i', $tail, $engine ) && 0 !== strcasecmp( $engine[1], 'InnoDB' ) ) {
+			$converted = self::convert_engine_options( $tail );
+			if ( null === $converted ) {
+				return new \WP_Error( 'jisento_sql_engine', sprintf( __( 'Table %1$s uses the %2$s engine, which this restore cannot convert to InnoDB.', 'jisento' ), $live, $engine[1] ) . $this->job_suffix() );
+			}
+			$tail = $converted;
+			$this->notes['engines'][ $live ] = $engine[1];
+		}
+
+		$mapped = $this->map_collations( $body . $tail, $live );
+		if ( is_wp_error( $mapped ) ) {
+			return $mapped;
+		}
+		return $mapped;
+	}
+
+	/**
+	 * @param string $sql CREATE TABLE statement.
+	 * @return array{0:string,1:string}|null Column list including its closing parenthesis, and the table options.
+	 */
+	public static function split_create( $sql ) {
+		$open = strpos( $sql, '(' );
+		if ( false === $open ) {
+			return null;
+		}
+		$len   = strlen( $sql );
+		$depth = 0;
+		$quote = '';
+		for ( $i = $open; $i < $len; $i++ ) {
+			$ch = $sql[ $i ];
+			if ( '' !== $quote ) {
+				if ( '\\' === $ch && '`' !== $quote ) {
+					$i++;
 					continue;
 				}
 				if ( $ch === $quote ) {
-					$in    = false;
+					if ( isset( $sql[ $i + 1 ] ) && $sql[ $i + 1 ] === $quote ) {
+						$i++;
+						continue;
+					}
 					$quote = '';
 				}
 				continue;
 			}
-			if ( "'" === $ch || '"' === $ch ) {
-				$in    = true;
+			if ( "'" === $ch || '"' === $ch || '`' === $ch ) {
 				$quote = $ch;
 				continue;
 			}
-			if ( ';' === $ch ) {
-				return array( substr( $buffer, 0, $i + 1 ), substr( $buffer, $i + 1 ) );
+			if ( '(' === $ch ) {
+				$depth++;
+			} elseif ( ')' === $ch ) {
+				$depth--;
+				if ( 0 === $depth ) {
+					return array( substr( $sql, 0, $i + 1 ), substr( $sql, $i + 1 ) );
+				}
 			}
 		}
 		return null;
 	}
 
 	/**
-	 * @return array{statements:int,creates:int,table:string}|\WP_Error
+	 * Table options that InnoDB rejects or that only mean something for MyISAM/Aria are removed.
+	 *
+	 * @param string $tail Table options.
+	 * @return string|null
 	 */
-	private function run_pieces( $sql, $deadline, $piece_index, $start, $end ) {
-		$seen  = $this->statement_progress( $sql );
-		$parts = Sql_Scanner::split_insert( $sql );
-		$count = 0;
-		foreach ( $parts as $index => $part ) {
-			if ( $index < $piece_index ) {
-				continue;
-			}
-			if ( $count > 0 && microtime( true ) >= $deadline ) {
-				return array(
-					'statements' => $count,
-					'creates'    => (int) $seen['creates'],
-					'table'      => (string) $seen['table'],
-					'partial'    => true,
-					'offset'     => $start,
-					'piece_index'=> $index,
-					'stmt_end'   => $end,
-				);
-			}
-			$this->stmt_at = array(
-				'offset' => (int) $start,
-				'piece'  => (int) $index,
+	public static function convert_engine_options( $tail ) {
+		if ( preg_match( '/\bENGINE\s*=\s*(MRG_MyISAM|MERGE|FEDERATED|CONNECT|SPIDER|BLACKHOLE|CSV|ARCHIVE|SEQUENCE)\b/i', $tail ) ) {
+			return null;
+		}
+		$tail = preg_replace( '/\bENGINE\s*=\s*[A-Za-z0-9_]+/i', 'ENGINE=InnoDB', $tail );
+		$tail = preg_replace( '/\s*\b(ROW_FORMAT|PAGE_CHECKSUM|TRANSACTIONAL|PACK_KEYS|DELAY_KEY_WRITE|CHECKSUM|MAX_ROWS|MIN_ROWS|AVG_ROW_LENGTH)\s*=\s*[A-Za-z0-9_]+/i', '', $tail );
+		return $tail;
+	}
+
+	/**
+	 * @param string $sql  Statement.
+	 * @param string $live Table.
+	 * @return string|\WP_Error
+	 */
+	private function map_collations( $sql, $live ) {
+		$this->load_server_names();
+		$collations = $this->collations;
+		$charsets   = $this->charsets;
+		$notes      = &$this->notes;
+		$failed     = '';
+		$sql = preg_replace_callback(
+			'/\b(COLLATE)(\s*=\s*|\s+)([A-Za-z0-9_]+)/i',
+			static function ( $m ) use ( $collations, $live, &$notes, &$failed ) {
+				$to = Database_Importer::map_collation( $m[3], $collations );
+				if ( null === $to ) {
+					$failed = $m[3];
+					return $m[0];
+				}
+				if ( strtolower( $to ) !== strtolower( $m[3] ) ) {
+					$notes['collations'][ $live ][ $m[3] ] = $to;
+				}
+				return $m[1] . $m[2] . $to;
+			},
+			$sql
+		);
+		if ( '' !== $failed ) {
+			return new \WP_Error( 'jisento_sql_collation', sprintf( __( 'Table %1$s uses collation %2$s, which this database server does not support and has no safe equivalent.', 'jisento' ), $live, $failed ) . $this->job_suffix() );
+		}
+		$sql = preg_replace_callback(
+			'/\b(CHARSET|CHARACTER\s+SET)(\s*=\s*|\s+)([A-Za-z0-9_]+)/i',
+			static function ( $m ) use ( $charsets ) {
+				return $m[1] . $m[2] . Database_Importer::map_charset( $m[3], $charsets );
+			},
+			$sql
+		);
+		return $sql;
+	}
+
+	/**
+	 * MySQL 8 and MariaDB 11 collations mapped to ones older MariaDB servers have.
+	 *
+	 * @param string   $name      Collation from the dump.
+	 * @param string[] $supported Lowercase collation names on this server. Empty means unknown: keep the name.
+	 * @return string|null
+	 */
+	public static function map_collation( $name, array $supported ) {
+		$lower = strtolower( (string) $name );
+		if ( ! $supported || in_array( $lower, $supported, true ) ) {
+			return $name;
+		}
+		$candidates = array();
+		if ( preg_match( '/^utf8mb4_0900_bin$/', $lower ) ) {
+			$candidates = array( 'utf8mb4_bin' );
+		} elseif ( preg_match( '/^utf8mb4_(0900|uca1400)_/', $lower ) ) {
+			$candidates = array( 'utf8mb4_unicode_520_ci', 'utf8mb4_unicode_ci' );
+		} elseif ( preg_match( '/^utf8mb3_(.+)$/', $lower, $m ) ) {
+			$candidates = array( 'utf8_' . $m[1], 'utf8_general_ci' );
+		} elseif ( preg_match( '/^(utf8mb4|utf8|latin1)_/', $lower, $m ) ) {
+			$fallback   = array(
+				'utf8mb4' => array( 'utf8mb4_unicode_520_ci', 'utf8mb4_unicode_ci', 'utf8mb4_general_ci' ),
+				'utf8'    => array( 'utf8_unicode_ci', 'utf8_general_ci' ),
+				'latin1'  => array( 'latin1_swedish_ci' ),
 			);
-			if ( $this->was_applied( $start, $index ) ) {
-				$result = true;
-			} else {
-				$result = $this->run_statement( $part );
-			}
-			if ( is_wp_error( $result ) ) {
-				return $result;
-			}
-			if ( ! $this->note_applied( $start, $index ) ) {
-				return $this->statement_error( $part, ' ' . __( 'The restore log for this statement could not be written, so the statement was rolled back.', 'jisento' ) );
-			}
-			$count++;
-			$this->statement_no++;
-			$next = $index + 1;
-			$saved = ( $next >= count( $parts ) ) ? $this->remember_cursor( $end, 0, 0 ) : $this->remember_cursor( $start, $next, $end );
-			if ( ! $saved ) {
-				return new \WP_Error( 'jisento_sql_cursor', __( 'The database statement was rolled back because its resume point could not be saved.', 'jisento' ) . $this->job_suffix() );
+			$candidates = $fallback[ $m[1] ];
+		}
+		foreach ( $candidates as $candidate ) {
+			if ( in_array( $candidate, $supported, true ) ) {
+				return $candidate;
 			}
 		}
-		return array(
-			'statements' => $count,
-			'creates'    => (int) $seen['creates'],
-			'table'      => (string) $seen['table'],
-			'partial'    => false,
-		);
-	}
-
-	private function chunk_result( $offset, $done, $statements, $table, $creates, $started, $piece_index, $stmt_end ) {
-		$this->restore_connection_charset();
-		$this->notify( $offset, $piece_index, $stmt_end, $table );
-		if ( $this->cursor_handle ) {
-			fclose( $this->cursor_handle );
-			$this->cursor_handle = null;
-		}
-		return array(
-			'offset'       => (int) $offset,
-			'done'         => (bool) $done,
-			'statements'   => (int) $statements,
-			'statement_no' => (int) $this->statement_no,
-			'table'        => (string) $table,
-			'creates'      => (int) $creates,
-			'cleared'      => $this->cleared_tables(),
-			'repeated'      => $this->repeated_keys,
-			'repeated_note' => $this->repeated_note,
-			'seconds'      => round( microtime( true ) - $started, 3 ),
-			'piece_index'  => (int) $piece_index,
-			'stmt_end'     => (int) $stmt_end,
-		);
+		return null;
 	}
 
 	/**
-	 * Commit the statement and its resume point together.
-	 * The cursor file is written only after COMMIT, so it cannot move past uncommitted work.
-	 *
-	 * @return bool
-	 */
-	private function remember_cursor( $offset, $piece, $stmt_end ) {
-		if ( '' === $this->sql_path ) {
-			return true;
-		}
-		$this->ensure_cursor_table();
-		if ( ! $this->txn_open ) {
-			$this->begin_transaction();
-		}
-		if ( ! $this->write_cursor_row( $offset, $piece, $stmt_end ) ) {
-			$this->rollback();
-			return false;
-		}
-		$committed = $this->wpdb->query( 'COMMIT' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$this->txn_open = false;
-		if ( false === $committed ) {
-			return false;
-		}
-		if ( ! $this->cursor_handle ) {
-			$this->cursor_handle = fopen( $this->sql_path . '.cursor', 'cb' );
-		}
-		if ( $this->cursor_handle ) {
-			rewind( $this->cursor_handle );
-			ftruncate( $this->cursor_handle, 0 );
-			fwrite( $this->cursor_handle, (int) $offset . ' ' . (int) $piece . ' ' . (int) $stmt_end . ' ' . (int) $this->statement_no );
-			fflush( $this->cursor_handle );
-		}
-		return true;
-	}
-
-	private function begin_transaction() {
-		if ( $this->txn_open ) {
-			return;
-		}
-		$this->wpdb->query( 'START TRANSACTION' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$this->txn_open = true;
-	}
-
-	private function rollback() {
-		if ( $this->txn_open ) {
-			$this->wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		}
-		$this->txn_open = false;
-	}
-
-	private function cursor_table() {
-		return $this->wpdb->prefix . 'jisento_import_cursor';
-	}
-
-	private function ensure_cursor_table() {
-		if ( $this->cursor_ready || $this->txn_open ) {
-			return;
-		}
-		$table = $this->cursor_table();
-		$this->wpdb->query(
-			'CREATE TABLE IF NOT EXISTS `' . $table . '` (
-				job_id varchar(64) NOT NULL,
-				byte_offset bigint(20) unsigned NOT NULL DEFAULT 0,
-				piece_index int(10) unsigned NOT NULL DEFAULT 0,
-				stmt_end bigint(20) unsigned NOT NULL DEFAULT 0,
-				statement_no int(10) unsigned NOT NULL DEFAULT 0,
-				PRIMARY KEY (job_id)
-			) ENGINE=InnoDB'
-		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$applied = $this->applied_table();
-		$this->wpdb->query(
-			'CREATE TABLE IF NOT EXISTS `' . $applied . '` (
-				job_id varchar(64) NOT NULL,
-				byte_offset bigint(20) unsigned NOT NULL,
-				piece_index int(10) unsigned NOT NULL,
-				statement_no int(10) unsigned NOT NULL DEFAULT 0,
-				PRIMARY KEY (job_id, byte_offset, piece_index)
-			) ENGINE=InnoDB'
-		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$this->cursor_ready = true;
-	}
-
-	private function applied_table() {
-		return $this->wpdb->prefix . 'jisento_import_applied';
-	}
-
-	private function prepare_sql( $sql, array $args ) {
-		if ( ! $args ) {
-			return $sql;
-		}
-		return $this->wpdb->prepare( $sql, ...$args );
-	}
-
-	private function was_applied( $offset, $piece ) {
-		$this->ensure_cursor_table();
-		$table = $this->applied_table();
-		$job   = '' !== $this->job_id ? $this->job_id : 'import';
-		$found = $this->wpdb->get_var(
-			$this->prepare_sql(
-				'SELECT statement_no FROM `' . $table . '` WHERE job_id = %s AND byte_offset = %d AND piece_index = %d',
-				array( $job, (int) $offset, (int) $piece )
-			)
-		);
-		return null !== $found && false !== $found && '' !== $found;
-	}
-
-	private function note_applied( $offset, $piece ) {
-		if ( ! $this->txn_open ) {
-			$this->begin_transaction();
-		}
-		$table = $this->applied_table();
-		$job   = '' !== $this->job_id ? $this->job_id : 'import';
-		$sql   = $this->prepare_sql(
-			'INSERT INTO `' . $table . '` (job_id, byte_offset, piece_index, statement_no) VALUES (%s, %d, %d, %d) ON DUPLICATE KEY UPDATE statement_no = %d',
-			array( $job, (int) $offset, (int) $piece, (int) $this->statement_no + 1, (int) $this->statement_no + 1 )
-		);
-		$this->wpdb->query( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		return '' === (string) $this->wpdb->last_error;
-	}
-
-	private function write_cursor_row( $offset, $piece, $stmt_end ) {
-		$table = $this->cursor_table();
-		$job   = '' !== $this->job_id ? $this->job_id : 'import';
-		$sql   = $this->wpdb->prepare(
-			'INSERT INTO `' . $table . '` (job_id, byte_offset, piece_index, stmt_end, statement_no) VALUES (%s, %d, %d, %d, %d) ON DUPLICATE KEY UPDATE byte_offset = %d, piece_index = %d, stmt_end = %d, statement_no = %d',
-			$job,
-			(int) $offset,
-			(int) $piece,
-			(int) $stmt_end,
-			(int) $this->statement_no,
-			(int) $offset,
-			(int) $piece,
-			(int) $stmt_end,
-			(int) $this->statement_no
-		);
-		return false !== $this->wpdb->query( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-	}
-
-	public static function read_db_cursor( $job_id ) {
-		global $wpdb;
-		if ( ! $wpdb || '' === (string) $job_id ) {
-			return null;
-		}
-		$table = $wpdb->prefix . 'jisento_import_cursor';
-		$row   = $wpdb->get_row(
-			$wpdb->prepare( 'SELECT byte_offset, piece_index, stmt_end, statement_no FROM `' . $table . '` WHERE job_id = %s', $job_id ),
-			ARRAY_A
-		);
-		if ( ! is_array( $row ) ) {
-			return null;
-		}
-		return array(
-			'offset'       => (int) $row['byte_offset'],
-			'piece_index'  => (int) $row['piece_index'],
-			'stmt_end'     => (int) $row['stmt_end'],
-			'statement_no' => (int) $row['statement_no'],
-		);
-	}
-
-	public static function preferred_cursor( $sql_path, $job_id ) {
-		$db = self::read_db_cursor( $job_id );
-		if ( $db ) {
-			return $db;
-		}
-		return self::read_cursor( $sql_path );
-	}
-
-	public static function read_cursor( $sql_path ) {
-		$path = $sql_path . '.cursor';
-		if ( ! is_readable( $path ) ) {
-			return null;
-		}
-		$parts = preg_split( '/\s+/', trim( (string) file_get_contents( $path ) ) );
-		if ( ! $parts || '' === $parts[0] ) {
-			return null;
-		}
-		return array(
-			'offset'       => (int) $parts[0],
-			'piece_index'  => isset( $parts[1] ) ? (int) $parts[1] : 0,
-			'stmt_end'     => isset( $parts[2] ) ? (int) $parts[2] : 0,
-			'statement_no' => isset( $parts[3] ) ? (int) $parts[3] : 0,
-		);
-	}
-
-	private function notify( $offset, $piece, $stmt_end, $table ) {
-		if ( ! $this->progress ) {
-			return;
-		}
-		call_user_func(
-			$this->progress,
-			array(
-				'offset'       => (int) $offset,
-				'piece_index'  => (int) $piece,
-				'stmt_end'     => (int) $stmt_end,
-				'cleared'      => $this->cleared_tables(),
-				'table'        => (string) $table,
-				'statement_no' => (int) $this->statement_no,
-			)
-		);
-	}
-
-	private function job_suffix() {
-		return '' === $this->job_id ? '' : ' Job: ' . $this->job_id;
-	}
-
-	private function spill_paths( $sql_path ) {
-		return array(
-			'sql' => $sql_path . '.spill',
-			'pos' => $sql_path . '.spill.pos',
-		);
-	}
-
-	private function write_spill( $sql_path, $sql, $offset ) {
-		$paths = $this->spill_paths( $sql_path );
-		file_put_contents( $paths['sql'], $sql );
-		file_put_contents( $paths['pos'], (string) (int) $offset );
-	}
-
-	/**
-	 * Continue rows from a statement that was too large for one request.
-	 *
-	 * @return array<string,mixed>|\WP_Error|null
-	 */
-	private function drain_spill( $sql_path, $byte_offset, $time_budget, $max_statements ) {
-		$paths = $this->spill_paths( $sql_path );
-		if ( ! is_file( $paths['sql'] ) || ! is_file( $paths['pos'] ) ) {
-			return null;
-		}
-		$marked = (int) file_get_contents( $paths['pos'] );
-		if ( $marked !== (int) $byte_offset ) {
-			@unlink( $paths['sql'] );
-			@unlink( $paths['pos'] );
-			return null;
-		}
-		$chunk = $this->import_chunk( $paths['sql'], 0, $time_budget, $max_statements, false );
-		if ( is_wp_error( $chunk ) ) {
-			return $chunk;
-		}
-		if ( empty( $chunk['done'] ) ) {
-			$raw = (string) file_get_contents( $paths['sql'] );
-			file_put_contents( $paths['sql'], substr( $raw, (int) $chunk['offset'] ) );
-			file_put_contents( $paths['pos'], (string) $byte_offset );
-			$chunk['offset'] = $byte_offset;
-			$chunk['done']   = false;
-			return $chunk;
-		}
-		@unlink( $paths['sql'] );
-		@unlink( $paths['pos'] );
-		$chunk['offset'] = $byte_offset;
-		$chunk['done']   = false;
-		return $chunk;
-	}
-
-	/**
-	 * Break a multi-row INSERT into smaller statements without changing row values.
-	 *
-	 * @return string[]
-	 */
-	private function split_large_insert( $sql ) {
-		$limit = 262144;
-		if ( strlen( $sql ) <= $limit ) {
-			return array( $sql );
-		}
-		if ( ! preg_match( '/^(INSERT\s+INTO\s+`[^`]+`\s*\(.*?\)\s*VALUES\s*)/is', $sql, $match ) ) {
-			return array( $sql );
-		}
-		$prefix = $match[1];
-		$body   = rtrim( substr( $sql, strlen( $prefix ) ) );
-		if ( ';' === substr( $body, -1 ) ) {
-			$body = substr( $body, 0, -1 );
-		}
-		$tuples = $this->split_tuples( $body );
-		if ( count( $tuples ) < 2 ) {
-			return array( $sql );
-		}
-		$out   = array();
-		$batch = array();
-		$size  = strlen( $prefix ) + 1;
-		foreach ( $tuples as $tuple ) {
-			$add = strlen( $tuple ) + 1;
-			if ( $batch && ( $size + $add ) > $limit ) {
-				$out[] = $prefix . implode( ',', $batch ) . ';';
-				$batch = array();
-				$size  = strlen( $prefix ) + 1;
-			}
-			$batch[] = $tuple;
-			$size   += $add;
-		}
-		if ( $batch ) {
-			$out[] = $prefix . implode( ',', $batch ) . ';';
-		}
-		return $out ? $out : array( $sql );
-	}
-
-	/**
-	 * @return string[]
-	 */
-	private function split_tuples( $body ) {
-		$tuples = array();
-		$len    = strlen( $body );
-		$start  = null;
-		$depth  = 0;
-		$in     = false;
-		$escape = false;
-		$quote  = '';
-		for ( $i = 0; $i < $len; $i++ ) {
-			$ch = $body[ $i ];
-			if ( $in ) {
-				if ( $escape ) {
-					$escape = false;
-					continue;
-				}
-				if ( '\\' === $ch ) {
-					$escape = true;
-					continue;
-				}
-				if ( $ch === $quote ) {
-					$in = false;
-				}
-				continue;
-			}
-			if ( "'" === $ch || '"' === $ch ) {
-				$in    = true;
-				$quote = $ch;
-				continue;
-			}
-			if ( '(' === $ch ) {
-				if ( 0 === $depth ) {
-					$start = $i;
-				}
-				$depth++;
-				continue;
-			}
-			if ( ')' === $ch && $depth > 0 ) {
-				$depth--;
-				if ( 0 === $depth && null !== $start ) {
-					$tuples[] = substr( $body, $start, $i - $start + 1 );
-					$start    = null;
-				}
-			}
-		}
-		return $tuples;
-	}
-
-	private function statement_progress( $sql ) {
-		$table   = '';
-		$creates = 0;
-		if ( preg_match( '/^(?:DROP\s+TABLE\s+IF\s+EXISTS|CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|INSERT\s+INTO|REPLACE\s+INTO)\s+`([^`]+)`/i', ltrim( $sql ), $match ) ) {
-			$table = $match[1];
-		}
-		if ( preg_match( '/^CREATE\s+TABLE\b/i', ltrim( $sql ) ) ) {
-			$creates = 1;
-		}
-		return array(
-			'table'   => $table,
-			'creates' => $creates,
-		);
-	}
-
-	private function run_statement( $sql ) {
-		$sql = $this->strip_leading_comments( $sql );
-		$sql = $this->rewrite_statement( $sql );
-		$sql = $this->apply_shadow( $sql );
-		if ( '' === $sql ) {
-			return true;
-		}
-		if ( 0 === strpos( $sql, 'SET ' ) ) {
-			$this->wpdb->query( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			// The dump sets utf8mb4. Quoted BINARY values would then be charset-converted
-			// and truncated, so distinct keys can collapse. Keep the client binary.
-			$this->use_binary_client();
-			return true;
-		}
-
-		if ( $this->should_skip_statement( $sql ) ) {
-			return true;
-		}
-
-		if ( $this->is_ddl( $sql ) ) {
-			if ( ! $this->replace && $this->skip_existing_create( $sql ) ) {
-				return true;
-			}
-			$this->rollback();
-			$this->drop_existing_table( $sql );
-			$result = $this->wpdb->query( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			$this->txn_open = false;
-			if ( false === $result && $this->replace && $this->is_table_exists_error() ) {
-				$this->drop_existing_table( $sql );
-				$result = $this->wpdb->query( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			}
-		} else {
-			$this->stmt_source = $sql;
-			$sql = $this->preserve_binary_literals( $sql );
-			$this->clear_replace_table( $sql );
-			$this->begin_transaction();
-			$result = $this->execute_unfiltered( $sql );
-			if ( false === $result && $this->is_duplicate_entry() && $this->is_insert( $sql ) ) {
-				$mysql_error = (string) $this->wpdb->last_error;
-				return $this->statement_error( $sql, $this->duplicate_diagnosis( $sql ), $mysql_error );
-			}
-		}
-		if ( false !== $result && $this->after_statement ) {
-			call_user_func( $this->after_statement, $sql );
-		}
-		if ( false === $result ) {
-			$mysql_error = (string) $this->wpdb->last_error;
-			return $this->statement_error( $sql, '', $mysql_error );
-		}
-		return true;
-	}
-
-	private function is_insert( $sql ) {
-		return (bool) preg_match( '/^INSERT\s+INTO\s+`/i', ltrim( $sql ) );
-	}
-
-	private function is_table_exists_error() {
-		$err = (string) $this->wpdb->last_error;
-		return false !== stripos( $err, 'already exists' );
-	}
-
-	/**
-	 * The duplicate-key statement was not committed. Describe the key from the SQL bytes
-	 * and whether a HEX() lookup can see the row already stored by another statement.
-	 *
-	 * @param string $sql Insert statement.
+	 * @param string   $name      Charset.
+	 * @param string[] $supported Lowercase charset names on this server.
 	 * @return string
 	 */
-	private function duplicate_diagnosis( $sql ) {
-		$rows = $this->parse_insert_rows( $sql );
-		if ( ! $rows ) {
-			return ' ' . __( 'This statement is not in the committed restore log. Its primary key could not be parsed from the SQL, so the row was not skipped. The database error above is the original duplicate-key error.', 'jisento' );
+	public static function map_charset( $name, array $supported ) {
+		$lower = strtolower( (string) $name );
+		if ( ! $supported || in_array( $lower, $supported, true ) ) {
+			return $name;
 		}
-		$mysql_error = (string) $this->wpdb->last_error;
-		$found       = $this->match_rejected_tuple( $rows, $mysql_error );
-		$parsed      = $rows[ $found['index'] ];
-		$sent        = $this->pk_hex( $parsed );
-		$first       = $this->pk_hex( $rows[0] );
-		$rejected    = $found['hex'];
-		$source      = $sent;
-		if ( '' !== $this->stmt_source && $this->stmt_source !== $sql ) {
-			$source_rows = $this->parse_insert_rows( $this->stmt_source );
-			if ( isset( $source_rows[ $found['index'] ] ) ) {
-				$source = $this->pk_hex( $source_rows[ $found['index'] ] );
+		if ( 'utf8mb3' === $lower && in_array( 'utf8', $supported, true ) ) {
+			return 'utf8';
+		}
+		return $name;
+	}
+
+	private function load_server_names() {
+		if ( null !== $this->collations ) {
+			return;
+		}
+		$this->collations = array();
+		$this->charsets   = array();
+		foreach ( (array) $this->rows( 'SHOW COLLATION' ) as $row ) {
+			if ( isset( $row['Collation'] ) ) {
+				$this->collations[] = strtolower( $row['Collation'] );
+			}
+			if ( isset( $row['Charset'] ) ) {
+				$this->charsets[ strtolower( $row['Charset'] ) ] = true;
 			}
 		}
-		$raw = '';
-		foreach ( $parsed['pk'] as $column ) {
-			$raw .= isset( $parsed['values'][ $column ] ) && null !== $parsed['values'][ $column ] ? (string) $parsed['values'][ $column ] : '';
+		$this->charsets = array_keys( $this->charsets );
+	}
+
+	private function is_mariadb() {
+		if ( null === $this->mariadb ) {
+			$version       = (string) $this->scalar( 'SELECT VERSION()' );
+			$this->mariadb = false !== stripos( $version, 'mariadb' );
 		}
-		if ( '' !== $rejected && $rejected !== $sent && '' !== $found['bytes'] ) {
-			$raw = $found['bytes'];
-		}
-		$places = $this->key_locations( $raw );
-		$match  = $this->stored_row_match( $parsed );
-		if ( '' !== $this->lookup_note ) {
-			$lookup = $this->lookup_note;
-		} elseif ( true === $match ) {
-			$lookup = __( 'the destination row is already present and its bytes match this statement', 'jisento' );
-		} elseif ( false === $match ) {
-			$lookup = __( 'the destination row is already present and its bytes differ', 'jisento' );
-		} else {
-			$lookup = __( 'no destination row matched this key', 'jisento' );
-		}
-		$logged   = $this->was_applied( $this->stmt_at['offset'], $this->stmt_at['piece'] ) ? __( 'yes', 'jisento' ) : __( 'no', 'jisento' );
-		$cleared  = isset( $this->cleared[ $parsed['table'] ] ) ? __( 'yes', 'jisento' ) : __( 'no', 'jisento' );
-		$where    = $places['offsets'] ? implode( ', ', $places['offsets'] ) : __( 'none', 'jisento' );
-		$in_sql = __( 'no', 'jisento' );
-		if ( '' !== $rejected && ( false !== stripos( $sql, '0x' . $rejected ) || false !== stripos( $sql, "x'" . $rejected ) ) ) {
-			$in_sql = __( 'yes', 'jisento' );
-		}
-		$tuple    = $found['matched']
-			? sprintf( 'tuple %d of %d', $found['index'] + 1, count( $rows ) )
-			: sprintf( 'no tuple of %d', count( $rows ) );
-		$cause    = '';
-		if ( $places['count'] > 1 ) {
-			$cause = ' ' . __( 'The source SQL contains this primary key more than once, so an earlier statement in the package already inserted it.', 'jisento' );
-		} elseif ( 1 === $places['count'] && true === $match && 'no' === $logged ) {
-			$cause = ' ' . __( 'The source SQL contains this primary key once, and this statement was not committed before. An earlier statement in this restore stored the same key.', 'jisento' );
-		} elseif ( 'no' === $in_sql && '' !== $rejected ) {
-			$cause = ' ' . __( 'The key MariaDB reported is not in the SQL passed to the driver, so the bytes changed after the statement was parsed.', 'jisento' );
-		} elseif ( 'no' === $cleared ) {
-			$cause = ' ' . __( 'This table was not cleared during this restore, so the row may already have been on the destination.', 'jisento' );
-		}
-		return ' ' . sprintf(
-			/* translators: 1: rejected hex, 2: byte length, 3: tuple description, 4: yes or no, 5: occurrence count, 6: offsets, 7: first tuple hex, 8: source hex, 9: same or different, 10: lookup, 11: yes or no, 12: yes or no, 13: triggers, 14: byte offset, 15: piece, 16: driver SQL length, 17: schema, 18: session */
-			__( 'MariaDB rejected primary key hex: %1$s (%2$d bytes), %3$s. Rejected key inside the SQL passed to the driver: %4$s. Literal raw-byte occurrences in the source file: %5$d at byte offset(s) %6$s. First tuple key: %7$s. Source literal decoded hex: %8$s (%9$s). Destination before this statement committed: %10$s. This statement is in the committed restore log: %11$s. Table cleared during this restore: %12$s. Triggers on this table: %13$s. Resume position: byte %14$d, piece %15$d. Driver SQL length: %16$d bytes. Destination schema: %17$s. Connection: %18$s. A question mark in the statement preview is only how a non-printable byte is shown. The row was not skipped.', 'jisento' ),
-			'' !== $rejected ? $rejected : $sent,
-			(int) ( strlen( '' !== $rejected ? $rejected : $sent ) / 2 ),
-			$tuple,
-			$in_sql,
-			(int) $places['count'],
-			$where,
-			$first,
-			$source,
-			$source === $sent ? __( 'same bytes', 'jisento' ) : __( 'different bytes', 'jisento' ),
-			$lookup,
-			$logged,
-			$cleared,
-			$this->trigger_names( $parsed['table'] ),
-			(int) $this->stmt_at['offset'],
-			(int) $this->stmt_at['piece'],
-			strlen( $sql ),
-			$this->table_definition( $parsed['table'] ),
-			$this->session_note()
-		) . $cause;
+		return $this->mariadb;
 	}
 
 	/**
-	 * MariaDB's duplicate-entry value is the key that collided, which may be a later tuple.
+	 * v1 compatibility and the opt-in placeholder repair.
 	 *
-	 * @param array  $rows  Parsed insert rows.
-	 * @param string $error Driver error.
-	 * @return array{index:int,matched:bool,hex:string,bytes:string}
+	 * @param string $sql    INSERT piece targeting the shadow table.
+	 * @param string $shadow Shadow table.
+	 * @return string
 	 */
-	private function match_rejected_tuple( array $rows, $error ) {
-		$chosen = array(
-			'index'   => 0,
-			'matched' => false,
-			'hex'     => '',
-			'bytes'   => '',
-		);
-		foreach ( $this->rejected_key_candidates( $error ) as $candidate ) {
-			$hex = bin2hex( $candidate );
-			foreach ( $rows as $index => $row ) {
-				if ( $this->pk_hex( $row ) === $hex ) {
-					return array(
-						'index'   => $index,
-						'matched' => true,
-						'hex'     => $hex,
-						'bytes'   => $candidate,
-					);
-				}
-			}
-			if ( '' === $chosen['hex'] ) {
-				$chosen['hex']   = $hex;
-				$chosen['bytes'] = $candidate;
-			}
+	private function prepare_insert( $sql, $shadow ) {
+		if ( ! $this->legacy ) {
+			return $sql;
 		}
-		return $chosen;
+		if ( $this->placeholder_tokens ) {
+			$count = 0;
+			$sql   = str_replace( $this->placeholder_tokens, '%', $sql, $count );
+			$this->placeholders_repaired += $count;
+		}
+		return $this->preserve_binary_literals( $sql, $shadow );
 	}
 
 	/**
-	 * @param string $error MariaDB or MySQL error text.
-	 * @return string[] Candidate key byte strings.
-	 */
-	private function rejected_key_candidates( $error ) {
-		if ( ! preg_match( "/Duplicate entry '(.*)' for key/s", (string) $error, $match ) ) {
-			return array();
-		}
-		$value = str_replace( array( '\\\\', "\\'" ), array( '\\', "'" ), $match[1] );
-		$out   = array( $value );
-		if ( false !== strpos( $value, '\\x' ) ) {
-			$decoded = preg_replace_callback(
-				'/\\\\x([0-9A-Fa-f]{2})/',
-				static function ( $part ) {
-					return chr( hexdec( $part[1] ) );
-				},
-				$value
-			);
-			if ( is_string( $decoded ) && $decoded !== $value ) {
-				$out[] = $decoded;
-			}
-		}
-		return $out;
-	}
-
-	/**
-	 * Send the statement bytes without WordPress query filters or placeholder stripping.
+	 * v1 packages could quote BINARY values. Under a utf8mb4 connection those bytes would be
+	 * charset-validated, so they are sent as hex literals instead.
 	 *
-	 * @param string $sql Statement.
-	 * @return bool
+	 * @param string $sql   INSERT statement.
+	 * @param string $table Table the statement writes to.
+	 * @return string
 	 */
-	private function execute_unfiltered( $sql ) {
-		$this->executed_sql = $sql;
-		$dbh                = ( isset( $this->wpdb->dbh ) && $this->wpdb->dbh instanceof \mysqli ) ? $this->wpdb->dbh : null;
-		if ( $dbh ) {
-			if ( ! mysqli_real_query( $dbh, $sql ) ) {
-				$this->wpdb->last_error = mysqli_error( $dbh );
-				return false;
-			}
-			$this->wpdb->last_error = '';
-			if ( mysqli_field_count( $dbh ) > 0 ) {
-				$result = mysqli_store_result( $dbh );
-				if ( $result instanceof \mysqli_result ) {
-					mysqli_free_result( $result );
-				}
-			}
-			return true;
+	private function preserve_binary_literals( $sql, $table ) {
+		if ( ! preg_match( '/^(INSERT\s+INTO\s+`[^`]+`\s*\((.*?)\)\s*VALUES\s*)(.*)$/is', ltrim( $sql ), $match ) ) {
+			return $sql;
 		}
-		return false !== $this->wpdb->query( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-	}
-
-	/**
-	 * A utf8mb4 client rewrites invalid sequences inside quoted BINARY values, then
-	 * BINARY(n) truncates them. Hex literals are ASCII and are not converted.
-	 */
-	private function use_binary_client() {
-		$this->wpdb->query( 'SET character_set_client = binary' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$this->wpdb->query( 'SET character_set_connection = binary' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$this->wpdb->last_error = '';
-	}
-
-	private function restore_connection_charset() {
-		if ( isset( $this->wpdb->dbh ) && is_object( $this->wpdb->dbh ) && method_exists( $this->wpdb, 'set_charset' ) ) {
-			$this->wpdb->set_charset( $this->wpdb->dbh );
+		$binary = $this->binary_columns_for( $table );
+		if ( ! $binary ) {
+			return $sql;
 		}
-	}
-
-	private function pk_hex( array $parsed ) {
-		$bytes = '';
-		foreach ( $parsed['pk'] as $column ) {
-			$bytes .= isset( $parsed['values'][ $column ] ) ? (string) $parsed['values'][ $column ] : '';
-		}
-		return bin2hex( $bytes );
-	}
-
-	private function statement_error( $sql, $why, $mysql_error = null ) {
-		if ( null === $mysql_error || '' === $mysql_error ) {
-			$mysql_error = (string) $this->wpdb->last_error;
-		}
-		$this->rollback();
-		$this->restore_connection_charset();
-		return new \WP_Error(
-			'jisento_sql_error',
-			sprintf(
-				/* translators: 1: database error, 2: table, 3: statement number, 4: statement preview, 5: extra reason */
-				__( 'Unable to run a database statement: %1$s Table: %2$s. Statement number: %3$d. Statement: %4$s.%5$s', 'jisento' ),
-				$mysql_error,
-				$this->statement_table( $sql ),
-				$this->statement_no + 1,
-				$this->statement_preview( $sql ),
-				$why
-			) . $this->job_suffix()
-		);
-	}
-
-	private function parse_insert_rows( $sql ) {
-		if ( ! preg_match( '/^INSERT\s+INTO\s+`([^`]+)`\s*\((.*)\)\s*VALUES\s*/is', ltrim( $sql ), $match ) ) {
-			return array();
-		}
-		$table   = $match[1];
 		$columns = array();
 		foreach ( explode( ',', $match[2] ) as $column ) {
 			$columns[] = trim( $column, " `\t\n\r" );
 		}
-		$body = trim( substr( ltrim( $sql ), strlen( $match[0] ) ) );
+		$indexes = array();
+		foreach ( $columns as $index => $column ) {
+			if ( ! empty( $binary[ $column ] ) ) {
+				$indexes[] = $index;
+			}
+		}
+		if ( ! $indexes ) {
+			return $sql;
+		}
+		$body   = rtrim( $match[3] );
+		$suffix = '';
 		if ( ';' === substr( $body, -1 ) ) {
-			$body = substr( $body, 0, -1 );
+			$body   = substr( $body, 0, -1 );
+			$suffix = ';';
 		}
-		$pk = $this->primary_key_columns( $table );
-		if ( ! $pk ) {
-			$pk = array( $columns[0] );
-		}
-		$rows = array();
+		$rebuilt = array();
 		foreach ( Sql_Scanner::value_tuples( $body ) as $tuple ) {
 			$fields = Sql_Scanner::tuple_fields( $tuple );
 			if ( count( $fields ) !== count( $columns ) ) {
-				continue;
+				return $sql;
 			}
-			$values = array();
-			foreach ( $columns as $index => $column ) {
-				$values[ $column ] = $this->decode_sql_literal( $fields[ $index ] );
+			foreach ( $indexes as $index ) {
+				$fields[ $index ] = self::binary_token( $fields[ $index ] );
 			}
-			$rows[] = array(
-				'table'   => $table,
-				'columns' => $columns,
-				'values'  => $values,
-				'pk'      => $pk,
-			);
+			$rebuilt[] = '(' . implode( ',', $fields ) . ')';
 		}
-		return $rows;
+		return $rebuilt ? $match[1] . implode( ',', $rebuilt ) . $suffix : $sql;
 	}
 
-	private function decode_sql_literal( $token ) {
+	private static function binary_token( $token ) {
+		$token = trim( (string) $token );
+		if ( preg_match( '/^0x[0-9a-fA-F]+$/', $token ) || preg_match( "/^X'[0-9a-fA-F]*'$/i", $token ) || 0 === strcasecmp( $token, 'NULL' ) ) {
+			return $token;
+		}
+		$decoded = self::decode_sql_literal( $token );
+		if ( null === $decoded ) {
+			return 'NULL';
+		}
+		return '' === $decoded ? "X''" : '0x' . bin2hex( $decoded );
+	}
+
+	/**
+	 * @param string $token SQL literal.
+	 * @return string|null
+	 */
+	public static function decode_sql_literal( $token ) {
 		$token = trim( (string) $token );
 		if ( '' === $token || 0 === strcasecmp( $token, 'NULL' ) ) {
 			return null;
@@ -1111,21 +1212,21 @@ class Database_Importer {
 		$inner = substr( $token, 1, -1 );
 		$out   = '';
 		$len   = strlen( $inner );
+		$map   = array(
+			'0'  => "\0",
+			'b'  => "\x08",
+			'n'  => "\n",
+			'r'  => "\r",
+			't'  => "\t",
+			'Z'  => "\x1a",
+			'\\' => '\\',
+			"'"  => "'",
+			'"'  => '"',
+		);
 		for ( $i = 0; $i < $len; $i++ ) {
 			$ch = $inner[ $i ];
 			if ( '\\' === $ch && isset( $inner[ $i + 1 ] ) ) {
 				$next = $inner[ ++$i ];
-				$map  = array(
-					'0'  => "\0",
-					'b'  => "\x08",
-					'n'  => "\n",
-					'r'  => "\r",
-					't'  => "\t",
-					'Z'  => chr( 26 ),
-					'\\' => '\\',
-					"'"  => "'",
-					'"'  => '"',
-				);
 				$out .= isset( $map[ $next ] ) ? $map[ $next ] : $next;
 				continue;
 			}
@@ -1139,399 +1240,106 @@ class Database_Importer {
 		return $out;
 	}
 
-	/**
-	 * Quoted binary values are charset-converted by MariaDB when the connection is utf8mb4.
-	 * A BINARY(16) column then stores a different 16-byte key than the dump contains, so later
-	 * rows collide. Hex literals are ASCII and are stored as the exact bytes.
-	 *
-	 * @param string $sql Statement about to run.
-	 * @return string
-	 */
-	private function preserve_binary_literals( $sql ) {
-		if ( ! preg_match( '/^(INSERT\s+INTO\s+`([^`]+)`\s*\((.*)\)\s*VALUES\s*)(.*)$/is', ltrim( $sql ), $match ) ) {
-			return $sql;
-		}
-		$binary = $this->binary_columns_for( $match[2] );
-		if ( ! $binary ) {
-			return $sql;
-		}
-		$columns = array();
-		foreach ( explode( ',', $match[3] ) as $column ) {
-			$columns[] = trim( $column, " `\t\n\r" );
-		}
-		$indexes = array();
-		foreach ( $columns as $index => $column ) {
-			if ( ! empty( $binary[ $column ] ) ) {
-				$indexes[ $index ] = true;
-			}
-		}
-		if ( ! $indexes ) {
-			return $sql;
-		}
-		$body   = $match[4];
-		$suffix = '';
-		if ( ';' === substr( rtrim( $body ), -1 ) ) {
-			$body   = rtrim( $body );
-			$body   = substr( $body, 0, -1 );
-			$suffix = ';';
-		}
-		$tuples = Sql_Scanner::value_tuples( $body );
-		if ( ! $tuples ) {
-			return $sql;
-		}
-		$rebuilt = array();
-		foreach ( $tuples as $tuple ) {
-			$fields = Sql_Scanner::tuple_fields( $tuple );
-			if ( count( $fields ) !== count( $columns ) ) {
-				return $sql;
-			}
-			foreach ( array_keys( $indexes ) as $index ) {
-				$fields[ $index ] = $this->binary_token( $fields[ $index ] );
-			}
-			$rebuilt[] = '(' . implode( ',', $fields ) . ')';
-		}
-		return $match[1] . implode( ',', $rebuilt ) . $suffix;
-	}
-
-	private function binary_token( $token ) {
-		$token = trim( (string) $token );
-		if ( preg_match( '/^0x[0-9a-fA-F]+$/i', $token ) ) {
-			return $token;
-		}
-		if ( preg_match( "/^X'[0-9a-fA-F]*'$/i", $token ) ) {
-			return $token;
-		}
-		if ( 0 === strcasecmp( $token, 'NULL' ) ) {
-			return 'NULL';
-		}
-		$decoded = $this->decode_sql_literal( $token );
-		if ( null === $decoded ) {
-			return 'NULL';
-		}
-		$decoded = (string) $decoded;
-		if ( '' === $decoded ) {
-			return "X''";
-		}
-		return '0x' . bin2hex( $decoded );
-	}
-
 	private function binary_columns_for( $table ) {
 		if ( isset( $this->binary_columns[ $table ] ) ) {
 			return $this->binary_columns[ $table ];
 		}
-		$rows = $this->wpdb->get_results( 'SHOW FULL COLUMNS FROM `' . $this->esc( $table ) . '`', ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		if ( ! is_array( $rows ) || ! $rows ) {
-			$rows = $this->wpdb->get_results( 'SHOW COLUMNS FROM `' . $this->esc( $table ) . '`', ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		}
-		if ( ! is_array( $rows ) || ! $rows ) {
-			return array();
-		}
 		$map = array();
-		foreach ( $rows as $row ) {
-			if ( ! empty( $row['Field'] ) && self::is_binary_column( $row ) ) {
+		foreach ( (array) $this->rows( 'SHOW FULL COLUMNS FROM `' . self::esc( $table ) . '`' ) as $row ) {
+			$type      = isset( $row['Type'] ) ? strtolower( (string) $row['Type'] ) : '';
+			$collation = isset( $row['Collation'] ) ? strtolower( (string) $row['Collation'] ) : '';
+			if ( ! empty( $row['Field'] ) && ( preg_match( '/blob|binary|geometry|(^|[^a-z])bit\b/', $type ) || 'binary' === $collation ) ) {
 				$map[ $row['Field'] ] = true;
 			}
 		}
-		$this->binary_columns[ $table ] = $map;
-		return $map;
+		return $this->binary_columns[ $table ] = $map;
+	}
+
+	/* ------------------------------------------------------------------
+	 * Errors
+	 * ------------------------------------------------------------------ */
+
+	public static function is_sensitive_table( $table ) {
+		return 1 === preg_match( self::SENSITIVE_TABLE_PATTERN, (string) $table );
 	}
 
 	/**
-	 * @param array $row SHOW FULL COLUMNS row.
-	 * @return bool
-	 */
-	private static function is_binary_column( array $row ) {
-		$type = isset( $row['Type'] ) ? strtolower( (string) $row['Type'] ) : '';
-		if ( '' !== $type && preg_match( '/blob|binary|geometry|(^|[^a-z])bit\b/', $type ) ) {
-			return true;
-		}
-		$collation = isset( $row['Collation'] ) ? strtolower( (string) $row['Collation'] ) : '';
-		return 'binary' === $collation;
-	}
-
-	private function table_definition( $table ) {
-		$saved = (string) $this->wpdb->last_error;
-		$this->wpdb->last_error = '';
-		$row = $this->wpdb->get_row( 'SHOW CREATE TABLE `' . $this->esc( $table ) . '`', ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$this->wpdb->last_error = $saved;
-		if ( ! is_array( $row ) ) {
-			return 'unavailable';
-		}
-		foreach ( array( 'Create Table', 'Create View' ) as $key ) {
-			if ( ! empty( $row[ $key ] ) ) {
-				return (string) $row[ $key ];
-			}
-		}
-		return 'unavailable';
-	}
-
-	private function session_note() {
-		$saved = (string) $this->wpdb->last_error;
-		$this->wpdb->last_error = '';
-		$row = $this->wpdb->get_row( 'SELECT @@version AS version, @@character_set_client AS client_charset, @@character_set_connection AS connection_charset, @@sql_mode AS sql_mode', ARRAY_A );
-		$this->wpdb->last_error = $saved;
-		if ( ! is_array( $row ) ) {
-			return 'unavailable';
-		}
-		return sprintf(
-			'version %s, client charset %s, connection charset %s, sql_mode %s',
-			isset( $row['version'] ) ? $row['version'] : '',
-			isset( $row['client_charset'] ) ? $row['client_charset'] : '',
-			isset( $row['connection_charset'] ) ? $row['connection_charset'] : '',
-			isset( $row['sql_mode'] ) ? $row['sql_mode'] : ''
-		);
-	}
-
-	private function trigger_names( $table ) {
-		$rows = $this->wpdb->get_results( 'SHOW TRIGGERS LIKE \'' . str_replace( "'", "''", $table ) . '\'', ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		if ( ! is_array( $rows ) || ! $rows ) {
-			return __( 'none', 'jisento' );
-		}
-		$names = array();
-		foreach ( $rows as $row ) {
-			if ( ! empty( $row['Trigger'] ) ) {
-				$names[] = $row['Trigger'];
-			}
-		}
-		return $names ? implode( ', ', $names ) : __( 'none', 'jisento' );
-	}
-
-	/**
-	 * @param string $raw Decoded bytes.
-	 * @return string MySQL backslash-escaped form, without surrounding quotes.
-	 */
-	private static function mysql_escaped_bytes( $raw ) {
-		$out = '';
-		$len = strlen( (string) $raw );
-		$map = array(
-			"\0"   => '\\0',
-			"\n"   => '\\n',
-			"\r"   => '\\r',
-			"\x1a" => '\\Z',
-			'\\'   => '\\\\',
-			"'"    => "\\'",
-		);
-		for ( $i = 0; $i < $len; $i++ ) {
-			$ch   = $raw[ $i ];
-			$out .= isset( $map[ $ch ] ) ? $map[ $ch ] : $ch;
-		}
-		return $out;
-	}
-
-	/**
-	 * @param string $raw Primary-key bytes parsed from the statement.
-	 * @return array{count:int,offsets:int[]}
-	 */
-	private function key_locations( $raw ) {
-		if ( ! is_string( $raw ) || '' === $raw || '' === $this->sql_path || ! is_file( $this->sql_path ) ) {
-			return array( 'count' => 0, 'offsets' => array() );
-		}
-		$hex     = bin2hex( $raw );
-		$needles = array( $raw );
-		if ( '' !== $hex ) {
-			$needles[] = '0x' . $hex;
-			$needles[] = '0x' . strtoupper( $hex );
-		}
-		$escaped = self::mysql_escaped_bytes( $raw );
-		if ( $escaped !== $raw ) {
-			$needles[] = $escaped;
-		}
-		$max     = 1;
-		foreach ( $needles as $needle ) {
-			$max = max( $max, strlen( $needle ) );
-		}
-		$handle  = fopen( $this->sql_path, 'rb' );
-		if ( ! $handle ) {
-			return array( 'count' => 0, 'offsets' => array() );
-		}
-		$window  = '';
-		$base    = 0;
-		$count   = 0;
-		$offsets = array();
-		$keep    = $max - 1;
-		$scan    = static function ( $window, $base, $limit ) use ( $needles, &$count, &$offsets ) {
-			foreach ( $needles as $needle ) {
-				$from = 0;
-				$len  = strlen( $needle );
-				while ( ( $found = strpos( $window, $needle, $from ) ) !== false ) {
-					if ( $found >= $limit ) {
-						break;
-					}
-					$count++;
-					if ( count( $offsets ) < 6 ) {
-						$offsets[] = $base + $found;
-					}
-					$from = $found + $len;
-				}
-			}
-		};
-		while ( ! feof( $handle ) ) {
-			$chunk = fread( $handle, 1048576 );
-			if ( false === $chunk || '' === $chunk ) {
-				break;
-			}
-			$window .= $chunk;
-			if ( strlen( $window ) <= $keep ) {
-				continue;
-			}
-			$limit = strlen( $window ) - $keep;
-			$scan( $window, $base, $limit );
-			$window = substr( $window, $limit );
-			$base  += $limit;
-		}
-		fclose( $handle );
-		if ( '' !== $window ) {
-			$scan( $window, $base, strlen( $window ) );
-		}
-		return array(
-			'count'   => $count,
-			'offsets' => $offsets,
-		);
-	}
-
-	private function primary_key_columns( $table ) {
-		if ( isset( $this->pk_cache[ $table ] ) ) {
-			return $this->pk_cache[ $table ];
-		}
-		$rows = $this->wpdb->get_results( 'SHOW KEYS FROM `' . $this->esc( $table ) . "` WHERE Key_name = 'PRIMARY'", ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$columns = array();
-		if ( is_array( $rows ) ) {
-			usort(
-				$rows,
-				static function ( $a, $b ) {
-					return (int) $a['Seq_in_index'] <=> (int) $b['Seq_in_index'];
-				}
-			);
-			foreach ( $rows as $row ) {
-				if ( ! empty( $row['Column_name'] ) ) {
-					$columns[] = $row['Column_name'];
-				}
-			}
-		}
-		$this->pk_cache[ $table ] = $columns;
-		return $columns;
-	}
-
-	/**
-	 * Compare through HEX() so binary primary keys are not fetched as raw bytes.
+	 * Quoted values inside a driver error ("Duplicate entry 'x'", "Incorrect string value: 'x'")
+	 * are row data. They are removed for tables that hold credentials or personal data.
 	 *
-	 * @param array $parsed Parsed insert row.
-	 * @return bool|null True when the stored row matches, false when it differs, null when it cannot be read.
+	 * @param string $error Driver error.
+	 * @param string $table Table.
+	 * @return string
 	 */
-	private function stored_row_match( array $parsed ) {
-		$this->lookup_note = '';
-		$select = array();
-		$where  = array();
-		$args   = array();
-		foreach ( $parsed['columns'] as $column ) {
-			$select[] = 'HEX(`' . $this->esc( $column ) . '`) AS `' . $this->esc( $column ) . '`';
+	public static function safe_driver_error( $error, $table ) {
+		$error = (string) $error;
+		if ( self::is_sensitive_table( $table ) ) {
+			$error = preg_replace( "/'(?:[^'\\\\]|\\\\.)*'(?=\s+for\s+(?:key|column))/s", "'[redacted]'", $error );
+			$error = preg_replace( "/(Duplicate entry|string value:?)\s+'.*?'/s", "$1 '[redacted]'", $error );
 		}
-		foreach ( $parsed['pk'] as $column ) {
-			if ( ! array_key_exists( $column, $parsed['values'] ) || null === $parsed['values'][ $column ] ) {
-				$where[] = '`' . $this->esc( $column ) . '` IS NULL';
-				continue;
-			}
-			$where[] = 'HEX(`' . $this->esc( $column ) . '`) = %s';
-			$args[]  = strtoupper( bin2hex( (string) $parsed['values'][ $column ] ) );
-		}
-		if ( ! $where ) {
-			return null;
-		}
-		$sql = 'SELECT ' . implode( ', ', $select ) . ' FROM `' . $this->esc( $parsed['table'] ) . '` WHERE ' . implode( ' AND ', $where ) . ' LIMIT 1';
-		$sql = $this->prepare_sql( $sql, $args );
-		$saved = (string) $this->wpdb->last_error;
-		$this->wpdb->last_error = '';
-		$row   = $this->wpdb->get_row( $sql, ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$lookup_error = (string) $this->wpdb->last_error;
-		$this->wpdb->last_error = $saved;
-		if ( '' !== $lookup_error ) {
-			$this->lookup_note = sprintf(
-				/* translators: 1: lookup SQL, 2: database error from that lookup */
-				__( 'The lookup query failed and was not the statement MariaDB rejected. Lookup SQL: %1$s Lookup error: %2$s', 'jisento' ),
-				$sql,
-				$lookup_error
-			);
-			return null;
-		}
-		if ( ! is_array( $row ) ) {
-			return null;
-		}
-		foreach ( $parsed['columns'] as $column ) {
-			$expected = null === $parsed['values'][ $column ] ? null : strtoupper( bin2hex( (string) $parsed['values'][ $column ] ) );
-			$actual   = array_key_exists( $column, $row ) ? $row[ $column ] : null;
-			if ( null === $expected || null === $actual || '' === $actual ) {
-				if ( $expected !== $actual && ! ( null === $expected && ( null === $actual || '' === $actual ) ) ) {
-					return false;
-				}
-				continue;
-			}
-			if ( strtoupper( (string) $actual ) !== $expected ) {
-				return false;
-			}
-		}
-		return true;
+		return self::printable( $error );
 	}
 
-	private function skip_existing_create( $sql ) {
-		if ( ! preg_match( '/^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`([^`]+)`/i', ltrim( $sql ), $match ) ) {
-			return false;
+	private function statement_error( array $plan, $sql, $segment, $offset, $piece ) {
+		$table   = $plan['table'];
+		$error   = self::safe_driver_error( $this->last_error, $table );
+		$preview = self::is_sensitive_table( $table ) ? __( '[not shown for this table]', 'jisento' ) : self::statement_preview( $sql, 200 );
+		$why     = '';
+		if ( '1062' === $this->last_errno ) {
+			$why = ' ' . __( 'The package contains the same key twice for this table. Rows were not skipped. Check the source table for duplicate keys and export again.', 'jisento' );
 		}
-		return $this->table_exists( $match[1] );
+		return new \WP_Error(
+			'jisento_sql_error',
+			sprintf(
+				/* translators: 1: table, 2: errno, 3: error, 4: statement number, 5: segment, 6: offset, 7: piece, 8: preview */
+				__( 'Restoring table %1$s failed. Database error %2$s: %3$s Statement %4$d (segment %5$d, byte %6$d, part %7$d): %8$s', 'jisento' ),
+				$table,
+				$this->last_errno,
+				$error,
+				$this->statement_no + 1,
+				$segment,
+				$offset,
+				$piece,
+				$preview
+			) . $why . $this->job_suffix()
+		);
 	}
 
-	private function table_exists( $table ) {
-		$found = $this->wpdb->get_var( $this->wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
-		return $table === $found;
+	private function driver_error( $operation, $table ) {
+		return new \WP_Error(
+			'jisento_sql_driver',
+			sprintf(
+				/* translators: 1: operation, 2: table, 3: errno, 4: error */
+				__( 'Database operation "%1$s" failed%2$s. Database error %3$s: %4$s', 'jisento' ),
+				$operation,
+				'' !== $table ? ' on ' . $table : '',
+				$this->last_errno,
+				self::safe_driver_error( $this->last_error, $table )
+			) . $this->job_suffix()
+		);
 	}
 
-	private function is_duplicate_entry() {
-		return false !== stripos( (string) $this->wpdb->last_error, 'Duplicate entry' );
+	private function job_suffix() {
+		return ' Job: ' . $this->job_id;
 	}
 
-	private function is_ddl( $sql ) {
-		return (bool) preg_match( '/^(DROP|CREATE|ALTER|RENAME|TRUNCATE)\s/i', ltrim( $sql ) );
+	public static function statement_preview( $sql, $length = 200 ) {
+		$preview = preg_replace( '/\s+/', ' ', substr( (string) $sql, 0, (int) $length ) );
+		return self::printable( (string) $preview );
 	}
 
-	private function statement_table( $sql ) {
-		$seen = $this->statement_progress( $sql );
-		return '' !== $seen['table'] ? $seen['table'] : __( 'unknown', 'jisento' );
-	}
-
-	private function statement_preview( $sql ) {
-		$preview = preg_replace( '/\s+/', ' ', substr( (string) $sql, 0, 220 ) );
-		$preview = preg_replace( '/[^\x20-\x7E]/', '?', (string) $preview );
-		return $preview;
+	private static function printable( $text ) {
+		return (string) preg_replace( '/[^\x20-\x7E]/', '?', (string) $text );
 	}
 
 	/**
-	 * Replace mode must not insert source rows into a table that still has destination rows.
-	 * A package can also repeat a primary key when its export read the table without a stable order.
-	 *
-	 * @param string $sql Insert statement.
-	 */
-	private function clear_replace_table( $sql ) {
-		if ( ! $this->replace || ! preg_match( '/^INSERT\s+INTO\s+`([^`]+)`/i', ltrim( $sql ), $match ) ) {
-			return;
-		}
-		$table = $match[1];
-		if ( '' === $table || isset( $this->cleared[ $table ] ) || $this->should_skip_statement( '`' . $table . '`' ) ) {
-			return;
-		}
-		$this->wpdb->query( 'TRUNCATE TABLE `' . $this->esc( $table ) . '`' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$this->cleared[ $table ] = true;
-		if ( '' !== $this->sql_path ) {
-			file_put_contents( $this->sql_path . '.cleared', implode( "\n", $this->cleared_tables() ) );
-		}
-	}
-
-	/**
-	 * Comment lines in the dump are not terminated, so they were glued to the
-	 * following DROP TABLE and the whole statement was skipped.
+	 * Comment lines before a statement are not terminated by a semicolon, so they would
+	 * otherwise be glued to the following statement.
 	 *
 	 * @param string $sql Raw statement buffer.
 	 * @return string
 	 */
-	private function strip_leading_comments( $sql ) {
+	public static function strip_leading_comments( $sql ) {
 		$sql = ltrim( (string) $sql );
 		while ( '' !== $sql ) {
 			if ( 0 === strpos( $sql, '--' ) || 0 === strpos( $sql, '#' ) ) {
@@ -1542,7 +1350,7 @@ class Database_Importer {
 				$sql = ltrim( substr( $sql, $break + 1 ) );
 				continue;
 			}
-			if ( 0 === strpos( $sql, '/*' ) ) {
+			if ( 0 === strpos( $sql, '/*' ) && 0 !== strpos( $sql, '/*!' ) ) {
 				$end = strpos( $sql, '*/' );
 				if ( false === $end ) {
 					return '';
@@ -1555,336 +1363,385 @@ class Database_Importer {
 		return $sql;
 	}
 
-	/**
-	 * Replace mode reloads tables that already exist on the destination.
-	 *
-	 * @param string $sql Statement about to run.
-	 */
-	private function drop_existing_table( $sql ) {
-		if ( ! $this->replace ) {
-			return;
-		}
-		if ( preg_match( '/^CREATE\s+(?:OR\s+REPLACE\s+)?(?:ALGORITHM=\w+\s+)?(?:DEFINER=\S+\s+)?VIEW\s+`([^`]+)`/i', $sql, $view ) ) {
-			$this->wpdb->query( 'DROP VIEW IF EXISTS `' . $this->esc( $view[1] ) . '`' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			return;
-		}
-		if ( ! preg_match( '/^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`([^`]+)`/i', $sql, $match ) ) {
-			return;
-		}
-		$table = str_replace( '`', '', $match[1] );
-		if ( '' === $table || $this->should_skip_statement( '`' . $table . '`' ) ) {
-			return;
-		}
-		$this->wpdb->query( 'DROP TABLE IF EXISTS `' . $table . '`' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-	}
-
-	private function should_skip_statement( $sql ) {
-		if ( empty( $this->skip_tables ) ) {
-			return false;
-		}
-		foreach ( $this->skip_tables as $table ) {
-			if ( false !== strpos( $sql, '`' . $table . '`' ) ) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	public function rewrite_statement( $sql ) {
-		if ( $this->source_prefix === $this->dest_prefix || '' === $this->source_prefix ) {
-			return $sql;
-		}
-
-		$from = $this->source_prefix;
-		$to   = $this->dest_prefix;
-		$len  = strlen( $sql );
-		$out  = '';
-		$in   = false;
-		$esc  = false;
-		$quote = '';
-		for ( $i = 0; $i < $len; $i++ ) {
-			$ch = $sql[ $i ];
-			if ( $in ) {
-				$out .= $ch;
-				if ( $esc ) {
-					$esc = false;
-					continue;
-				}
-				if ( '\\' === $ch ) {
-					$esc = true;
-					continue;
-				}
-				if ( $ch === $quote ) {
-					$in = false;
-				}
-				continue;
-			}
-			if ( "'" === $ch || '"' === $ch ) {
-				$in    = true;
-				$quote = $ch;
-				$out  .= $ch;
-				continue;
-			}
-			if ( '`' === $ch ) {
-				$end = strpos( $sql, '`', $i + 1 );
-				if ( false === $end ) {
-					$out .= substr( $sql, $i );
-					break;
-				}
-				$name = substr( $sql, $i + 1, $end - $i - 1 );
-				if ( 0 === strpos( $name, $from ) ) {
-					$name = $to . substr( $name, strlen( $from ) );
-				}
-				$out .= '`' . $name . '`';
-				$i    = $end;
-				continue;
-			}
-			$out .= $ch;
-		}
-		return $out;
-	}
-
-	public function rewrite_prefix_in_data() {
-		$tables = array(
-			$this->dest_prefix . 'options'  => array( 'option_name' ),
-			$this->dest_prefix . 'usermeta' => array( 'meta_key' ),
-		);
-
-		foreach ( $tables as $table => $columns ) {
-			$exists = $this->wpdb->get_var( $this->wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
-			if ( $table !== $exists ) {
-				continue;
-			}
-			foreach ( $columns as $column ) {
-				$this->wpdb->query(
-					$this->wpdb->prepare(
-						"UPDATE `{$this->esc( $table )}` SET `{$this->esc( $column )}` = REPLACE(`{$this->esc( $column )}`, %s, %s) WHERE `{$this->esc( $column )}` LIKE %s",
-						$this->source_prefix,
-						$this->dest_prefix,
-						$this->wpdb->esc_like( $this->source_prefix ) . '%'
-					)
-				);
-			}
-		}
-	}
-
-	private function esc( $ident ) {
-		return str_replace( '`', '', $ident );
-	}
+	/* ------------------------------------------------------------------
+	 * Driver
+	 * ------------------------------------------------------------------ */
 
 	/**
-	 * A shadow name stays a legal identifier and never replaces the live table in place.
-	 *
-	 * @param string $table Live table name.
-	 * @return string
-	 */
-	public static function shadow_name( $table ) {
-		$table  = str_replace( '`', '', (string) $table );
-		$suffix = '__js';
-		if ( strlen( $table . $suffix ) <= 64 ) {
-			return $table . $suffix;
-		}
-		$hash = substr( md5( $table ), 0, 10 );
-		$keep = 64 - 1 - strlen( $hash );
-		return substr( $table, 0, max( 1, $keep ) ) . '_' . $hash;
-	}
-
-	/**
-	 * @param string $table Live table name.
-	 * @return string
-	 */
-	public static function retired_name( $table ) {
-		$table  = str_replace( '`', '', (string) $table );
-		$suffix = '__jo';
-		if ( strlen( $table . $suffix ) <= 64 ) {
-			return $table . $suffix;
-		}
-		$hash = substr( md5( 'old:' . $table ), 0, 10 );
-		$keep = 64 - 1 - strlen( $hash );
-		return substr( $table, 0, max( 1, $keep ) ) . '_' . $hash;
-	}
-
-	/**
-	 * Rewrite only the statement's target table. Column names, quoted values, and
-	 * REFERENCES targets stay on the live names so the swap leaves foreign keys valid.
+	 * Every restore statement goes straight to mysqli, so no WordPress "query" filter can change it.
 	 *
 	 * @param string $sql Statement.
-	 * @return string
-	 */
-	public static function shadow_statement( $sql ) {
-		if ( ! preg_match( '/^(\s*(?:DROP\s+TABLE(?:\s+IF\s+EXISTS)?|CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|INSERT\s+INTO|REPLACE\s+INTO|ALTER\s+TABLE|TRUNCATE(?:\s+TABLE)?|UPDATE|DELETE\s+FROM)\s+)`([^`]+)`/i', $sql, $match ) ) {
-			return $sql;
-		}
-		$live = $match[2];
-		if ( ! preg_match( '/^[A-Za-z0-9_]+$/', $live ) || substr( $live, -4 ) === '__js' ) {
-			return $sql;
-		}
-		$shadow = self::shadow_name( $live );
-		$token  = '`' . $live . '`';
-		$pos    = strpos( $sql, $token );
-		if ( false === $pos ) {
-			return $sql;
-		}
-		$sql = substr( $sql, 0, $pos ) . '`' . $shadow . '`' . substr( $sql, $pos + strlen( $token ) );
-		if ( preg_match( '/^\s*CREATE\s+TABLE/i', $sql ) ) {
-			$sql = preg_replace_callback(
-				'/(\bREFERENCES\s+)`([A-Za-z0-9_]+)`/i',
-				function ( $reference ) {
-					return $reference[1] . '`' . self::shadow_name( $reference[2] ) . '`';
-				},
-				$sql
-			);
-		}
-		return $sql;
-	}
-
-	/**
-	 * One RENAME so a crash cannot leave the live name pointing at neither table.
-	 *
-	 * @param array<int,array{0:string,1:string,2:string}> $triples Live, shadow, retired.
-	 * @return string
-	 */
-	public static function rename_swap_sql( array $triples ) {
-		$parts = array();
-		foreach ( $triples as $row ) {
-			$parts[] = '`' . $row[0] . '` TO `' . $row[2] . '`';
-			$parts[] = '`' . $row[1] . '` TO `' . $row[0] . '`';
-		}
-		return 'RENAME TABLE ' . implode( ', ', $parts );
-	}
-
-	/**
-	 * @param string $sql Statement already prefix-rewritten.
-	 * @return string
-	 */
-	private function apply_shadow( $sql ) {
-		if ( ! $this->shadow ) {
-			return $sql;
-		}
-		if ( ! preg_match( '/^(\s*(?:DROP\s+TABLE(?:\s+IF\s+EXISTS)?|CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|INSERT\s+INTO|REPLACE\s+INTO|ALTER\s+TABLE|TRUNCATE(?:\s+TABLE)?|UPDATE|DELETE\s+FROM)\s+)`([^`]+)`/i', $sql, $match ) ) {
-			return $sql;
-		}
-		$live = $match[2];
-		$next = self::shadow_statement( $sql );
-		if ( $next === $sql || ! preg_match( '/^[A-Za-z0-9_]+$/', $live ) ) {
-			return $sql;
-		}
-		$this->shadow_map[ $live ] = self::shadow_name( $live );
-		$this->persist_shadow_map();
-		return $next;
-	}
-
-	private function persist_shadow_map() {
-		if ( '' === $this->sql_path ) {
-			return;
-		}
-		$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $this->shadow_map ) : json_encode( $this->shadow_map );
-		if ( is_string( $encoded ) ) {
-			file_put_contents( $this->sql_path . '.shadow', $encoded, LOCK_EX );
-		}
-	}
-
-	private function load_shadow_map() {
-		$this->shadow_map = array();
-		if ( '' === $this->sql_path || ! is_readable( $this->sql_path . '.shadow' ) ) {
-			return;
-		}
-		$data = json_decode( (string) file_get_contents( $this->sql_path . '.shadow' ), true );
-		if ( ! is_array( $data ) ) {
-			return;
-		}
-		foreach ( $data as $live => $shadow ) {
-			if ( is_string( $live ) && is_string( $shadow ) && preg_match( '/^[A-Za-z0-9_]+$/', $live ) && preg_match( '/^[A-Za-z0-9_]+$/', $shadow ) ) {
-				$this->shadow_map[ $live ] = $shadow;
-			}
-		}
-	}
-
-	/**
-	 * The source users table did not load. Swapping now would replace a live administrator with nothing.
-	 *
 	 * @return bool
 	 */
-	public function shadow_users_empty() {
-		$live = $this->dest_prefix . 'users';
-		if ( empty( $this->shadow_map[ $live ] ) || ! $this->table_exists( $this->shadow_map[ $live ] ) ) {
+	private function exec_sql( $sql ) {
+		if ( ! $this->dbh ) {
+			$this->last_errno = '0';
+			$this->last_error = 'no mysqli connection';
 			return false;
 		}
-		$count = $this->wpdb->get_var( 'SELECT COUNT(*) FROM `' . $this->esc( $this->shadow_map[ $live ] ) . '`' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		return null !== $count && (int) $count < 1;
-	}
-
-	/**
-	 * @return true|\WP_Error
-	 */
-	public function swap_shadows() {
-		$this->load_shadow_map();
-		$triples = array();
-		$created = array();
-		foreach ( $this->shadow_map as $live => $shadow ) {
-			if ( ! $this->table_exists( $shadow ) ) {
-				continue;
-			}
-			$retired = self::retired_name( $live );
-			if ( $retired === $live || $retired === $shadow ) {
-				return new \WP_Error( 'jisento_shadow', __( 'A shadow table name collided with a live table, so the live tables were not replaced.', 'jisento' ) );
-			}
-			if ( $this->table_exists( $retired ) ) {
-				$this->wpdb->query( 'DROP TABLE `' . $this->esc( $retired ) . '`' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			}
-			if ( $this->table_exists( $live ) ) {
-				$triples[] = array( $live, $shadow, $retired );
-			} else {
-				$created[] = array( $shadow, $live );
+		try {
+			$ok = mysqli_real_query( $this->dbh, $sql );
+		} catch ( \mysqli_sql_exception $e ) {
+			$this->last_errno = (string) $e->getCode();
+			$this->last_error = $e->getMessage();
+			return false;
+		}
+		if ( ! $ok || 0 !== mysqli_errno( $this->dbh ) ) {
+			$this->last_errno = (string) mysqli_errno( $this->dbh );
+			$this->last_error = (string) mysqli_error( $this->dbh );
+			return false;
+		}
+		if ( mysqli_field_count( $this->dbh ) > 0 ) {
+			$result = mysqli_store_result( $this->dbh );
+			if ( $result instanceof \mysqli_result ) {
+				mysqli_free_result( $result );
 			}
 		}
-		if ( $triples ) {
-			$result = $this->wpdb->query( self::rename_swap_sql( $triples ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			if ( false === $result ) {
-				return new \WP_Error( 'jisento_shadow', __( 'The restored tables could not be swapped into place. The live tables were left unchanged.', 'jisento' ) . ' ' . $this->wpdb->last_error );
-			}
-			$this->wpdb->query( 'SET FOREIGN_KEY_CHECKS=0' );
-			foreach ( $triples as $row ) {
-				$this->wpdb->query( 'DROP TABLE `' . $this->esc( $row[2] ) . '`' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			}
-			$this->wpdb->query( 'SET FOREIGN_KEY_CHECKS=1' );
-		}
-		foreach ( $created as $row ) {
-			$result = $this->wpdb->query( 'RENAME TABLE `' . $this->esc( $row[0] ) . '` TO `' . $this->esc( $row[1] ) . '`' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			if ( false === $result ) {
-				return new \WP_Error( 'jisento_shadow', __( 'A new restored table could not be renamed into place.', 'jisento' ) . ' ' . $this->wpdb->last_error );
-			}
-		}
-		if ( '' !== $this->sql_path && is_file( $this->sql_path . '.shadow' ) ) {
-			@unlink( $this->sql_path . '.shadow' );
-		}
-		$this->shadow_map = array();
+		$this->last_errno = '0';
+		$this->last_error = '';
 		return true;
 	}
 
 	/**
-	 * Drop shadow tables for a cancelled import. Live tables are not touched.
-	 *
-	 * @param string $sql_path Dump path.
+	 * @param string $sql Query.
+	 * @return array[]|null
 	 */
-	public static function drop_shadows( $sql_path ) {
-		global $wpdb;
-		$path = (string) $sql_path . '.shadow';
-		if ( ! is_readable( $path ) ) {
-			return;
+	private function rows( $sql ) {
+		if ( ! $this->dbh ) {
+			return null;
 		}
-		$data = json_decode( (string) file_get_contents( $path ), true );
-		if ( is_array( $data ) ) {
-			foreach ( $data as $live => $shadow ) {
-				if ( ! is_string( $shadow ) || ! preg_match( '/^[A-Za-z0-9_]+$/', $shadow ) ) {
-					continue;
+		try {
+			$ok = mysqli_real_query( $this->dbh, $sql );
+		} catch ( \mysqli_sql_exception $e ) {
+			$this->last_errno = (string) $e->getCode();
+			$this->last_error = $e->getMessage();
+			return null;
+		}
+		if ( ! $ok ) {
+			$this->last_errno = (string) mysqli_errno( $this->dbh );
+			$this->last_error = (string) mysqli_error( $this->dbh );
+			return null;
+		}
+		$result = mysqli_store_result( $this->dbh );
+		if ( ! ( $result instanceof \mysqli_result ) ) {
+			return array();
+		}
+		$out = array();
+		while ( $row = mysqli_fetch_assoc( $result ) ) { // phpcs:ignore WordPress.CodeAnalysis.AssignmentInCondition.FoundInWhileCondition
+			$out[] = $row;
+		}
+		mysqli_free_result( $result );
+		return $out;
+	}
+
+	private function scalar( $sql ) {
+		$rows = $this->rows( $sql );
+		if ( ! $rows ) {
+			return null;
+		}
+		$first = reset( $rows[0] );
+		return false === $first ? null : $first;
+	}
+
+	private static function esc( $ident ) {
+		return str_replace( '`', '', (string) $ident );
+	}
+
+	private function quote( $value ) {
+		return Sql_Escaper::quote_manual( $value );
+	}
+
+	private function table_exists( $table ) {
+		$found = $this->scalar( 'SHOW TABLES LIKE ' . $this->quote( addcslashes( $table, '_%\\' ) ) );
+		return (string) $found === (string) $table;
+	}
+
+	/* ------------------------------------------------------------------
+	 * Before and after the swap
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * Existing tables that a shadow or retired name would overwrite.
+	 *
+	 * @param string[] $tables Destination tables that will be restored.
+	 * @return string[]
+	 */
+	public function colliding_names( array $tables ) {
+		$hits = array();
+		foreach ( $tables as $table ) {
+			foreach ( array( self::shadow_name( $table ), self::retired_name( $table ) ) as $name ) {
+				if ( $this->table_exists( $name ) ) {
+					$hits[] = $name;
 				}
-				if ( is_string( $live ) && self::shadow_name( $live ) !== $shadow ) {
-					continue;
-				}
-				$wpdb->query( 'DROP TABLE IF EXISTS `' . str_replace( '`', '', $shadow ) . '`' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			}
 		}
-		@unlink( $path );
+		return $hits;
+	}
+
+	/**
+	 * Row count of each restored shadow compared with the counts written into the manifest.
+	 *
+	 * @param array<string,int> $expected Destination table => rows.
+	 * @return string[] Mismatch descriptions.
+	 */
+	public function count_mismatches( array $expected ) {
+		$out = array();
+		foreach ( $expected as $table => $rows ) {
+			$shadow = self::shadow_name( $table );
+			if ( ! $this->table_exists( $shadow ) ) {
+				$out[] = sprintf( '%s: restored table missing', $table );
+				continue;
+			}
+			$count = $this->scalar( 'SELECT COUNT(*) FROM `' . self::esc( $shadow ) . '`' );
+			if ( null === $count || (int) $count !== (int) $rows ) {
+				$out[] = sprintf( '%s: package %d rows, restored %s', $table, (int) $rows, null === $count ? '?' : (string) (int) $count );
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * @return bool True when the restored users table exists and has no rows.
+	 */
+	public function shadow_users_empty() {
+		$shadow = self::shadow_name( $this->dest_prefix . 'users' );
+		if ( ! $this->will_restore( $this->dest_prefix . 'users' ) || ! $this->table_exists( $shadow ) ) {
+			return false;
+		}
+		$count = $this->scalar( 'SELECT COUNT(*) FROM `' . $shadow . '`' );
+		return null !== $count && (int) $count < 1;
+	}
+
+	/**
+	 * Prefix-dependent keys, rewritten in the shadow tables so the live tables never see the source prefix.
+	 * Options: only "<prefix>user_roles". Usermeta: every key that starts with the prefix.
+	 * Keys that already carry the destination prefix are left alone, so a repeat run changes nothing.
+	 *
+	 * @return true|\WP_Error
+	 */
+	public function rewrite_prefix_in_shadows() {
+		$from = $this->source_prefix;
+		$to   = $this->dest_prefix;
+		if ( '' === $from || $from === $to ) {
+			return true;
+		}
+		$targets = array();
+		if ( $this->will_restore( $to . 'options' ) ) {
+			$targets[] = array( self::shadow_name( $to . 'options' ), 'option_name', true );
+		}
+		if ( $this->will_restore( $to . 'usermeta' ) ) {
+			$targets[] = array( self::shadow_name( $to . 'usermeta' ), 'meta_key', false );
+		}
+		foreach ( $targets as $target ) {
+			list( $table, $column, $roles_only ) = $target;
+			if ( ! $this->table_exists( $table ) ) {
+				continue;
+			}
+			$where = $roles_only
+				? 'BINARY `' . $column . '` = BINARY ' . $this->quote( $from . 'user_roles' )
+				: 'BINARY LEFT(`' . $column . '`, ' . strlen( $from ) . ') = BINARY ' . $this->quote( $from );
+			if ( 0 === strpos( $to, $from ) ) {
+				$where .= ' AND BINARY LEFT(`' . $column . '`, ' . strlen( $to ) . ') <> BINARY ' . $this->quote( $to );
+			}
+			$sql = 'UPDATE `' . $table . '` SET `' . $column . '` = CONCAT(' . $this->quote( $to ) . ', SUBSTRING(`' . $column . '`, ' . ( strlen( $from ) + 1 ) . ')) WHERE ' . $where;
+			if ( ! $this->exec_sql( $sql ) ) {
+				return $this->driver_error( 'rewrite table prefix in ' . $column, $table );
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Rename every restored shadow over its live table in one RENAME TABLE.
+	 * A repeated call after a crash sees no shadows left and only finishes the cleanup.
+	 *
+	 * @param string[] $tables Destination tables that were restored.
+	 * @return array{swapped:string[],retired_left:string[]}|\WP_Error
+	 */
+	public function swap_shadows( array $tables ) {
+		$driver = $this->assert_driver();
+		if ( is_wp_error( $driver ) ) {
+			return $driver;
+		}
+		$fk = $this->scalar( 'SELECT @@SESSION.foreign_key_checks' );
+		if ( ! $this->exec_sql( 'SET SESSION FOREIGN_KEY_CHECKS = 0' ) ) {
+			return $this->driver_error( 'disable foreign key checks for the swap', '' );
+		}
+		$result = $this->do_swap( $tables );
+		$this->exec_sql( 'SET SESSION FOREIGN_KEY_CHECKS = ' . ( (int) $fk ? 1 : 0 ) );
+		return $result;
+	}
+
+	private function do_swap( array $tables ) {
+		$pairs   = array();
+		$missing = array();
+		foreach ( $tables as $live ) {
+			$shadow  = self::shadow_name( $live );
+			$retired = self::retired_name( $live );
+			if ( ! $this->table_exists( $shadow ) ) {
+				$missing[] = $live;
+				continue;
+			}
+			if ( $this->table_exists( $retired ) ) {
+				if ( ! $this->exec_sql( 'DROP TABLE `' . $retired . '`' ) ) {
+					return $this->driver_error( 'drop leftover retired table before the swap', $retired );
+				}
+			}
+			if ( $this->table_exists( $live ) ) {
+				$pairs[] = '`' . $live . '` TO `' . $retired . '`';
+			}
+			$pairs[] = '`' . $shadow . '` TO `' . $live . '`';
+		}
+		if ( $missing && count( $missing ) !== count( $tables ) ) {
+			return new \WP_Error(
+				'jisento_shadow',
+				sprintf( __( 'The restored copies of these tables are missing, so no live table was replaced: %s', 'jisento' ), implode( ', ', $missing ) ) . $this->job_suffix()
+			);
+		}
+		if ( $missing ) {
+			foreach ( $tables as $live ) {
+				if ( ! $this->table_exists( $live ) ) {
+					return new \WP_Error( 'jisento_shadow', sprintf( __( 'Neither the live table nor its restored copy exists for %s.', 'jisento' ), $live ) . $this->job_suffix() );
+				}
+			}
+		} elseif ( $pairs && ! $this->exec_sql( 'RENAME TABLE ' . implode( ', ', $pairs ) ) ) {
+			return $this->driver_error( 'swap restored tables into place (no live table was changed)', '' );
+		}
+		$left = array();
+		foreach ( $tables as $live ) {
+			$retired = self::retired_name( $live );
+			if ( $this->table_exists( $retired ) && ! $this->exec_sql( 'DROP TABLE `' . $retired . '`' ) ) {
+				$left[] = $retired . ' (' . self::printable( $this->last_error ) . ')';
+			}
+		}
+		return array(
+			'swapped'      => array_values( $tables ),
+			'retired_left' => $left,
+		);
+	}
+
+	/**
+	 * After the swap, every foreign key must point at a live table and carry its original name.
+	 *
+	 * @param string[]                          $tables      Restored tables.
+	 * @param array<string,array<string,string>> $constraints Table => renamed => original constraint name.
+	 * @return array{repaired:string[]}|\WP_Error
+	 */
+	public function repair_foreign_keys( array $tables, array $constraints ) {
+		$reverse = array();
+		foreach ( $tables as $live ) {
+			$reverse[ self::shadow_name( $live ) ]  = $live;
+			$reverse[ self::retired_name( $live ) ] = $live;
+		}
+		$like = addcslashes( $this->dest_prefix, '_%\\' ) . '%';
+		$rows = $this->rows(
+			'SELECT k.TABLE_NAME, k.CONSTRAINT_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME, k.ORDINAL_POSITION, r.UPDATE_RULE, r.DELETE_RULE
+			FROM information_schema.KEY_COLUMN_USAGE k
+			JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME AND r.TABLE_NAME = k.TABLE_NAME
+			WHERE k.TABLE_SCHEMA = DATABASE() AND k.REFERENCED_TABLE_NAME IS NOT NULL AND k.TABLE_NAME LIKE ' . $this->quote( $like ) . '
+			ORDER BY k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION'
+		);
+		if ( null === $rows ) {
+			return $this->driver_error( 'read foreign keys', '' );
+		}
+		$fks = array();
+		foreach ( $rows as $row ) {
+			$key = $row['TABLE_NAME'] . "\0" . $row['CONSTRAINT_NAME'];
+			if ( ! isset( $fks[ $key ] ) ) {
+				$fks[ $key ] = array(
+					'table'      => $row['TABLE_NAME'],
+					'name'       => $row['CONSTRAINT_NAME'],
+					'ref'        => $row['REFERENCED_TABLE_NAME'],
+					'cols'       => array(),
+					'ref_cols'   => array(),
+					'on_update'  => $row['UPDATE_RULE'],
+					'on_delete'  => $row['DELETE_RULE'],
+				);
+			}
+			$fks[ $key ]['cols'][]     = $row['COLUMN_NAME'];
+			$fks[ $key ]['ref_cols'][] = $row['REFERENCED_COLUMN_NAME'];
+		}
+		$fk = $this->scalar( 'SELECT @@SESSION.foreign_key_checks' );
+		$this->exec_sql( 'SET SESSION FOREIGN_KEY_CHECKS = 0' );
+		$repaired = array();
+		$error    = null;
+		foreach ( $fks as $fkey ) {
+			$table = $fkey['table'];
+			if ( isset( $reverse[ $table ] ) ) {
+				continue;
+			}
+			$target = isset( $reverse[ $fkey['ref'] ] ) ? $reverse[ $fkey['ref'] ] : $fkey['ref'];
+			$name   = isset( $constraints[ $table ][ $fkey['name'] ] ) ? $constraints[ $table ][ $fkey['name'] ] : $fkey['name'];
+			if ( $target === $fkey['ref'] && $name === $fkey['name'] ) {
+				continue;
+			}
+			$add = sprintf(
+				'ADD CONSTRAINT `%s` FOREIGN KEY (%s) REFERENCES `%s` (%s) ON DELETE %s ON UPDATE %s',
+				self::esc( $name ),
+				'`' . implode( '`, `', array_map( array( __CLASS__, 'esc' ), $fkey['cols'] ) ) . '`',
+				self::esc( $target ),
+				'`' . implode( '`, `', array_map( array( __CLASS__, 'esc' ), $fkey['ref_cols'] ) ) . '`',
+				self::fk_rule( $fkey['on_delete'] ),
+				self::fk_rule( $fkey['on_update'] )
+			);
+			$drop = 'ALTER TABLE `' . self::esc( $table ) . '` DROP FOREIGN KEY `' . self::esc( $fkey['name'] ) . '`';
+			$ok   = $this->exec_sql( $drop ) && $this->exec_sql( 'ALTER TABLE `' . self::esc( $table ) . '` ' . $add );
+			if ( ! $ok ) {
+				$error = $this->driver_error( 'recreate foreign key ' . $name, $table );
+				break;
+			}
+			$repaired[] = $table . '.' . $name . ' -> ' . $target;
+		}
+		$this->exec_sql( 'SET SESSION FOREIGN_KEY_CHECKS = ' . ( (int) $fk ? 1 : 0 ) );
+		if ( $error ) {
+			return $error;
+		}
+		return array( 'repaired' => $repaired );
+	}
+
+	private static function fk_rule( $rule ) {
+		$rule = strtoupper( (string) $rule );
+		return in_array( $rule, array( 'CASCADE', 'SET NULL', 'RESTRICT', 'NO ACTION', 'SET DEFAULT' ), true ) ? $rule : 'RESTRICT';
+	}
+
+	/**
+	 * Convert tables back to the engine they had in the package. Only when the user asked for it.
+	 *
+	 * @param array<string,string> $engines Table => engine.
+	 * @return string[]|\WP_Error Converted tables.
+	 */
+	public function restore_engines( array $engines ) {
+		$done = array();
+		foreach ( $engines as $table => $engine ) {
+			if ( ! preg_match( '/^[A-Za-z0-9_]+$/', (string) $engine ) || ! $this->table_exists( $table ) ) {
+				continue;
+			}
+			if ( ! $this->exec_sql( 'ALTER TABLE `' . self::esc( $table ) . '` ENGINE=' . $engine ) ) {
+				return $this->driver_error( 'convert back to ' . $engine, $table );
+			}
+			$done[] = $table . ' -> ' . $engine;
+		}
+		return $done;
+	}
+
+	/**
+	 * Drop the shadow tables of a cancelled or failed import. Live tables are not touched.
+	 *
+	 * @param string[] $tables Destination tables.
+	 * @return string[] Tables that could not be dropped.
+	 */
+	public static function drop_shadows( array $tables ) {
+		global $wpdb;
+		$left = array();
+		foreach ( $tables as $table ) {
+			$shadow = self::shadow_name( (string) $table );
+			if ( ! preg_match( '/^[A-Za-z0-9_]+$/', $shadow ) ) {
+				continue;
+			}
+			if ( false === $wpdb->query( 'DROP TABLE IF EXISTS `' . $shadow . '`' ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$left[] = $shadow;
+			}
+		}
+		return $left;
 	}
 }
