@@ -35,11 +35,111 @@ class Job_Continuation {
 			return $result;
 		}
 		$job_id = self::job_id_from_request();
-		if ( '' === $job_id || ! self::matches( $job_id, self::presented() ) ) {
+		if ( '' === $job_id ) {
 			return $result;
 		}
-		self::note_once( $job_id );
-		return true;
+		if ( self::matches( $job_id, self::presented() ) ) {
+			self::note_once( $job_id );
+			return true;
+		}
+		// Short-lived server dispatch may only continue a step POST for this job.
+		if ( self::is_step_post_request() && self::verify_dispatch( $job_id, self::presented_dispatch() ) ) {
+			return true;
+		}
+		return $result;
+	}
+
+	/**
+	 * Derive a short-lived step-only dispatch token. No raw secret is stored; verify by recomputing.
+	 * Format: expires_at.hmac where hmac = HMAC-SHA256(continuation key, job_id|step|expires_at).
+	 *
+	 * @param string $job_id    Job id.
+	 * @param int    $ttl       Seconds until expiry (default ~5 minutes).
+	 * @return string Empty on failure.
+	 */
+	public static function issue_dispatch( $job_id, $ttl = 300 ) {
+		if ( ! self::valid_id( $job_id ) ) {
+			return '';
+		}
+		$expires = time() + max( 30, (int) $ttl );
+		$mac     = self::dispatch_mac( $job_id, $expires );
+		if ( '' === $mac ) {
+			return '';
+		}
+		return $expires . '.' . $mac;
+	}
+
+	/**
+	 * @param string $job_id Job id this request is for.
+	 * @param string $token  Header value expires_at.hmac.
+	 * @return bool
+	 */
+	public static function verify_dispatch( $job_id, $token ) {
+		if ( ! self::valid_id( $job_id ) || ! is_string( $token ) || '' === $token ) {
+			return false;
+		}
+		$dot = strpos( $token, '.' );
+		if ( false === $dot ) {
+			return false;
+		}
+		$expires = substr( $token, 0, $dot );
+		$mac     = substr( $token, $dot + 1 );
+		if ( ! preg_match( '/^\d{10,12}$/', $expires ) || ! preg_match( '/^[a-f0-9]{64}$/', $mac ) ) {
+			return false;
+		}
+		$expires_at = (int) $expires;
+		if ( $expires_at < time() ) {
+			return false;
+		}
+		$expected = self::dispatch_mac( $job_id, $expires_at );
+		if ( '' === $expected ) {
+			return false;
+		}
+		return hash_equals( $expected, $mac );
+	}
+
+	/**
+	 * @return string
+	 */
+	public static function presented_dispatch() {
+		return isset( $_SERVER['HTTP_X_JISENTO_DISPATCH'] ) ? (string) $_SERVER['HTTP_X_JISENTO_DISPATCH'] : '';
+	}
+
+	/**
+	 * True when the current HTTP request is POST /jisento/v1/jobs/{id} (the step route only).
+	 *
+	 * @return bool
+	 */
+	public static function is_step_post_request() {
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( (string) $_SERVER['REQUEST_METHOD'] ) : '';
+		if ( 'POST' !== $method ) {
+			return false;
+		}
+		$uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '';
+		if ( preg_match( '#/jisento/v1/jobs/([A-Za-z0-9_]{8,64})(?:\?|$)#', $uri ) ) {
+			return true;
+		}
+		// Pretty-permalink-free loopback: ?rest_route=/jisento/v1/jobs/{id}
+		$route = isset( $_GET['rest_route'] ) ? (string) $_GET['rest_route'] : '';
+		if ( '' === $route && isset( $_SERVER['QUERY_STRING'] ) && preg_match( '/(?:^|&)rest_route=([^&]+)/', (string) $_SERVER['QUERY_STRING'], $m ) ) {
+			$route = rawurldecode( $m[1] );
+		}
+		return (bool) preg_match( '#^/jisento/v1/jobs/([A-Za-z0-9_]{8,64})$#', $route );
+	}
+
+	/**
+	 * @param string $job_id     Job id.
+	 * @param int    $expires_at Unix expiry.
+	 * @return string Hex HMAC or ''.
+	 */
+	private static function dispatch_mac( $job_id, $expires_at ) {
+		try {
+			$key = self::mac_key();
+		} catch ( \Exception $e ) {
+			return '';
+		}
+		$message = (string) $job_id . '|step|' . (int) $expires_at;
+		return hash_hmac( 'sha256', $message, $key );
 	}
 
 	/**

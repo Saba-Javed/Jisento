@@ -12,9 +12,12 @@ use Jisento\Migration\Core\Lease;
 use Jisento\Migration\Export\Exporter;
 use Jisento\Migration\Import\Importer;
 use Jisento\Migration\Jobs\Job_Runner;
+use Jisento\Migration\Jobs\Job_Scheduler;
+use Jisento\Migration\Jobs\Step_Budget;
 use Jisento\Migration\Plugin;
 use Jisento\Migration\Remote\Transfer;
 use Jisento\Migration\Security\Guard;
+use Jisento\Migration\Security\Job_Continuation;
 use Jisento\Migration\Security\Migration_Key_Store;
 use Jisento\Migration\Security\Session_Store;
 
@@ -48,7 +51,7 @@ class Rest_Controller {
 				array(
 					'methods'             => 'POST',
 					'callback'            => array( $this, 'step_job' ),
-					'permission_callback' => array( $this, 'job_permission' ),
+					'permission_callback' => array( $this, 'step_permission' ),
 				),
 			)
 		);
@@ -296,6 +299,15 @@ class Rest_Controller {
 				'permission_callback' => array( $this, 'admin_permission' ),
 			)
 		);
+		register_rest_route(
+			self::NS,
+			'/loopback-ping',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'loopback_ping' ),
+				'permission_callback' => '__return_true',
+			)
+		);
 	}
 
 	public function admin_permission( \WP_REST_Request $request ) {
@@ -307,9 +319,9 @@ class Rest_Controller {
 	}
 
 	/**
-	 * Status, step, pause, resume, and cancel keep working after the restored
+	 * Status, pause, resume, retry, and cancel keep working after the restored
 	 * database drops the destination browser session. Creating a job still
-	 * requires the logged-in administrator.
+	 * requires the logged-in administrator. Dispatch tokens are NOT accepted here.
 	 *
 	 * @param \WP_REST_Request $request Request.
 	 * @return bool|\WP_Error
@@ -319,11 +331,54 @@ class Rest_Controller {
 			return true;
 		}
 		$id = isset( $request['id'] ) ? (string) $request['id'] : '';
-		if ( \Jisento\Migration\Security\Job_Continuation::matches( $id, \Jisento\Migration\Security\Job_Continuation::presented() ) ) {
-			\Jisento\Migration\Security\Job_Continuation::note_once( $id );
+		if ( Job_Continuation::matches( $id, Job_Continuation::presented() ) ) {
+			Job_Continuation::note_once( $id );
 			return true;
 		}
 		return new \WP_Error( 'jisento_forbidden', __( 'You are not allowed to run migrations.', 'jisento' ), array( 'status' => 403 ) );
+	}
+
+	/**
+	 * Step route only: admin capability, browser continuation token, or short-lived dispatch HMAC.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return bool|\WP_Error
+	 */
+	public function step_permission( \WP_REST_Request $request ) {
+		if ( \Jisento\Migration\Security\Capabilities::current_user_can() ) {
+			return true;
+		}
+		$id = isset( $request['id'] ) ? (string) $request['id'] : '';
+		if ( Job_Continuation::matches( $id, Job_Continuation::presented() ) ) {
+			Job_Continuation::note_once( $id );
+			return true;
+		}
+		if ( Job_Continuation::verify_dispatch( $id, Job_Continuation::presented_dispatch() ) ) {
+			return true;
+		}
+		return new \WP_Error( 'jisento_forbidden', __( 'You are not allowed to run migrations.', 'jisento' ), array( 'status' => 403 ) );
+	}
+
+	/**
+	 * Marker write for the loopback capability probe. Public so Hostinger-style
+	 * hosts that strip auth on internal requests can still prove PHP was hit.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function loopback_ping( \WP_REST_Request $request ) {
+		$nonce = $request->get_param( 'nonce' );
+		if ( ! is_string( $nonce ) || '' === $nonce ) {
+			$body = $request->get_json_params();
+			if ( is_array( $body ) && isset( $body['nonce'] ) ) {
+				$nonce = $body['nonce'];
+			}
+		}
+		$done = Job_Scheduler::complete_probe( (string) $nonce );
+		if ( is_wp_error( $done ) ) {
+			return $done;
+		}
+		return rest_ensure_response( array( 'ok' => true ) );
 	}
 
 	public function create_job( \WP_REST_Request $request ) {
@@ -373,7 +428,7 @@ class Rest_Controller {
 		if ( ! $job || empty( $job->job_id ) ) {
 			return new \WP_Error( 'jisento_job', __( 'The job could not be created.', 'jisento' ), array( 'status' => 500 ) );
 		}
-		$secret = \Jisento\Migration\Security\Job_Continuation::issue( $job->job_id );
+		$secret = Job_Continuation::issue( $job->job_id );
 		if ( '' === $secret ) {
 			Job_Runner::fail( $job, sprintf( __( 'Stage: start. Operation: store the job token. Reason: the token file could not be written. Recovery: make wp-content/jisento/jobs writable by PHP, then start again. Job: %s', 'jisento' ), $job->job_id ) );
 			return new \WP_Error(
@@ -382,12 +437,19 @@ class Rest_Controller {
 				array( 'status' => 500 )
 			);
 		}
+		$job = Job_Scheduler::prepare_worker( $job );
+		Job_Scheduler::maybe_dispatch( $job );
 		$response                       = Plugin::instance()->jobs->to_response( $job );
 		$response['continuation_token'] = $secret;
 		return rest_ensure_response( $response );
 	}
 
 	public function get_job( \WP_REST_Request $request ) {
+		$job = Plugin::instance()->jobs->get( $request['id'] );
+		if ( ! $job ) {
+			return new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento' ), array( 'status' => 404 ) );
+		}
+		Job_Scheduler::kick_if_stale( $job );
 		$job = Plugin::instance()->jobs->get( $request['id'] );
 		if ( ! $job ) {
 			return new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento' ), array( 'status' => 404 ) );
@@ -402,6 +464,7 @@ class Rest_Controller {
 		if ( function_exists( 'set_time_limit' ) ) {
 			@set_time_limit( 40 );
 		}
+		Step_Budget::begin();
 		$controller = $this;
 		$ran        = Job_Runner::step(
 			(string) $request['id'],
@@ -421,6 +484,9 @@ class Rest_Controller {
 	private function step_response( array $ran ) {
 		if ( $ran['error'] ) {
 			return $ran['error'];
+		}
+		if ( ! empty( $ran['job'] ) && empty( $ran['busy'] ) ) {
+			Job_Scheduler::maybe_dispatch( $ran['job'] );
 		}
 		$payload                = Plugin::instance()->jobs->to_response( $ran['job'] );
 		$payload['worker_busy'] = $ran['busy'];
@@ -541,6 +607,9 @@ class Rest_Controller {
 	private function job_result( $job ) {
 		if ( is_wp_error( $job ) ) {
 			return $job;
+		}
+		if ( $job && ! empty( $job->status ) && 'running' === $job->status ) {
+			Job_Scheduler::maybe_dispatch( $job );
 		}
 		return rest_ensure_response( Plugin::instance()->jobs->to_response( $job ) );
 	}

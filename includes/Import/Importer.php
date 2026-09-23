@@ -25,6 +25,7 @@ use Jisento\Migration\Database\Legacy_Package;
 use Jisento\Migration\Filesystem\File_System;
 use Jisento\Migration\Jobs\Job_Conflict;
 use Jisento\Migration\Jobs\Job_Runner;
+use Jisento\Migration\Jobs\Step_Budget;
 use Jisento\Migration\Package\Archive;
 use Jisento\Migration\Plugin;
 use Jisento\Migration\Replace\Url_Replacer;
@@ -174,6 +175,7 @@ class Importer {
 	}
 
 	public function step( $job ) {
+		Step_Budget::begin();
 		$state = is_array( $job->state ) ? $job->state : array();
 		if ( ! empty( $state['options'] ) ) {
 			$state['options'] = $this->normalize_options( $state['options'] );
@@ -437,7 +439,7 @@ class Importer {
 		$archive = new Archive();
 		$started = microtime( true );
 		$done    = 0;
-		while ( $index < count( $segments ) && ( 0 === $done || microtime( true ) - $started < 8 ) ) {
+		while ( $index < count( $segments ) && ( 0 === $done || microtime( true ) - $started < 8 ) && ! Step_Budget::exhausted() ) {
 			$segment = $segments[ $index ];
 			$dest    = $dir . '/' . basename( $segment['entry'] );
 			if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
@@ -650,7 +652,7 @@ class Importer {
 		if ( ! is_file( $path ) ) {
 			throw self::error( $job, 'restore the database', sprintf( __( 'Extracted segment %s is missing.', 'jisento' ), basename( $path ) ), __( 'Press Retry to extract and verify the package again. Live tables were not changed.', 'jisento' ) );
 		}
-		$chunk = $importer->import_chunk( $index, $path, 12, 800 );
+		$chunk = $importer->import_chunk( $index, $path, max( 1, Step_Budget::seconds( 12 ) ), 800 );
 		if ( is_wp_error( $chunk ) ) {
 			throw self::error( $job, sprintf( 'restore %s', basename( $path ) ), $chunk->get_error_message(), __( 'Fix the reported cause, then press Retry. Live tables were not changed; the restore restarts from the beginning.', 'jisento' ) );
 		}
@@ -870,7 +872,7 @@ class Importer {
 			$state['package_path'],
 			$index,
 			400,
-			12,
+			max( 1, Step_Budget::seconds( 12 ) ),
 			function ( $relative ) use ( $state ) {
 				return $this->destination_for_archive_file( $relative, $state );
 			}
@@ -1130,7 +1132,7 @@ class Importer {
 		$result   = $replacer->replace_all(
 			$source,
 			$dest,
-			8,
+			max( 1, Step_Budget::seconds( 8 ) ),
 			$prior,
 			array(
 				'only_tables'   => isset( $state['plan']['restore'] ) ? $state['plan']['restore'] : array(),

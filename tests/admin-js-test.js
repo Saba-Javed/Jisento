@@ -41,6 +41,11 @@ check('validation card says format marker, not signature', /Format marker/.test(
 check('import sends replace_tables and replace_guids', /replace_tables/.test(source) && /replace_guids/.test(source));
 check('HTTP 409 on job creation is handled', /status === 409/.test(source));
 check('esc() helper removed', !/function esc\(/.test(source));
+check('server worker polls every 2s', /await wait\(2000\)/.test(source));
+check('browser worker mode still POSTs steps', /worker_mode === 'browser'/.test(source));
+check('Reconnecting... copy for transient poll errors', /Reconnecting\.\.\./.test(source));
+check('stalled jobs show Resume', /jisento-resume-stalled/.test(source));
+check('loopback blocked notice is present', /jisento-loopback-notice/.test(source));
 
 var helpers = null;
 try {

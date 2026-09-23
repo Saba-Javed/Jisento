@@ -152,6 +152,22 @@ class Job_Store {
 		);
 	}
 
+	/**
+	 * Running jobs (for cron / scheduler ticks).
+	 *
+	 * @param int $limit Max rows.
+	 * @return object[]
+	 */
+	public function list_running( $limit = 20 ) {
+		global $wpdb;
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT job_id, type, status, stage, updated_at FROM ' . $this->table() . " WHERE status = 'running' ORDER BY updated_at ASC LIMIT %d",
+				max( 1, (int) $limit )
+			)
+		);
+	}
+
 	public function expire_stale() {
 		global $wpdb;
 		$wpdb->query(
@@ -193,6 +209,9 @@ class Job_Store {
 			}
 		}
 
+		$worker_mode = isset( $state['worker_mode'] ) ? (string) $state['worker_mode'] : 'server';
+		$loopback_ok = ! empty( $state['loopback_ok'] );
+
 		return array(
 			'job_id'        => $job->job_id,
 			'type'          => $job->type,
@@ -209,6 +228,9 @@ class Job_Store {
 			'state'         => $state,
 			'created_at'    => $job->created_at,
 			'updated_at'    => $job->updated_at,
+			'worker_mode'   => ( 'browser' === $worker_mode ) ? 'browser' : 'server',
+			'loopback_ok'   => (bool) $loopback_ok,
+			'stalled'       => Job_Scheduler::is_stalled( $job ),
 		);
 	}
 

@@ -12,6 +12,7 @@ use Jisento\Migration\Database\Dump_Writer;
 use Jisento\Migration\Filesystem\File_System;
 use Jisento\Migration\Jobs\Job_Conflict;
 use Jisento\Migration\Jobs\Job_Store;
+use Jisento\Migration\Jobs\Step_Budget;
 use Jisento\Migration\Package\Archive;
 use Jisento\Migration\Plugin;
 
@@ -45,6 +46,7 @@ class Exporter {
 	public function step( $job ) {
 		$plugin = Plugin::instance();
 		$state  = is_array( $job->state ) ? $job->state : array();
+		Step_Budget::begin();
 
 		try {
 			switch ( $job->stage ) {
@@ -163,7 +165,7 @@ class Exporter {
 		}
 
 		if ( empty( $state['scan_done'] ) ) {
-			$more = $this->scan_batch( $state, 4 );
+			$more = $this->scan_batch( $state, Step_Budget::seconds( 4 ) );
 			$state['activity'] = $this->activity(
 				'preparing',
 				__( 'Preparing website', 'jisento' ),
@@ -333,7 +335,7 @@ class Exporter {
 		$dump   = isset( $state['dump'] ) && is_array( $state['dump'] ) ? $state['dump'] : Dump_Writer::initial_state( $tables );
 		$db     = new Database_Exporter();
 		$writer = new Dump_Writer( $state['dump_dir'], $db );
-		$next   = $writer->step( $dump, 8, 500 );
+		$next   = $writer->step( $dump, max( 1, Step_Budget::seconds( 8 ) ), 500 );
 		$db->restore_connection_charset();
 		if ( is_wp_error( $next ) ) {
 			throw new \RuntimeException( $next->get_error_message() );
@@ -414,7 +416,7 @@ class Exporter {
 			fseek( $fh, $offset );
 		}
 
-		while ( $index < $total && ( time() - $start ) < 4 ) {
+		while ( $index < $total && ( time() - $start ) < 4 && ! Step_Budget::exhausted() ) {
 			$line = fgets( $fh );
 			if ( false === $line ) {
 				break;
@@ -579,7 +581,7 @@ class Exporter {
 				if ( $offset > 0 ) {
 					fseek( $fh, $offset );
 				}
-				while ( $index < $total && ( time() - $start ) < 8 ) {
+				while ( $index < $total && ( time() - $start ) < 8 && ! Step_Budget::exhausted() ) {
 					if ( $bytes > 33554432 && count( $batch ) > 0 ) {
 						break;
 					}

@@ -95,6 +95,29 @@ $jisento_stubs = array(
 	'add_filter'          => function () {},
 	'is_multisite'        => function () { return ! empty( $GLOBALS['jisento_test_multisite'] ); },
 	'wp_mkdir_p'          => function ( $d ) { return is_dir( $d ) || mkdir( $d, 0777, true ); },
+	'add_query_arg'       => function () {
+		$args = func_get_args();
+		if ( is_array( $args[0] ) ) {
+			$params = $args[0];
+			$url    = isset( $args[1] ) ? (string) $args[1] : '';
+		} else {
+			$params = array( $args[0] => isset( $args[1] ) ? $args[1] : '' );
+			$url    = isset( $args[2] ) ? (string) $args[2] : '';
+		}
+		$parts = parse_url( $url );
+		$query = array();
+		if ( ! empty( $parts['query'] ) ) {
+			parse_str( $parts['query'], $query );
+		}
+		foreach ( $params as $k => $v ) {
+			$query[ $k ] = $v;
+		}
+		$base = ( isset( $parts['scheme'] ) ? $parts['scheme'] . '://' : '' )
+			. ( isset( $parts['host'] ) ? $parts['host'] : '' )
+			. ( isset( $parts['port'] ) ? ':' . $parts['port'] : '' )
+			. ( isset( $parts['path'] ) ? $parts['path'] : '' );
+		return $base . ( $query ? '?' . http_build_query( $query ) : '' );
+	},
 	'get_option'          => function ( $k, $d = false ) { return array_key_exists( $k, $GLOBALS['jisento_test_options'] ) ? $GLOBALS['jisento_test_options'][ $k ] : $d; },
 	'update_option'       => function ( $k, $v ) { $GLOBALS['jisento_test_options'][ $k ] = $v; return true; },
 	'delete_option'       => function ( $k ) { unset( $GLOBALS['jisento_test_options'][ $k ] ); return true; },

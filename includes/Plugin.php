@@ -64,6 +64,7 @@ class Plugin {
 
 	public static function deactivate() {
 		wp_clear_scheduled_hook( 'jisento_maintenance' );
+		wp_clear_scheduled_hook( 'jisento_job_tick' );
 		flush_rewrite_rules();
 	}
 
@@ -83,16 +84,39 @@ class Plugin {
 
 		add_action( 'init', array( $this, 'on_init' ) );
 		add_filter( 'upload_mimes', array( $this, 'mimes' ) );
+		add_filter( 'cron_schedules', array( $this, 'cron_schedules' ) );
 		add_action( 'rest_api_init', array( $this, 'register_rest' ) );
 		add_action( 'jisento_maintenance', array( $this, 'run_maintenance' ) );
+		add_action( 'jisento_job_tick', array( $this, 'run_job_tick' ) );
 
 		if ( is_admin() ) {
 			( new Admin() )->register();
 		}
 
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			\Jisento\Migration\Cli\Commands::register();
+		}
+
 		if ( ! wp_next_scheduled( 'jisento_maintenance' ) ) {
 			wp_schedule_event( time() + 60, 'hourly', 'jisento_maintenance' );
 		}
+		if ( ! wp_next_scheduled( 'jisento_job_tick' ) ) {
+			wp_schedule_event( time() + 30, 'jisento_minute', 'jisento_job_tick' );
+		}
+	}
+
+	/**
+	 * @param array $schedules Schedules.
+	 * @return array
+	 */
+	public function cron_schedules( $schedules ) {
+		if ( ! isset( $schedules['jisento_minute'] ) ) {
+			$schedules['jisento_minute'] = array(
+				'interval' => 60,
+				'display'  => __( 'Every minute (Jisento)', 'jisento' ),
+			);
+		}
+		return $schedules;
 	}
 
 	public function on_init() {
@@ -114,5 +138,9 @@ class Plugin {
 		( new Security\Session_Store() )->expire_stale();
 		$this->storage->enforce_retention( (int) $this->settings->get( 'keep_backups', 3 ) );
 		$this->logger->prune( 30 );
+	}
+
+	public function run_job_tick() {
+		Jobs\Job_Scheduler::tick_stale();
 	}
 }

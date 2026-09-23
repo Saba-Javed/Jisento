@@ -443,6 +443,12 @@
 		const parts = [];
 		const titles = headlines(job);
 		parts.push(el('h2', null, titles.running));
+		if (job.worker_mode === 'browser') {
+			parts.push(el('p', { className: 'jisento-notice jisento-warning', id: 'jisento-loopback-notice' }, 'Server loopback is blocked on this host. Keep this tab open — it drives each migration step.'));
+		}
+		if (job.stalled) {
+			parts.push(el('p', { className: 'jisento-notice jisento-warning', id: 'jisento-stalled-notice' }, 'This job looks stalled (no heartbeat for about 2 minutes).'));
+		}
 		parts.push(el('p', null, el('strong', null, label)));
 		if (act.detail) {
 			parts.push(el('p', null, act.detail));
@@ -478,7 +484,7 @@
 		}
 		parts.push(el('p', null, 'Last update: ' + (job.updated_at || '—')));
 		const id = job.job_id;
-		parts.push(el('p', null, [
+		const controls = [
 			el('button', {
 				type: 'button',
 				className: 'button',
@@ -511,7 +517,31 @@
 					}
 				}
 			}, 'Cancel')
-		]));
+		];
+		if (job.stalled) {
+			controls.push(' ');
+			controls.push(el('button', {
+				type: 'button',
+				className: 'button button-primary',
+				id: 'jisento-resume-stalled',
+				onClick: async function (e) {
+					const button = e.currentTarget;
+					button.disabled = true;
+					try {
+						const resumed = await api.req(jobRoute(id, 'resume'), withJobAuth(id, { method: 'POST', body: {} }));
+						if (resumed && resumed.job_id) {
+							storageSet(ACTIVE_JOB_KEY, JSON.stringify({ id: id, type: resumed.type || job.type || '' }));
+						}
+						paused = false;
+						runJob(id);
+					} catch (err) {
+						button.disabled = false;
+						setStatusLine(box, plainError(err, 'Resume failed.'));
+					}
+				}
+			}, 'Resume'));
+		}
+		parts.push(el('p', null, controls));
 		fill(box, parts);
 	}
 
@@ -786,7 +816,7 @@
 				renderProgress(lastJob);
 			}
 			const reason = err && err.status ? 'HTTP ' + err.status : (err && err.timeout ? 'request timed out' : 'network error');
-			setStatusLine($('#jisento-progress'), 'Reconnecting (' + reason + ', attempt ' + misses + '). The job is still running on the server.');
+			setStatusLine($('#jisento-progress'), 'Reconnecting... (' + reason + ', attempt ' + misses + ')');
 			await wait(Math.min(15000, 2000 + misses * 1000));
 		}
 
@@ -810,31 +840,37 @@
 				if (showJob(job)) {
 					return job;
 				}
-				let stepped = null;
-				try {
-					stepped = await api.req(jobRoute(id), withJobAuth(id, { method: 'POST', body: {}, timeout: 45000 }));
-				} catch (err) {
-					if (isTransient(err)) {
-						await reconnect(err);
+				const browserWorker = job.worker_mode === 'browser';
+				if (browserWorker) {
+					let stepped = null;
+					try {
+						stepped = await api.req(jobRoute(id), withJobAuth(id, { method: 'POST', body: {}, timeout: 45000 }));
+					} catch (err) {
+						if (isTransient(err)) {
+							await reconnect(err);
+							continue;
+						}
+						throw err;
+					}
+					if (!alive()) {
+						break;
+					}
+					misses = 0;
+					if (stepped && stepped.worker_busy) {
+						await wait(1500);
 						continue;
 					}
-					throw err;
-				}
-				if (!alive()) {
-					break;
-				}
-				misses = 0;
-				if (stepped && stepped.worker_busy) {
-					await wait(1500);
+					if (stepped && stepped.job_id) {
+						lastJob = stepped;
+						if (showJob(stepped)) {
+							return stepped;
+						}
+					}
+					await wait(200);
 					continue;
 				}
-				if (stepped && stepped.job_id) {
-					lastJob = stepped;
-					if (showJob(stepped)) {
-						return stepped;
-					}
-				}
-				await wait(200);
+				// Server worker: poll only. Status GET also kicks a stale step.
+				await wait(2000);
 			}
 		} catch (err) {
 			if (generation !== runGeneration) {
