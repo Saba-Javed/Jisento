@@ -357,6 +357,10 @@ class Importer {
 		if ( $state['legacy'] ) {
 			$note .= ' This is a version 1 package; it will be restored in compatibility mode.';
 		}
+		if ( 2 === (int) $info['format'] && empty( $info['entry_digests'] ) ) {
+			$note .= ' No checksums/entries.jsonl; file restore will use ZIP CRC-32 only.';
+			$plugin->logger->log( $job->job_id, 'validating', 'package', basename( $path ), 'info', 'Package has no checksums/entries.jsonl (older v2 build). Destination files will be checked with ZIP CRC-32 only.' );
+		}
 		$plugin->logger->log( $job->job_id, 'validating', 'package', basename( $path ), 'ok', $note );
 		if ( $state['jisento_copies'] ) {
 			$plugin->logger->log( $job->job_id, 'validating', 'package', '', 'info', 'Copies of Jisento Migration inside the package are not restored: ' . implode( ', ', $state['jisento_copies'] ) );

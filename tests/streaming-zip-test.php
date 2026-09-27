@@ -71,10 +71,13 @@ function zt_verify_zip( $zip_path, array $expected ) {
 	if ( true !== $rc ) {
 		return 'ZipArchive::open failed with code ' . $rc;
 	}
-	if ( $zip->numFiles !== count( $expected ) ) {
+	$digests_name = Streaming_Zip_Writer::ENTRY_DIGESTS;
+	$has_digests  = false !== $zip->locateName( $digests_name );
+	$want         = count( $expected ) + ( $has_digests ? 1 : 0 );
+	if ( $zip->numFiles !== $want ) {
 		$n = $zip->numFiles;
 		$zip->close();
-		return 'entry count ' . $n . ' != ' . count( $expected );
+		return 'entry count ' . $n . ' != ' . $want;
 	}
 	foreach ( $expected as $name => $bytes ) {
 		$stat = $zip->statName( $name );
@@ -97,6 +100,61 @@ function zt_verify_zip( $zip_path, array $expected ) {
 		}
 	}
 	$zip->close();
+	return '';
+}
+
+/**
+ * Patch a stored entry's payload in place and rewrite CRC fields so ZipArchive CRC checks still pass.
+ */
+function zt_tamper_stored_keep_crc( $zip_path, $name, $new_bytes ) {
+	$zip = new ZipArchive();
+	$zip->open( $zip_path );
+	$stat = $zip->statName( $name );
+	$zip->close();
+	if ( false === $stat || 0 !== (int) $stat['comp_method'] || (int) $stat['size'] !== strlen( $new_bytes ) ) {
+		return 'need a stored entry of the same size';
+	}
+	$data_at = Archive::data_offset( $zip_path, $name );
+	if ( is_wp_error( $data_at ) ) {
+		return $data_at->get_error_message();
+	}
+	$crc    = (int) hexdec( hash( 'crc32b', $new_bytes ) );
+	$fh     = fopen( $zip_path, 'r+b' );
+	$size   = filesize( $zip_path );
+	fseek( $fh, max( 0, $size - 65557 ) );
+	$buf    = (string) fread( $fh, 65557 );
+	$pos    = strrpos( $buf, "PK\x05\x06" );
+	$eocd   = unpack( 'Vcd_size/Vcd_offset', substr( $buf, $pos + 12, 8 ) );
+	$cd_pos = (int) $eocd['cd_offset'];
+	$local  = null;
+	$cd_crc = null;
+	fseek( $fh, $cd_pos );
+	while ( true ) {
+		$head = (string) fread( $fh, 46 );
+		if ( strlen( $head ) < 46 || "PK\x01\x02" !== substr( $head, 0, 4 ) ) {
+			break;
+		}
+		$h     = unpack( 'Vcrc/Vcsize/Vusize/vnlen/velen/vclen/vdisk/vint/Vext/Voffset', substr( $head, 16, 30 ) );
+		$ename = (string) fread( $fh, $h['nlen'] );
+		fseek( $fh, $h['elen'] + $h['clen'], SEEK_CUR );
+		if ( $ename === $name ) {
+			$local  = (int) $h['offset'];
+			$cd_crc = $cd_pos + 16;
+			break;
+		}
+		$cd_pos += 46 + $h['nlen'] + $h['elen'] + $h['clen'];
+	}
+	if ( null === $local || null === $cd_crc ) {
+		fclose( $fh );
+		return 'central directory entry not found';
+	}
+	fseek( $fh, $data_at );
+	fwrite( $fh, $new_bytes );
+	fseek( $fh, $local + 14 );
+	fwrite( $fh, pack( 'V', $crc ) );
+	fseek( $fh, $cd_crc );
+	fwrite( $fh, pack( 'V', $crc ) );
+	fclose( $fh );
 	return '';
 }
 
@@ -266,6 +324,10 @@ check( 'finish() reports the archive size', filesize( $zip_path ) === $result['s
 $problem = zt_verify_zip( $zip_path, $expected );
 check( 'ZipArchive (CHECKCONS) reads every entry with matching bytes and CRC-32', '' === $problem, $problem );
 check( 'content_sha256 matches an independent recomputation', zt_content_sha( $expected, $chunk ) === $result['content_sha256'] );
+$digests = Archive::read_entry_digests( $zip_path );
+check( 'checksums/entries.jsonl is embedded in the package', is_array( $digests ) && isset( $digests['entries']['files/video.mp4'] ) );
+check( 'embedded content_sha256 matches finish()', is_array( $digests ) && $digests['content_sha256'] === $result['content_sha256'] );
+check( 'recomputed content_sha256 matches the header', is_array( $digests ) && Streaming_Zip_Writer::content_sha256_of( array_values( $digests['entries'] ) ) === $digests['content_sha256'] );
 check( 'finished_result() returns the same result for a repeated finalize', Streaming_Zip_Writer::finished_result( $state ) == $result );
 $zip = new ZipArchive();
 $zip->open( $zip_path );
@@ -419,6 +481,34 @@ do {
 } while ( ! $batch['done'] && $calls < 50 );
 check( 'damaged large entry fails its CRC check', is_wp_error( $batch ) && 'jisento_entry_crc' === $batch->get_error_code() );
 check( 'damaged large entry is not put in place', ! is_file( $dest . '/movie.mp4' ) && ! glob( $dest . '/*.jisento-tmp' ) );
+
+// Tamper with stored bytes and patch the ZIP CRC so CRC alone would pass; SHA-256 must still fail.
+$tampered = $root . '/tamper.zip';
+copy( $rz, $tampered );
+$evil     = str_repeat( 'X', strlen( $big ) );
+$patch    = zt_tamper_stored_keep_crc( $tampered, 'files/movie.mp4', $evil );
+check( 'tamper helper rewrote the stored entry and its CRC fields', '' === $patch, $patch );
+$zip = new ZipArchive();
+$zip->open( $tampered, ZipArchive::CHECKCONS );
+$got = $zip->getFromName( 'files/movie.mp4' );
+$zip->close();
+check( 'ZipArchive CRC accepts the CRC-patched tamper', $got === $evil );
+zt_rmtree( $dest );
+@mkdir( $dest, 0777, true );
+$index   = 0;
+$partial = null;
+$calls   = 0;
+do {
+	$batch = $archive->extract_files_batch( $tampered, $index, 400, 30, $mapper, $partial, 1048576 );
+	if ( is_wp_error( $batch ) ) {
+		break;
+	}
+	$index   = $batch['next'];
+	$partial = $batch['partial'];
+	$calls++;
+} while ( ! $batch['done'] && $calls < 50 );
+check( 'CRC-patched tamper fails the SHA-256 check', is_wp_error( $batch ) && 'jisento_entry_sha' === $batch->get_error_code(), is_wp_error( $batch ) ? $batch->get_error_code() . ' ' . $batch->get_error_message() : 'no error' );
+check( 'CRC-patched tamper is not put in place', ! is_file( $dest . '/movie.mp4' ) );
 
 // Legacy package: a large deflated entry is also restored in bounded pieces.
 $legacy_text = str_repeat( zt_bytes( 700, 5 ) . "\n", 4000 );

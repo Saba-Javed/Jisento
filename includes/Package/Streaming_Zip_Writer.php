@@ -386,7 +386,14 @@ class Streaming_Zip_Writer {
 	}
 
 	/**
-	 * Write the central directory and end records. The writer is unusable afterwards.
+	 * Name of the JSON-lines digests entry written just before the central directory.
+	 */
+	const ENTRY_DIGESTS = 'checksums/entries.jsonl';
+
+	/**
+	 * Write checksums/entries.jsonl from the current index, then the central directory.
+	 * content_sha256 is the hash of every entry that existed before that digests file
+	 * (name, size, CRC-32 hex, per-entry SHA-256), so an import can recompute it from the file alone.
 	 *
 	 * @return array{size:int,count:int,content_sha256:string}
 	 */
@@ -395,14 +402,14 @@ class Streaming_Zip_Writer {
 			throw new \RuntimeException( 'Operation: finish the package. Reason: an entry is still being written. Recovery: start a new export.' );
 		}
 		$this->commit();
-		$cd_start = (int) $this->state['offset'];
+		$content_sha = $this->embed_entry_checksums();
+		$cd_start    = (int) $this->state['offset'];
 		fseek( $this->fh, $cd_start );
 		fseek( $this->index_fh, 0 );
-		$content = hash_init( 'sha256' );
-		$count   = 0;
-		$read    = 0;
-		$limit   = (int) $this->state['index_bytes'];
-		$force   = ! empty( $this->state['force_zip64'] );
+		$count = 0;
+		$read  = 0;
+		$limit = (int) $this->state['index_bytes'];
+		$force = ! empty( $this->state['force_zip64'] );
 		while ( $read < $limit ) {
 			$line = fgets( $this->index_fh );
 			if ( false === $line ) {
@@ -415,7 +422,6 @@ class Streaming_Zip_Writer {
 			}
 			$name = hex2bin( $e['n'] );
 			$this->write( $this->central_record( $e, $name, $force ) );
-			hash_update( $content, $name . "\0" . (int) $e['us'] . "\0" . sprintf( '%08x', (int) $e['crc'] ) . "\0" . $e['sha'] . "\n" );
 			$count++;
 		}
 		if ( $count !== (int) $this->state['count'] ) {
@@ -443,13 +449,89 @@ class Streaming_Zip_Writer {
 			'count'          => $count,
 			'files_count'    => (int) $this->state['files_count'],
 			'files_bytes'    => (int) $this->state['files_bytes'],
-			'content_sha256' => hash_final( $content ),
+			'content_sha256' => $content_sha,
 		);
 		$this->state['finished'] = true;
 		$this->state['result']   = $result;
 		$this->commit();
 		$this->close();
 		return $result;
+	}
+
+	/**
+	 * Append checksums/entries.jsonl listing every finished entry so far. Returns content_sha256.
+	 *
+	 * @return string
+	 */
+	private function embed_entry_checksums() {
+		fseek( $this->index_fh, 0 );
+		$content = hash_init( 'sha256' );
+		$lines   = array();
+		$read    = 0;
+		$limit   = (int) $this->state['index_bytes'];
+		while ( $read < $limit ) {
+			$line = fgets( $this->index_fh );
+			if ( false === $line ) {
+				break;
+			}
+			$read += strlen( $line );
+			$e     = json_decode( $line, true );
+			if ( ! is_array( $e ) || ! isset( $e['n'], $e['sha'] ) ) {
+				throw new \RuntimeException( 'Operation: finish the package. Reason: the entry index is damaged. Recovery: start a new export.' );
+			}
+			$name = hex2bin( $e['n'] );
+			if ( self::ENTRY_DIGESTS === $name ) {
+				throw new \RuntimeException( 'Operation: finish the package. Reason: entry digests were already written. Recovery: start a new export.' );
+			}
+			$crc = sprintf( '%08x', (int) $e['crc'] & 0xFFFFFFFF );
+			hash_update( $content, $name . "\0" . (int) $e['us'] . "\0" . $crc . "\0" . $e['sha'] . "\n" );
+			$lines[] = array(
+				'n'   => $name,
+				'us'  => (int) $e['us'],
+				'crc' => $crc,
+				'sha' => (string) $e['sha'],
+			);
+		}
+		$content_sha = hash_final( $content );
+		$body        = wp_json_encode(
+			array(
+				'v'              => 1,
+				'hash_chunk'     => (int) $this->state['hash_chunk'],
+				'content_sha256' => $content_sha,
+			)
+		) . "\n";
+		foreach ( $lines as $row ) {
+			$json = wp_json_encode( $row );
+			if ( ! is_string( $json ) ) {
+				throw new \RuntimeException( 'Operation: finish the package. Reason: an entry digest could not be encoded. Recovery: start a new export.' );
+			}
+			$body .= $json . "\n";
+		}
+		$this->add_string( self::ENTRY_DIGESTS, $body );
+		$this->commit();
+		return $content_sha;
+	}
+
+	/**
+	 * content_sha256 over a list of digests (same formula as finish()).
+	 *
+	 * @param array $rows List of {n|name, us|size, crc, sha}.
+	 * @return string
+	 */
+	public static function content_sha256_of( array $rows ) {
+		$ctx = hash_init( 'sha256' );
+		foreach ( $rows as $row ) {
+			$name = isset( $row['n'] ) ? (string) $row['n'] : (string) $row['name'];
+			$size = isset( $row['us'] ) ? (int) $row['us'] : (int) $row['size'];
+			$crc  = isset( $row['crc'] ) ? (string) $row['crc'] : '';
+			if ( preg_match( '/^[0-9a-f]{8}$/i', $crc ) ) {
+				$crc = strtolower( $crc );
+			} else {
+				$crc = sprintf( '%08x', (int) $crc & 0xFFFFFFFF );
+			}
+			hash_update( $ctx, $name . "\0" . $size . "\0" . $crc . "\0" . $row['sha'] . "\n" );
+		}
+		return hash_final( $ctx );
 	}
 
 	/**

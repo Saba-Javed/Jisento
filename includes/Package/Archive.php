@@ -12,6 +12,7 @@
  *                               database.tables{} (rows, bytes, sha256, key, stable), file_count, files_bytes
  *   database/part-NNNNN.sql     database dump segments
  *   files/...                   site files
+ *   checksums/entries.jsonl     per-entry digests (name, size, CRC-32, chunked SHA-256) + content_sha256
  *
  * v1 layout (read only): JISENTO, manifest.json, checksums.json, database/database.sql, files/...
  *
@@ -261,7 +262,106 @@ class Archive {
 		$zip->close();
 		$info['file_entries'] = $file_entries;
 		$info['file_bytes']   = $file_bytes;
+
+		if ( 2 === $info['format'] ) {
+			$digests = self::read_entry_digests( $zip_path );
+			if ( is_wp_error( $digests ) ) {
+				return $digests;
+			}
+			$info['entry_digests'] = $digests;
+			if ( $digests ) {
+				$recomputed = Streaming_Zip_Writer::content_sha256_of( array_values( $digests['entries'] ) );
+				if ( $recomputed !== $digests['content_sha256'] ) {
+					return new \WP_Error( 'jisento_content_sha', __( 'The package content checksum does not match checksums/entries.jsonl. The package is damaged or was modified; export it again.', 'jisento' ) );
+				}
+				$recorded = self::recorded_content_sha256( $zip_path, $manifest );
+				if ( is_string( $recorded ) && $recorded !== $digests['content_sha256'] ) {
+					return new \WP_Error( 'jisento_content_sha', __( 'The package content checksum does not match its integrity record. The package is damaged or was modified; export it again.', 'jisento' ) );
+				}
+				foreach ( array_keys( $digests['entries'] ) as $ename ) {
+					if ( 0 !== strpos( $ename, 'files/' ) || '/' === substr( $ename, -1 ) ) {
+						continue;
+					}
+					// Presence of every listed files/* entry was already checked via file_count; missing digest lines are checked on extract.
+				}
+			}
+		} else {
+			$info['entry_digests'] = null;
+		}
+
 		return $info;
+	}
+
+	/**
+	 * content_sha256 from the registry sidecar or the manifest, when present.
+	 *
+	 * @param string $zip_path Package.
+	 * @param array  $manifest Manifest.
+	 * @return string|null
+	 */
+	public static function recorded_content_sha256( $zip_path, array $manifest = array() ) {
+		if ( ! empty( $manifest['content_sha256'] ) && preg_match( '/^[a-f0-9]{64}$/', (string) $manifest['content_sha256'] ) ) {
+			return (string) $manifest['content_sha256'];
+		}
+		$sidecar = $zip_path . '.json';
+		if ( is_readable( $sidecar ) ) {
+			$meta = json_decode( (string) file_get_contents( $sidecar ), true );
+			if ( is_array( $meta ) && ! empty( $meta['content_sha256'] ) && preg_match( '/^[a-f0-9]{64}$/', (string) $meta['content_sha256'] ) ) {
+				return (string) $meta['content_sha256'];
+			}
+			if ( is_array( $meta ) && isset( $meta['checksum_kind'], $meta['checksum'] ) && 'content-sha256' === $meta['checksum_kind'] && preg_match( '/^[a-f0-9]{64}$/', (string) $meta['checksum'] ) ) {
+				return (string) $meta['checksum'];
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Read checksums/entries.jsonl. Null when the entry is absent (older v2 packages).
+	 *
+	 * @param string $zip_path Package.
+	 * @return array{hash_chunk:int,content_sha256:string,entries:array}|null|\WP_Error
+	 */
+	public static function read_entry_digests( $zip_path ) {
+		$zip = new \ZipArchive();
+		if ( true !== $zip->open( $zip_path ) ) {
+			return new \WP_Error( 'jisento_zip_open', __( 'Unable to open the package.', 'jisento' ) );
+		}
+		$raw = $zip->getFromName( Streaming_Zip_Writer::ENTRY_DIGESTS );
+		$zip->close();
+		if ( false === $raw || '' === $raw ) {
+			return null;
+		}
+		$lines = preg_split( '/\r?\n/', (string) $raw );
+		if ( ! $lines ) {
+			return new \WP_Error( 'jisento_entry_digests', __( 'checksums/entries.jsonl is empty. The package is damaged; export it again.', 'jisento' ) );
+		}
+		$header = json_decode( array_shift( $lines ), true );
+		if ( ! is_array( $header ) || empty( $header['content_sha256'] ) || ! preg_match( '/^[a-f0-9]{64}$/', (string) $header['content_sha256'] ) || empty( $header['hash_chunk'] ) || (int) $header['hash_chunk'] < 4096 ) {
+			return new \WP_Error( 'jisento_entry_digests', __( 'checksums/entries.jsonl has a damaged header. The package is damaged; export it again.', 'jisento' ) );
+		}
+		$entries = array();
+		foreach ( $lines as $line ) {
+			$line = trim( $line );
+			if ( '' === $line ) {
+				continue;
+			}
+			$row = json_decode( $line, true );
+			if ( ! is_array( $row ) || empty( $row['n'] ) || ! isset( $row['us'], $row['crc'], $row['sha'] ) || ! preg_match( '/^[a-f0-9]{64}$/', (string) $row['sha'] ) ) {
+				return new \WP_Error( 'jisento_entry_digests', __( 'checksums/entries.jsonl has a damaged entry line. The package is damaged; export it again.', 'jisento' ) );
+			}
+			$entries[ (string) $row['n'] ] = array(
+				'n'   => (string) $row['n'],
+				'us'  => (int) $row['us'],
+				'crc' => strtolower( (string) $row['crc'] ),
+				'sha' => (string) $row['sha'],
+			);
+		}
+		return array(
+			'hash_chunk'     => (int) $header['hash_chunk'],
+			'content_sha256' => (string) $header['content_sha256'],
+			'entries'        => $entries,
+		);
 	}
 
 	/**
@@ -291,9 +391,9 @@ class Archive {
 			return $result;
 		}
 		$tmp = $dest . '.jisento-tmp';
-		if ( (int) $bytes !== (int) $result ) {
+		if ( (int) $bytes !== (int) $result['bytes'] ) {
 			@unlink( $tmp );
-			return new \WP_Error( 'jisento_entry_size', sprintf( __( '%1$s extracted to %2$d bytes, but the manifest records %3$d. The package is damaged; export it again.', 'jisento' ), self::printable( $entry ), (int) $result, (int) $bytes ) );
+			return new \WP_Error( 'jisento_entry_size', sprintf( __( '%1$s extracted to %2$d bytes, but the manifest records %3$d. The package is damaged; export it again.', 'jisento' ), self::printable( $entry ), (int) $result['bytes'], (int) $bytes ) );
 		}
 		$actual = hash_final( $hash );
 		if ( ! hash_equals( (string) $sha256, $actual ) ) {
@@ -305,10 +405,11 @@ class Archive {
 
 	/**
 	 * Stream an entry into "<dest>.jisento-tmp". Checks every read and write, the byte count and the CRC-32.
+	 * When $expected_sha and $hash_chunk are set, also builds the chunked per-entry digest while writing.
 	 *
-	 * @return int|\WP_Error Bytes written.
+	 * @return array{bytes:int,sha:?string}|\WP_Error
 	 */
-	private function stream_entry( \ZipArchive $zip, $name, array $stat, $dest, $hash = null ) {
+	private function stream_entry( \ZipArchive $zip, $name, array $stat, $dest, $hash = null, $expected_sha = null, $hash_chunk = 0 ) {
 		$tmp = $dest . '.jisento-tmp';
 		if ( ! is_dir( dirname( $dest ) ) && ! wp_mkdir_p( dirname( $dest ) ) ) {
 			return new \WP_Error( 'jisento_write', sprintf( __( 'Unable to create folder %s.', 'jisento' ), self::printable( dirname( $dest ) ) ) );
@@ -322,9 +423,13 @@ class Archive {
 			fclose( $stream );
 			return new \WP_Error( 'jisento_write', sprintf( __( 'Unable to write %s (permission denied or disk full).', 'jisento' ), self::printable( $tmp ) ) );
 		}
-		$crc     = hash_init( 'crc32b' );
-		$written = 0;
-		$error   = null;
+		$crc       = hash_init( 'crc32b' );
+		$written   = 0;
+		$error     = null;
+		$chunk     = max( 0, (int) $hash_chunk );
+		$chunk_sha = $chunk > 0 ? hash_init( 'sha256' ) : null;
+		$in_chunk  = 0;
+		$hashes    = '';
 		while ( ! feof( $stream ) ) {
 			$buffer = fread( $stream, 1048576 );
 			if ( false === $buffer ) {
@@ -344,6 +449,22 @@ class Archive {
 			if ( $hash ) {
 				hash_update( $hash, $buffer );
 			}
+			if ( $chunk_sha ) {
+				$left = strlen( $buffer );
+				$pos  = 0;
+				while ( $left > 0 ) {
+					$take = (int) min( $left, $chunk - $in_chunk );
+					hash_update( $chunk_sha, substr( $buffer, $pos, $take ) );
+					$in_chunk += $take;
+					$pos      += $take;
+					$left     -= $take;
+					if ( $in_chunk === $chunk ) {
+						$hashes   .= hash_final( $chunk_sha, true );
+						$chunk_sha = hash_init( 'sha256' );
+						$in_chunk  = 0;
+					}
+				}
+			}
 		}
 		fclose( $stream );
 		if ( ! fclose( $out ) && ! $error ) {
@@ -355,11 +476,24 @@ class Archive {
 		if ( ! $error && isset( $stat['crc'] ) && sprintf( '%08x', (int) $stat['crc'] & 0xFFFFFFFF ) !== hash_final( $crc ) ) {
 			$error = new \WP_Error( 'jisento_entry_crc', sprintf( __( '%s failed its ZIP CRC check. The package is damaged; export or upload it again.', 'jisento' ), self::printable( $name ) ) );
 		}
+		$digest = null;
+		if ( ! $error && $chunk_sha ) {
+			if ( $in_chunk > 0 ) {
+				$hashes .= hash_final( $chunk_sha, true );
+			}
+			$digest = ( 0 === $written ) ? hash( 'sha256', '' ) : hash( 'sha256', $hashes );
+			if ( is_string( $expected_sha ) && $digest !== $expected_sha ) {
+				$error = new \WP_Error( 'jisento_entry_sha', sprintf( __( '%s failed its SHA-256 check. The package is damaged or was modified; export or upload it again.', 'jisento' ), self::printable( $name ) ) );
+			}
+		}
 		if ( $error ) {
 			@unlink( $tmp );
 			return $error;
 		}
-		return $written;
+		return array(
+			'bytes' => $written,
+			'sha'   => $digest,
+		);
 	}
 
 	/**
@@ -391,6 +525,14 @@ class Archive {
 		if ( true !== $zip->open( $zip_path ) ) {
 			return new \WP_Error( 'jisento_zip_open', __( 'Unable to open the package.', 'jisento' ) );
 		}
+
+		$digests = self::read_entry_digests( $zip_path );
+		if ( is_wp_error( $digests ) ) {
+			$zip->close();
+			return $digests;
+		}
+		$digest_map = $digests ? $digests['entries'] : null;
+		$hash_chunk = $digests ? (int) $digests['hash_chunk'] : 0;
 
 		$bytes     = 0;
 		$current   = '';
@@ -433,13 +575,21 @@ class Archive {
 				}
 				continue;
 			}
+			$expected_sha = null;
+			if ( is_array( $digest_map ) ) {
+				if ( empty( $digest_map[ $name ]['sha'] ) ) {
+					$zip->close();
+					return new \WP_Error( 'jisento_entry_sha', sprintf( __( '%s has no SHA-256 in checksums/entries.jsonl. The package is incomplete; export it again.', 'jisento' ), self::printable( $name ) ) );
+				}
+				$expected_sha = (string) $digest_map[ $name ]['sha'];
+			}
 			if ( (int) $stat['size'] > $max_bytes || ( $resume && (int) $resume['index'] === $i ) ) {
 				$room = $max_bytes - $bytes;
 				if ( $i > (int) $start_index && $room < 65536 ) {
 					$done = false;
 					break;
 				}
-				$piece = $this->extract_piece( $zip, $zip_path, $name, $stat, $dest, $resume && (int) $resume['index'] === $i ? $resume : null, $room );
+				$piece = $this->extract_piece( $zip, $zip_path, $name, $stat, $dest, $resume && (int) $resume['index'] === $i ? $resume : null, $room, $expected_sha, $hash_chunk );
 				$resume = null;
 				if ( is_wp_error( $piece ) ) {
 					$zip->close();
@@ -462,6 +612,7 @@ class Archive {
 							'index'  => $i,
 							'offset' => $piece['offset'],
 							'crc'    => $piece['crc'],
+							'chunks' => $piece['chunks'],
 							'tmp'    => $dest . '.jisento-tmp',
 						),
 					);
@@ -473,7 +624,7 @@ class Archive {
 				$done = false;
 				break;
 			}
-			$written = $this->stream_entry( $zip, $name, $stat, $dest );
+			$written = $this->stream_entry( $zip, $name, $stat, $dest, null, $expected_sha, $hash_chunk );
 			if ( is_wp_error( $written ) ) {
 				$zip->close();
 				return $written;
@@ -484,7 +635,7 @@ class Archive {
 				return $committed;
 			}
 			$extracted++;
-			$bytes  += $written;
+			$bytes  += (int) $written['bytes'];
 			$current = $safe;
 		}
 
@@ -500,6 +651,7 @@ class Archive {
 			'skipped'       => $skipped,
 			'skipped_paths' => $skipped_paths,
 			'partial'       => null,
+			'digests'       => (bool) $digests,
 		);
 	}
 
@@ -508,19 +660,23 @@ class Archive {
 	 * Stored entries are read straight from the package at their data offset; deflated entries
 	 * (only in packages from older versions) are decompressed from the start and the bytes
 	 * already written are skipped, so writes stay bounded either way.
+	 * When $expected_sha is set, pauses only on hash-chunk boundaries and checks the digest before commit.
 	 *
-	 * @return array{complete:bool,written:int,offset:int,crc:int}|\WP_Error
+	 * @return array{complete:bool,written:int,offset:int,crc:int,chunks:string[]}|\WP_Error
 	 */
-	private function extract_piece( \ZipArchive $zip, $zip_path, $name, array $stat, $dest, $resume, $limit ) {
+	private function extract_piece( \ZipArchive $zip, $zip_path, $name, array $stat, $dest, $resume, $limit, $expected_sha = null, $hash_chunk = 0 ) {
 		$tmp    = $dest . '.jisento-tmp';
 		$size   = (int) $stat['size'];
 		$offset = $resume ? (int) $resume['offset'] : 0;
 		$crc    = $resume ? (int) $resume['crc'] : 0;
+		$chunks = ( $resume && isset( $resume['chunks'] ) && is_array( $resume['chunks'] ) ) ? $resume['chunks'] : array();
+		$chunk  = max( 0, (int) $hash_chunk );
 		clearstatcache( true, $tmp );
-		if ( $offset > 0 && ( ! is_file( $tmp ) || (int) filesize( $tmp ) < $offset || $offset > $size ) ) {
+		if ( $offset > 0 && ( ! is_file( $tmp ) || (int) filesize( $tmp ) < $offset || $offset > $size || ( $chunk > 0 && 0 !== $offset % $chunk ) ) ) {
 			// The saved position does not match the file on disk: restart this entry.
 			$offset = 0;
 			$crc    = 0;
+			$chunks = array();
 		}
 		if ( ! is_dir( dirname( $dest ) ) && ! wp_mkdir_p( dirname( $dest ) ) ) {
 			return new \WP_Error( 'jisento_write', sprintf( __( 'Unable to create folder %s.', 'jisento' ), self::printable( dirname( $dest ) ) ) );
@@ -566,12 +722,32 @@ class Archive {
 			}
 		}
 
-		$piece   = hash_init( 'crc32b' );
-		$written = 0;
-		$want    = (int) min( $limit, $size - $offset );
-		$error   = null;
+		$piece     = hash_init( 'crc32b' );
+		$written   = 0;
+		$want      = (int) min( max( 0, (int) $limit ), $size - $offset );
+		$chunk_sha = null;
+		$in_chunk  = 0;
+		if ( $chunk > 0 ) {
+			if ( $offset + $want < $size ) {
+				// Pause only on a hash-chunk boundary so the digest state can be saved without HashContext.
+				$aligned = $offset + $want;
+				$aligned -= $aligned % $chunk;
+				if ( $aligned <= $offset ) {
+					$want = (int) min( $chunk, $size - $offset );
+				} else {
+					$want = $aligned - $offset;
+				}
+			}
+			$chunk_sha = hash_init( 'sha256' );
+			$in_chunk  = 0;
+		}
+		$error = null;
 		while ( $written < $want ) {
-			$buffer = fread( $in, (int) min( 1048576, $want - $written ) );
+			$take = (int) min( 1048576, $want - $written );
+			if ( $chunk > 0 ) {
+				$take = (int) min( $take, $chunk - $in_chunk );
+			}
+			$buffer = fread( $in, $take );
 			if ( false === $buffer || '' === $buffer ) {
 				$error = new \WP_Error( 'jisento_stream', sprintf( __( 'Reading %s from the package failed (damaged ZIP data).', 'jisento' ), self::printable( $name ) ) );
 				break;
@@ -583,6 +759,15 @@ class Archive {
 			}
 			hash_update( $piece, $buffer );
 			$written += $wrote;
+			if ( $chunk_sha ) {
+				hash_update( $chunk_sha, $buffer );
+				$in_chunk += $wrote;
+				if ( $in_chunk === $chunk ) {
+					$chunks[]  = hash_final( $chunk_sha );
+					$chunk_sha = hash_init( 'sha256' );
+					$in_chunk  = 0;
+				}
+			}
 		}
 		fclose( $in );
 		if ( ! fclose( $out ) && ! $error ) {
@@ -600,11 +785,22 @@ class Archive {
 				'written'  => $written,
 				'offset'   => $offset,
 				'crc'      => $crc,
+				'chunks'   => $chunks,
 			);
 		}
 		if ( isset( $stat['crc'] ) && ( (int) $stat['crc'] & 0xFFFFFFFF ) !== $crc ) {
 			@unlink( $tmp );
 			return new \WP_Error( 'jisento_entry_crc', sprintf( __( '%s failed its ZIP CRC check. The package is damaged; export or upload it again.', 'jisento' ), self::printable( $name ) ) );
+		}
+		if ( is_string( $expected_sha ) ) {
+			if ( $chunk_sha && $in_chunk > 0 ) {
+				$chunks[] = hash_final( $chunk_sha );
+			}
+			$digest = ( 0 === $size ) ? hash( 'sha256', '' ) : hash( 'sha256', implode( '', array_map( 'hex2bin', $chunks ) ) );
+			if ( $digest !== $expected_sha ) {
+				@unlink( $tmp );
+				return new \WP_Error( 'jisento_entry_sha', sprintf( __( '%s failed its SHA-256 check. The package is damaged or was modified; export or upload it again.', 'jisento' ), self::printable( $name ) ) );
+			}
 		}
 		$committed = self::commit_tmp( $tmp, $dest );
 		if ( is_wp_error( $committed ) ) {
@@ -615,6 +811,7 @@ class Archive {
 			'written'  => $written,
 			'offset'   => $offset,
 			'crc'      => $crc,
+			'chunks'   => $chunks,
 		);
 	}
 
