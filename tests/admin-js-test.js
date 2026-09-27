@@ -46,6 +46,8 @@ check('browser worker mode still POSTs steps', /worker_mode === 'browser'/.test(
 check('Reconnecting... copy for transient poll errors', /Reconnecting\.\.\./.test(source));
 check('stalled jobs show Resume', /jisento-resume-stalled/.test(source));
 check('loopback blocked notice is present', /jisento-loopback-notice/.test(source));
+check('download links use URL searchParams', /function buildDownloadUrl/.test(source) && /searchParams\.set/.test(source));
+check('download links are not string-concatenated onto the nonce base', source.indexOf("jisentoDownloadBase || '') + '&file='") === -1 && source.indexOf("jisentoDownloadBase + '&id='") === -1);
 
 var helpers = null;
 try {
@@ -75,6 +77,16 @@ if (hasHelpers) {
 	if (typeof helpers.csv === 'function') {
 		var parsed = helpers.csv(' wp_posts, ,wp_postmeta ');
 		check('csv splits table names', parsed.length === 2 && parsed[0] === 'wp_posts' && parsed[1] === 'wp_postmeta');
+	}
+	if (typeof helpers.buildDownloadUrl === 'function') {
+		var base = 'https://destination.test/wp-admin/admin-post.php?action=jisento_download&_wpnonce=deadbeef';
+		check('download base for JS must not contain amp', base.indexOf('&amp;') === -1);
+		var built = new URL(helpers.buildDownloadUrl(base, { id: '42', file: 'packages/x.jisento' }));
+		check('built download URL carries _wpnonce as a real query parameter', built.searchParams.get('_wpnonce') === 'deadbeef');
+		check('built download URL keeps action and adds id', built.searchParams.get('action') === 'jisento_download' && built.searchParams.get('id') === '42');
+		var poisoned = 'https://destination.test/wp-admin/admin-post.php?action=jisento_download&amp;_wpnonce=deadbeef';
+		var fromPoison = new URL(helpers.buildDownloadUrl(poisoned, { id: '1' }));
+		check('HTML-escaped base yields amp;_wpnonce param name', fromPoison.searchParams.has('amp;_wpnonce') && fromPoison.searchParams.get('_wpnonce') === null);
 	}
 }
 

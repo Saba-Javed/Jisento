@@ -38,11 +38,22 @@
 			.filter(Boolean);
 	}
 
+	function buildDownloadUrl(base, params) {
+		const u = new URL(String(base || ''), typeof window !== 'undefined' && window.location ? window.location.href : 'https://example.test/');
+		Object.keys(params || {}).forEach(function (key) {
+			if (params[key] != null && params[key] !== '') {
+				u.searchParams.set(key, String(params[key]));
+			}
+		});
+		return u.toString();
+	}
+
 	const helpers = {
 		jobIdFromPath: jobIdFromPath,
 		nonJsonMessage: nonJsonMessage,
 		isTransient: isTransient,
-		csv: csv
+		csv: csv,
+		buildDownloadUrl: buildDownloadUrl
 	};
 	if (typeof module === 'object' && module.exports) {
 		module.exports = helpers;
@@ -559,7 +570,7 @@
 				});
 				return;
 			}
-			const dl = (window.jisentoDownloadBase || '') + '&file=' + encodeURIComponent('packages/' + job.package_name);
+			const dl = buildDownloadUrl(window.jisentoDownloadBase || '', { file: 'packages/' + job.package_name });
 			fill(box, el('div', { className: 'jisento-card' }, [
 				el('h2', null, headlines(job).complete),
 				el('p', null, ['Name: ', el('code', null, job.package_name || '')]),
@@ -1176,8 +1187,8 @@
 		}
 		fill(tbody, rows.map(function (row) {
 			const dl = row.id
-				? window.jisentoDownloadBase + '&id=' + encodeURIComponent(row.id)
-				: window.jisentoDownloadBase + '&file=' + encodeURIComponent(row.storage_key || row.name || '');
+				? buildDownloadUrl(window.jisentoDownloadBase || '', { id: String(row.id) })
+				: buildDownloadUrl(window.jisentoDownloadBase || '', { file: row.storage_key || row.name || '' });
 			const actions = [];
 			if (row.available) {
 				actions.push(

@@ -2,7 +2,13 @@
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
-$download_base = wp_nonce_url( admin_url( 'admin-post.php?action=jisento_download' ), 'jisento_download' );
+$download_base = add_query_arg(
+	array(
+		'action'   => 'jisento_download',
+		'_wpnonce' => wp_create_nonce( 'jisento_download' ),
+	),
+	admin_url( 'admin-post.php' )
+);
 ?>
 <section class="jisento-card">
 	<h2><?php esc_html_e( 'Backups', 'jisento' ); ?></h2>
