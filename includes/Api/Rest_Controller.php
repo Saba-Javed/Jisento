@@ -14,6 +14,7 @@ use Jisento\Migration\Import\Importer;
 use Jisento\Migration\Jobs\Job_Runner;
 use Jisento\Migration\Jobs\Job_Scheduler;
 use Jisento\Migration\Jobs\Step_Budget;
+use Jisento\Migration\Package\Upload_Session;
 use Jisento\Migration\Plugin;
 use Jisento\Migration\Remote\Transfer;
 use Jisento\Migration\Security\Guard;
@@ -988,55 +989,80 @@ class Rest_Controller {
 		return rest_ensure_response( ( new \Jisento\Migration\Core\Diagnostics() )->run() );
 	}
 
-	private function upload_chunk_bytes() {
+	private function upload_chunk_bytes( $preferred = null ) {
+		if ( null !== $preferred && '' !== $preferred ) {
+			return Upload_Session::clamp_chunk( $preferred );
+		}
 		$max = (int) wp_max_upload_size();
-		if ( $max < 2 * 1048576 ) {
-			$max = 2 * 1048576;
+		if ( $max <= 0 ) {
+			return Upload_Session::DEFAULT_CHUNK;
 		}
-		$chunk = $max - ( 256 * 1024 );
-		if ( $chunk > 16 * 1048576 ) {
-			$chunk = 16 * 1048576;
-		}
-		if ( $chunk < 1048576 ) {
-			$chunk = 1048576;
-		}
-		return (int) $chunk;
+		// Prefer 8 MiB; grow toward 32 MiB when the PHP limit allows it.
+		$chunk = min( Upload_Session::MAX_CHUNK, max( Upload_Session::DEFAULT_CHUNK, $max - ( 256 * 1024 ) ) );
+		return Upload_Session::clamp_chunk( $chunk );
 	}
 
 	private function upload_paths( $upload_id ) {
-		$upload_id = preg_replace( '/[^a-zA-Z0-9_]/', '', (string) $upload_id );
-		$key       = 'temp/uploads/' . $upload_id . '.part';
-		$storage   = Plugin::instance()->storage;
-		return array(
-			'id'   => $upload_id,
-			'key'  => $key,
-			'part' => $storage->get_path( $key ),
-			'meta' => $storage->get_path( 'temp/uploads/' . $upload_id . '.json' ),
-		);
+		return Upload_Session::paths( $upload_id );
 	}
 
 	private function read_upload_meta( $path ) {
-		if ( ! is_readable( $path ) ) {
-			return null;
+		return Upload_Session::read_meta( $path );
+	}
+
+	/**
+	 * @param float $boot_ms  Boot duration.
+	 * @param float $write_ms Write duration.
+	 */
+	private function upload_timing_headers( $boot_ms, $write_ms ) {
+		$total = $boot_ms + $write_ms;
+		if ( ! headers_sent() ) {
+			header(
+				sprintf(
+					'Server-Timing: boot;dur=%.1f, write;dur=%.1f, total;dur=%.1f',
+					$boot_ms,
+					$write_ms,
+					$total
+				),
+				false
+			);
 		}
-		$meta = json_decode( (string) file_get_contents( $path ), true );
-		return is_array( $meta ) ? $meta : null;
 	}
 
 	public function upload_init( \WP_REST_Request $request ) {
-		$size      = max( 0, (int) $request->get_param( 'size' ) );
-		$name      = sanitize_file_name( (string) $request->get_param( 'filename' ) );
-		$existing  = preg_replace( '/[^a-zA-Z0-9_]/', '', (string) $request->get_param( 'upload_id' ) );
+		$size     = max( 0, (int) $request->get_param( 'size' ) );
+		$name     = sanitize_file_name( (string) $request->get_param( 'filename' ) );
+		$existing = preg_replace( '/[^a-zA-Z0-9_]/', '', (string) $request->get_param( 'upload_id' ) );
+		$chunk    = $this->upload_chunk_bytes( $request->get_param( 'chunk' ) );
+		if ( $size <= 0 ) {
+			return new \WP_Error( 'jisento_upload', __( 'Upload size is missing.', 'jisento' ), array( 'status' => 400 ) );
+		}
+		if ( ! preg_match( '/\.jisento$/i', $name ) ) {
+			return new \WP_Error( 'jisento_upload', __( 'Please choose a .jisento backup.', 'jisento' ), array( 'status' => 400 ) );
+		}
+		$free = disk_free_space( Plugin::instance()->storage->root() );
+		if ( false !== $free && (int) $free < $size + ( 10 * 1048576 ) ) {
+			return new \WP_Error( 'jisento_upload', __( 'Not enough free disk space for this package.', 'jisento' ), array( 'status' => 507 ) );
+		}
 		if ( $existing ) {
 			$paths = $this->upload_paths( $existing );
 			$meta  = $this->read_upload_meta( $paths['meta'] );
 			if ( is_array( $meta ) && is_file( $paths['part'] ) && (int) $meta['size'] === $size ) {
-				clearstatcache( true, $paths['part'] );
+				$meta['chunk'] = $chunk;
+				$ranges        = isset( $meta['ranges'] ) && is_array( $meta['ranges'] ) ? $meta['ranges'] : array();
+				$merged        = Upload_Session::merge_ranges( $ranges );
+				if ( is_wp_error( $merged ) ) {
+					$merged = array();
+				}
+				$meta['ranges']   = $merged;
+				$meta['received'] = Upload_Session::covered_bytes( $merged );
+				Upload_Session::write_meta( $paths['meta'], $meta );
 				return rest_ensure_response(
 					array(
 						'upload_id' => $existing,
-						'chunk'     => $this->upload_chunk_bytes(),
-						'received'  => (int) filesize( $paths['part'] ),
+						'chunk'     => $chunk,
+						'received'  => (int) $meta['received'],
+						'ranges'    => $merged,
 					)
 				);
 			}
@@ -1053,127 +1079,227 @@ class Rest_Controller {
 			'key'      => $paths['key'],
 			'filename' => $name,
 			'size'     => $size,
+			'chunk'    => $chunk,
+			'ranges'   => array(),
+			'received' => 0,
 		);
-		file_put_contents( $paths['meta'], wp_json_encode( $meta ) );
+		$saved = Upload_Session::write_meta( $paths['meta'], $meta );
+		if ( is_wp_error( $saved ) ) {
+			@unlink( $paths['part'] );
+			return $saved;
+		}
 		return rest_ensure_response(
 			array(
 				'upload_id' => $upload_id,
-				'chunk'     => $this->upload_chunk_bytes(),
+				'chunk'     => $chunk,
+				'received'  => 0,
+				'ranges'    => array(),
 			)
 		);
 	}
 
 	public function upload_chunk( \WP_REST_Request $request ) {
-		$paths  = $this->upload_paths( $request->get_param( 'upload_id' ) );
-		$offset = max( 0, (int) $request->get_param( 'offset' ) );
-		$meta   = $this->read_upload_meta( $paths['meta'] );
-		if ( ! is_array( $meta ) ) {
-			return new \WP_Error( 'jisento_upload', __( 'Upload session expired. Please retry.', 'jisento' ), array( 'status' => 410 ) );
+		$started = isset( $_SERVER['REQUEST_TIME_FLOAT'] ) ? (float) $_SERVER['REQUEST_TIME_FLOAT'] : microtime( true );
+		$boot_at = microtime( true );
+		$boot_ms = ( $boot_at - $started ) * 1000.0;
+
+		$upload_id = $request->get_param( 'upload_id' );
+		if ( ! $upload_id ) {
+			$upload_id = isset( $_SERVER['HTTP_X_JISENTO_UPLOAD_ID'] ) ? $_SERVER['HTTP_X_JISENTO_UPLOAD_ID'] : '';
 		}
-		$files = $request->get_file_params();
-		if ( empty( $files['chunk']['tmp_name'] ) ) {
-			return new \WP_Error( 'jisento_upload', __( 'Missing upload chunk.', 'jisento' ), array( 'status' => 400 ) );
+		$offset = $request->get_param( 'offset' );
+		if ( null === $offset || '' === $offset ) {
+			$offset = isset( $_SERVER['HTTP_X_JISENTO_OFFSET'] ) ? $_SERVER['HTTP_X_JISENTO_OFFSET'] : 0;
 		}
-		clearstatcache( true, $paths['part'] );
-		$current = is_file( $paths['part'] ) ? (int) filesize( $paths['part'] ) : 0;
-		if ( $offset > $current ) {
-			return new \WP_Error( 'jisento_upload', __( 'Upload chunk is out of order. Please retry the upload.', 'jisento' ), array( 'status' => 409 ) );
+		$offset = max( 0, (int) $offset );
+		$sha    = strtolower( (string) $request->get_header( 'x_jisento_chunk_sha256' ) );
+		if ( ! preg_match( '/^[a-f0-9]{64}$/', $sha ) ) {
+			$sha = isset( $_SERVER['HTTP_X_JISENTO_CHUNK_SHA256'] ) ? strtolower( (string) $_SERVER['HTTP_X_JISENTO_CHUNK_SHA256'] ) : '';
 		}
-		$mode = ( $offset === $current ) ? 'ab' : 'rb+';
-		$fp   = fopen( $paths['part'], $mode );
-		if ( ! $fp ) {
-			return new \WP_Error( 'jisento_upload', __( 'Unable to write upload chunk.', 'jisento' ), array( 'status' => 500 ) );
+		if ( ! preg_match( '/^[a-f0-9]{64}$/', $sha ) ) {
+			return new \WP_Error( 'jisento_upload', __( 'Missing or invalid chunk checksum.', 'jisento' ), array( 'status' => 400 ) );
 		}
-		if ( 'rb+' === $mode ) {
-			fseek( $fp, $offset );
-		}
-		$in = fopen( $files['chunk']['tmp_name'], 'rb' );
-		if ( ! $in ) {
-			fclose( $fp );
-			return new \WP_Error( 'jisento_upload', __( 'Unable to read upload chunk.', 'jisento' ), array( 'status' => 500 ) );
-		}
-		$copied = stream_copy_to_stream( $in, $fp );
-		if ( false === $copied ) {
-			fclose( $in );
-			fclose( $fp );
-			return new \WP_Error( 'jisento_upload', __( 'Unable to write upload chunk.', 'jisento' ), array( 'status' => 500 ) );
-		}
-		fflush( $fp );
-		ftruncate( $fp, $offset + (int) $copied );
-		fclose( $in );
-		fclose( $fp );
-		return rest_ensure_response(
-			array(
-				'received' => $offset + (int) $copied,
-				'size'     => (int) $meta['size'],
-			)
+
+		$paths = $this->upload_paths( $upload_id );
+		$result = Upload_Session::with_lock(
+			$paths,
+			function () use ( $paths, $offset, $sha, $boot_ms, $boot_at, $request ) {
+				$meta = Upload_Session::read_meta( $paths['meta'] );
+				if ( ! is_array( $meta ) ) {
+					return new \WP_Error( 'jisento_upload', __( 'Upload session expired. Please retry.', 'jisento' ), array( 'status' => 410 ) );
+				}
+				$size = (int) $meta['size'];
+				if ( $offset >= $size ) {
+					return new \WP_Error( 'jisento_upload', __( 'Upload chunk is past the end of the file.', 'jisento' ), array( 'status' => 400 ) );
+				}
+
+				$write_started = microtime( true );
+				$raw           = $request->get_body();
+				if ( ! is_string( $raw ) || '' === $raw ) {
+					// Some stacks leave the raw body only on php://input.
+					$raw = (string) file_get_contents( 'php://input' );
+				}
+				$written = strlen( $raw );
+				if ( $written < 1 ) {
+					return new \WP_Error( 'jisento_upload', __( 'Missing upload chunk.', 'jisento' ), array( 'status' => 400 ) );
+				}
+				if ( $written > Upload_Session::MAX_CHUNK ) {
+					return new \WP_Error( 'jisento_upload', __( 'Upload chunk is too large.', 'jisento' ), array( 'status' => 413 ) );
+				}
+				if ( $offset + $written > $size ) {
+					return new \WP_Error( 'jisento_upload', __( 'Upload chunk would extend past the declared file size.', 'jisento' ), array( 'status' => 400 ) );
+				}
+				$actual = hash( 'sha256', $raw );
+				if ( ! hash_equals( $sha, $actual ) ) {
+					return new \WP_Error( 'jisento_upload', __( 'Chunk checksum mismatch. Retry the upload.', 'jisento' ), array( 'status' => 400 ) );
+				}
+
+				clearstatcache( true, $paths['part'] );
+				$part_size = is_file( $paths['part'] ) ? (int) filesize( $paths['part'] ) : 0;
+				$fp        = fopen( $paths['part'], $part_size > 0 ? 'rb+' : 'wb' );
+				if ( ! $fp ) {
+					return new \WP_Error( 'jisento_upload', __( 'Unable to write upload chunk.', 'jisento' ), array( 'status' => 500 ) );
+				}
+				if ( $part_size < $offset + $written ) {
+					ftruncate( $fp, $offset + $written );
+				}
+				fseek( $fp, $offset );
+				$wrote = fwrite( $fp, $raw );
+				if ( false === $wrote || $wrote !== $written ) {
+					fclose( $fp );
+					return new \WP_Error( 'jisento_upload', __( 'Unable to write upload chunk.', 'jisento' ), array( 'status' => 500 ) );
+				}
+				fflush( $fp );
+				fclose( $fp );
+
+				$ranges = isset( $meta['ranges'] ) && is_array( $meta['ranges'] ) ? $meta['ranges'] : array();
+				$ranges[] = array( $offset, $offset + $written );
+				$merged   = Upload_Session::merge_ranges( $ranges );
+				if ( is_wp_error( $merged ) ) {
+					return $merged;
+				}
+				$meta['ranges']   = $merged;
+				$meta['received'] = Upload_Session::covered_bytes( $merged );
+				$saved            = Upload_Session::write_meta( $paths['meta'], $meta );
+				if ( is_wp_error( $saved ) ) {
+					return $saved;
+				}
+				$write_ms = ( microtime( true ) - $write_started ) * 1000.0;
+				$this->upload_timing_headers( $boot_ms, $write_ms );
+				Plugin::instance()->logger->log(
+					'upload',
+					'upload',
+					'chunk',
+					$paths['id'],
+					'ok',
+					sprintf( 'offset=%d bytes=%d boot_ms=%.1f write_ms=%.1f received=%d', $offset, $written, $boot_ms, $write_ms, (int) $meta['received'] )
+				);
+				return array(
+					'received' => (int) $meta['received'],
+					'size'     => $size,
+					'offset'   => $offset,
+					'bytes'    => $written,
+					'ranges'   => $merged,
+					'chunk'    => isset( $meta['chunk'] ) ? (int) $meta['chunk'] : Upload_Session::DEFAULT_CHUNK,
+				);
+			}
 		);
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+		return rest_ensure_response( $result );
 	}
 
 	public function upload_complete( \WP_REST_Request $request ) {
 		$paths = $this->upload_paths( $request->get_param( 'upload_id' ) );
-		$meta  = $this->read_upload_meta( $paths['meta'] );
-		if ( ! is_array( $meta ) ) {
-			return new \WP_Error( 'jisento_upload', __( 'Upload session expired. Please retry.', 'jisento' ), array( 'status' => 410 ) );
-		}
-		$storage = Plugin::instance()->storage;
-		$part    = $paths['part'];
-		clearstatcache( true, $part );
-		$size = is_file( $part ) ? (int) filesize( $part ) : 0;
-		if ( $size <= 0 ) {
-			return new \WP_Error( 'jisento_upload', __( 'Uploaded file is empty.', 'jisento' ), array( 'status' => 400 ) );
-		}
-		if ( ! empty( $meta['size'] ) && (int) $meta['size'] !== $size ) {
-			return new \WP_Error( 'jisento_upload', __( 'The uploaded package is incomplete. Please retry the upload.', 'jisento' ), array( 'status' => 400 ) );
-		}
-		$name = ! empty( $meta['filename'] ) ? $meta['filename'] : ( $paths['id'] . '.jisento' );
-		if ( ! preg_match( '/\.jisento$/i', $name ) ) {
-			$name .= '.jisento';
-		}
-		$key  = 'packages/' . $name;
-		$dest = $storage->get_path( $key );
-		wp_mkdir_p( dirname( $dest ) );
-		if ( ! @rename( $part, $dest ) ) {
-			\Jisento\Migration\Filesystem\File_System::stream_copy( $part, $dest );
-			@unlink( $part );
-		}
-		@unlink( $paths['meta'] );
-		$inspect = ( new \Jisento\Migration\Package\Archive() )->inspect( $dest );
-		if ( is_wp_error( $inspect ) ) {
-			@unlink( $dest );
-			return $inspect;
-		}
-		$checksum = \Jisento\Migration\Filesystem\File_System::hash_file( $dest );
-		clearstatcache( true, $dest );
-		$size     = (int) filesize( $dest );
-		$manifest = isset( $inspect['manifest'] ) && is_array( $inspect['manifest'] ) ? $inspect['manifest'] : array();
-		$record   = array(
-			'filename'          => $name,
-			'storage_key'       => $key,
-			'size'              => $size,
-			'checksum'          => $checksum,
-			'type'              => 'upload',
-			'status'            => 'completed',
-			'created_at'        => current_time( 'mysql' ),
-			'package_version'   => isset( $manifest['package_version'] ) ? $manifest['package_version'] : '',
-			'format_marker'     => \JISENTO_FORMAT_MARKER,
-			'home_url'          => isset( $manifest['home_url'] ) ? $manifest['home_url'] : '',
-			'database_size'     => isset( $manifest['database_size'] ) ? (int) $manifest['database_size'] : 0,
-			'files_size'        => isset( $manifest['files_size'] ) ? (int) $manifest['files_size'] : 0,
-			'uncompressed_size' => isset( $manifest['uncompressed_size'] ) ? (int) $manifest['uncompressed_size'] : 0,
-			'table_count'       => isset( $manifest['table_count'] ) ? (int) $manifest['table_count'] : 0,
-			'file_count'        => isset( $manifest['file_count'] ) ? (int) $manifest['file_count'] : 0,
-			'contents'          => isset( $manifest['contents'] ) ? $manifest['contents'] : '',
-		);
-		file_put_contents( $dest . '.json', wp_json_encode( $record ) );
-		$id = ( new \Jisento\Migration\Package\Package_Registry() )->create( $record );
-		return rest_ensure_response(
-			array(
-				'package'    => $key,
-				'package_id' => $id,
-				'manifest'   => $manifest,
-				'size'       => $size,
-			)
+		return Upload_Session::with_lock(
+			$paths,
+			function () use ( $paths ) {
+				$meta = Upload_Session::read_meta( $paths['meta'] );
+				if ( ! is_array( $meta ) ) {
+					return new \WP_Error( 'jisento_upload', __( 'Upload session expired. Please retry.', 'jisento' ), array( 'status' => 410 ) );
+				}
+				$size   = (int) $meta['size'];
+				$ranges = isset( $meta['ranges'] ) && is_array( $meta['ranges'] ) ? $meta['ranges'] : array();
+				if ( ! Upload_Session::covers_exactly( $ranges, $size ) ) {
+					return new \WP_Error( 'jisento_upload', __( 'The uploaded package is incomplete (missing or overlapping ranges). Please retry the upload.', 'jisento' ), array( 'status' => 400 ) );
+				}
+				$storage = Plugin::instance()->storage;
+				$part    = $paths['part'];
+				clearstatcache( true, $part );
+				$on_disk = is_file( $part ) ? (int) filesize( $part ) : 0;
+				if ( $on_disk < $size ) {
+					return new \WP_Error( 'jisento_upload', __( 'The uploaded package is incomplete. Please retry the upload.', 'jisento' ), array( 'status' => 400 ) );
+				}
+				if ( $on_disk > $size ) {
+					$fp = fopen( $part, 'rb+' );
+					if ( $fp ) {
+						ftruncate( $fp, $size );
+						fclose( $fp );
+					}
+				}
+				$name = Upload_Session::free_package_name( ! empty( $meta['filename'] ) ? $meta['filename'] : ( $paths['id'] . '.jisento' ) );
+				if ( is_wp_error( $name ) ) {
+					return $name;
+				}
+				$key  = 'packages/' . $name;
+				$dest = $storage->get_path( $key );
+				wp_mkdir_p( dirname( $dest ) );
+				if ( ! @rename( $part, $dest ) ) {
+					\Jisento\Migration\Filesystem\File_System::stream_copy( $part, $dest );
+					@unlink( $part );
+				}
+				@unlink( $paths['meta'] );
+				@unlink( $paths['lock'] );
+
+				// Cheap open only — no whole-file hash. Full structure/digest checks run when import validates.
+				$inspect = ( new \Jisento\Migration\Package\Archive() )->inspect( $dest );
+				if ( is_wp_error( $inspect ) ) {
+					@unlink( $dest );
+					return $inspect;
+				}
+				clearstatcache( true, $dest );
+				$size     = (int) filesize( $dest );
+				$manifest = isset( $inspect['manifest'] ) && is_array( $inspect['manifest'] ) ? $inspect['manifest'] : array();
+				$digests  = \Jisento\Migration\Package\Archive::read_entry_digests( $dest );
+				$checksum = '';
+				$kind     = '';
+				if ( is_array( $digests ) && ! empty( $digests['content_sha256'] ) ) {
+					$checksum = $digests['content_sha256'];
+					$kind     = 'content-sha256';
+				}
+				$record = array(
+					'filename'          => $name,
+					'storage_key'       => $key,
+					'size'              => $size,
+					'checksum'          => $checksum,
+					'checksum_kind'     => $kind,
+					'content_sha256'    => $checksum,
+					'type'              => 'upload',
+					'status'            => 'completed',
+					'created_at'        => current_time( 'mysql' ),
+					'package_version'   => isset( $manifest['package_version'] ) ? $manifest['package_version'] : '',
+					'format_marker'     => \JISENTO_FORMAT_MARKER,
+					'home_url'          => isset( $manifest['home_url'] ) ? $manifest['home_url'] : '',
+					'database_size'     => isset( $manifest['database_size'] ) ? (int) $manifest['database_size'] : 0,
+					'files_size'        => isset( $manifest['files_size'] ) ? (int) $manifest['files_size'] : 0,
+					'uncompressed_size' => isset( $manifest['uncompressed_size'] ) ? (int) $manifest['uncompressed_size'] : 0,
+					'table_count'       => isset( $manifest['table_count'] ) ? (int) $manifest['table_count'] : 0,
+					'file_count'        => isset( $manifest['file_count'] ) ? (int) $manifest['file_count'] : 0,
+					'contents'          => isset( $manifest['contents'] ) ? $manifest['contents'] : '',
+				);
+				file_put_contents( $dest . '.json', wp_json_encode( $record ) );
+				$id = ( new \Jisento\Migration\Package\Package_Registry() )->create( $record );
+				return rest_ensure_response(
+					array(
+						'package'    => $key,
+						'package_id' => $id,
+						'manifest'   => $manifest,
+						'size'       => $size,
+						'filename'   => $name,
+					)
+				);
+			}
 		);
 	}
 

@@ -207,7 +207,7 @@
 				headers['X-WP-Nonce'] = jisentoAdmin.nonce;
 			}
 			let body = opts.body;
-			if (body && !(body instanceof FormData) && !headers['Content-Type']) {
+			if (body && !(body instanceof FormData) && !(body instanceof Blob) && !(ArrayBuffer.isView(body)) && !(body instanceof ArrayBuffer) && !headers['Content-Type']) {
 				headers['Content-Type'] = 'application/json';
 				body = JSON.stringify(body);
 			}

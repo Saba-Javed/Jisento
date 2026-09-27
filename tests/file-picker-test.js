@@ -50,6 +50,13 @@ check('a missing server count is not shown as progress', picker.confirmedReceive
 check('network failure has a visible message', picker.failureMessage({ name: 'TypeError', message: 'Failed to fetch' }) === picker.messages.uploadFailed);
 check('a timeout says the upload was interrupted', picker.failureMessage({ name: 'AbortError', message: 'Request timed out' }) === picker.messages.uploadInterrupted);
 check('a server validation error is kept', picker.failureMessage({ message: 'Invalid Jisento Package. The file is missing.' }) === 'Invalid Jisento Package. The file is missing.');
+check('HTTP 410 is a lost session', picker.failureMessage({ status: 410, detail: 'Upload session expired. Please retry.', message: 'Request failed' }) === picker.messages.lostSession);
+check('HTTP 507 is disk full', picker.failureMessage({ status: 507, detail: 'Not enough free disk space for this package.', message: 'Request failed' }) === picker.messages.diskFull);
+check('three chunk failures use the retry message', picker.failureMessage({ chunkRetries: true, message: 'x' }) === picker.messages.chunkRetries);
+
+var pending = picker.pendingOffsets(30, 10, [[0, 10], [20, 30]]);
+check('pendingOffsets skips covered chunks and keeps the gap', pending.length === 1 && pending[0] === 10, JSON.stringify(pending));
+check('pendingOffsets is empty when fully covered', picker.pendingOffsets(20, 10, [[0, 20]]).length === 0);
 
 console.log(failed ? '\n' + failed + ' failed' : '\nFile picker checks passed');
 process.exit(failed ? 1 : 0);
