@@ -39,6 +39,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Importer {
 
 	/**
+	 * Most bytes written to disk per files step; larger files continue in the next step.
+	 *
+	 * @var int
+	 */
+	public static $extract_bytes = 33554432;
+
+	/**
 	 * Files never restored, wherever they are in the package.
 	 */
 	const SKIP_BASENAMES = array( '.htaccess', 'web.config', '.user.ini', 'php.ini', 'wp-config.php', '.env' );
@@ -126,6 +133,9 @@ class Importer {
 		Admin_Guard::ensure( $job->job_id );
 		Admin_Guard::forget( $job->job_id );
 		Live_Url::release( $job->job_id );
+		if ( ! empty( $state['zip_partial']['tmp'] ) && '.jisento-tmp' === substr( (string) $state['zip_partial']['tmp'], -12 ) ) {
+			@unlink( (string) $state['zip_partial']['tmp'] );
+		}
 		$plugin->storage->delete_tree( $plugin->storage->tmp_dir( $job->job_id ) );
 	}
 
@@ -875,12 +885,20 @@ class Importer {
 			max( 1, Step_Budget::seconds( 12 ) ),
 			function ( $relative ) use ( $state ) {
 				return $this->destination_for_archive_file( $relative, $state );
-			}
+			},
+			isset( $state['zip_partial'] ) && is_array( $state['zip_partial'] ) ? $state['zip_partial'] : null,
+			self::$extract_bytes
 		);
 		if ( is_wp_error( $batch ) ) {
+			unset( $state['zip_partial'] );
 			throw self::error( $job, 'restore files', $batch->get_error_message(), __( 'Fix the reported cause (permissions or disk space), then press Retry. Files already restored are complete; none is half-written.', 'jisento' ) );
 		}
 
+		if ( ! empty( $batch['partial'] ) ) {
+			$state['zip_partial'] = $batch['partial'];
+		} else {
+			unset( $state['zip_partial'] );
+		}
 		$state['zip_index']      = (int) $batch['next'];
 		$state['files_restored'] = (int) ( isset( $state['files_restored'] ) ? $state['files_restored'] : 0 ) + (int) $batch['extracted'];
 		$state['file_bytes']     = (int) ( isset( $state['file_bytes'] ) ? $state['file_bytes'] : 0 ) + (int) $batch['bytes'];

@@ -57,127 +57,17 @@ class Archive {
 	}
 
 	/**
-	 * Start a package with the format marker and manifest. Content is appended later.
+	 * Manifest as stored in manifest.json.
 	 *
-	 * @param string $zip_path Absolute path.
-	 * @param array  $manifest Manifest data.
-	 * @return true|\WP_Error
+	 * @param array $manifest Manifest data.
+	 * @return string
 	 */
-	public function begin( $zip_path, array $manifest ) {
-		if ( ! self::zip_available() ) {
-			return new \WP_Error( 'jisento_no_zip', __( 'The PHP ZipArchive extension is required.', 'jisento' ) );
-		}
-
-		wp_mkdir_p( dirname( $zip_path ) );
-		if ( file_exists( $zip_path ) ) {
-			@unlink( $zip_path );
-		}
-
-		$zip    = new \ZipArchive();
-		$opened = $zip->open( $zip_path, \ZipArchive::CREATE );
-		if ( true !== $opened ) {
-			return new \WP_Error( 'jisento_zip_open', __( 'Unable to create the .jisento package.', 'jisento' ) );
-		}
-		if ( ! $zip->addFromString( 'JISENTO', self::marker_contents() ) ) {
-			$zip->close();
-			@unlink( $zip_path );
-			return new \WP_Error( 'jisento_zip_write', __( 'Unable to write the package format marker.', 'jisento' ) );
-		}
-		if ( ! $zip->addFromString( 'manifest.json', self::encode_manifest( $manifest ) ) ) {
-			$zip->close();
-			@unlink( $zip_path );
-			return new \WP_Error( 'jisento_zip_write', __( 'Unable to write manifest.json.', 'jisento' ) );
-		}
-		if ( ! $zip->close() ) {
-			@unlink( $zip_path );
-			return new \WP_Error( 'jisento_zip_close', __( 'Unable to save the package header.', 'jisento' ) );
-		}
-		unset( $zip );
-		clearstatcache( true, $zip_path );
-
-		if ( ! is_file( $zip_path ) || filesize( $zip_path ) <= 0 ) {
-			@unlink( $zip_path );
-			return new \WP_Error( 'jisento_zip_empty', __( 'The package header was not written.', 'jisento' ) );
-		}
-
-		return true;
-	}
-
-	/**
-	 * Replace manifest.json with the final values (counts known only after every file was added).
-	 *
-	 * @return true|\WP_Error
-	 */
-	public function write_manifest( $zip_path, array $manifest ) {
-		$zip = new \ZipArchive();
-		if ( true !== $zip->open( $zip_path ) ) {
-			return new \WP_Error( 'jisento_zip_open', __( 'Unable to reopen the .jisento package.', 'jisento' ) );
-		}
-		$ok = $zip->addFromString( 'manifest.json', self::encode_manifest( $manifest ) );
-		if ( ! $zip->close() || ! $ok ) {
-			return new \WP_Error( 'jisento_zip_write', __( 'Unable to write the final manifest.json.', 'jisento' ) );
-		}
-		return true;
-	}
-
-	private static function encode_manifest( array $manifest ) {
+	public static function encode_manifest( array $manifest ) {
 		$json = wp_json_encode( $manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 		if ( ! is_string( $json ) || '' === $json ) {
 			throw new \RuntimeException( __( 'The package manifest could not be encoded as JSON.', 'jisento' ) );
 		}
 		return $json;
-	}
-
-	/**
-	 * Append files to an existing package. One open/close per batch.
-	 *
-	 * @param string $zip_path Absolute path.
-	 * @param array  $pairs   List of [source, local].
-	 * @return true|\WP_Error
-	 */
-	public function add_batch( $zip_path, array $pairs ) {
-		if ( ! is_file( $zip_path ) || filesize( $zip_path ) <= 0 ) {
-			return new \WP_Error( 'jisento_zip_missing', __( 'The in-progress package is missing.', 'jisento' ) );
-		}
-
-		$zip    = new \ZipArchive();
-		$opened = $zip->open( $zip_path );
-		if ( true !== $opened ) {
-			return new \WP_Error( 'jisento_zip_open', __( 'Unable to reopen the .jisento package.', 'jisento' ) );
-		}
-
-		foreach ( $pairs as $pair ) {
-			$source = isset( $pair['source'] ) ? $pair['source'] : '';
-			$local  = isset( $pair['local'] ) ? str_replace( '\\', '/', $pair['local'] ) : '';
-			if ( '' === $local || ! is_file( $source ) ) {
-				$zip->close();
-				return new \WP_Error( 'jisento_zip_add', sprintf( __( 'Missing file while building the package: %s', 'jisento' ), self::printable( $local ) ) );
-			}
-			if ( ! $zip->addFile( $source, $local ) ) {
-				$zip->close();
-				return new \WP_Error( 'jisento_zip_add', sprintf( __( 'Unable to add %s to the package.', 'jisento' ), self::printable( $local ) ) );
-			}
-			if ( method_exists( $zip, 'setCompressionName' ) && $this->store_uncompressed( $local ) ) {
-				$zip->setCompressionName( $local, \ZipArchive::CM_STORE );
-			}
-		}
-
-		if ( ! $zip->close() ) {
-			return new \WP_Error( 'jisento_zip_close', __( 'Unable to save the package after adding files.', 'jisento' ) );
-		}
-		unset( $zip );
-		clearstatcache( true, $zip_path );
-
-		if ( ! is_file( $zip_path ) || filesize( $zip_path ) <= 0 ) {
-			return new \WP_Error( 'jisento_zip_empty', __( 'The package became empty while adding files.', 'jisento' ) );
-		}
-
-		return true;
-	}
-
-	private function store_uncompressed( $local ) {
-		$ext = strtolower( (string) pathinfo( $local, PATHINFO_EXTENSION ) );
-		return in_array( $ext, array( 'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'mp4', 'mov', 'zip', 'gz', 'tgz', 'woff', 'woff2', 'pdf', 'mp3', 'ogg', 'webm', 'ico' ), true );
 	}
 
 	/**
@@ -488,11 +378,15 @@ class Archive {
 	 * checked (byte count, CRC-32) and renamed over the destination, so a killed request never leaves
 	 * a half-written file in place. Any unreadable or unwritable entry fails the batch.
 	 *
+	 * No call writes more than $max_bytes. An entry larger than that is written in pieces across
+	 * calls: the result carries "partial" (index, offset, crc) and the caller passes it back as
+	 * $resume. The .jisento-tmp file keeps the bytes written so far.
+	 *
 	 * $mapper( $relative ) returns the absolute destination, '' to skip the entry on purpose, or a WP_Error.
 	 *
-	 * @return array{next:int,done:bool,extracted:int,bytes:int,current:string,total:int,skipped:int,skipped_paths:string[]}|\WP_Error
+	 * @return array{next:int,done:bool,extracted:int,bytes:int,current:string,total:int,skipped:int,skipped_paths:string[],partial:array|null}|\WP_Error
 	 */
-	public function extract_files_batch( $zip_path, $start_index, $max_files, $time_budget, $mapper ) {
+	public function extract_files_batch( $zip_path, $start_index, $max_files, $time_budget, $mapper, $resume = null, $max_bytes = 33554432 ) {
 		$zip = new \ZipArchive();
 		if ( true !== $zip->open( $zip_path ) ) {
 			return new \WP_Error( 'jisento_zip_open', __( 'Unable to open the package.', 'jisento' ) );
@@ -507,9 +401,11 @@ class Archive {
 		$i         = (int) $start_index;
 		$total     = $zip->numFiles;
 		$done      = true;
+		$max_bytes = max( 1048576, (int) $max_bytes );
+		$resume    = ( is_array( $resume ) && isset( $resume['index'] ) && (int) $resume['index'] === $i ) ? $resume : null;
 
 		for ( ; $i < $total; $i++ ) {
-			if ( $i > (int) $start_index && ( microtime( true ) >= $deadline || $extracted >= $max_files || $bytes >= 33554432 ) ) {
+			if ( $i > (int) $start_index && ( microtime( true ) >= $deadline || $extracted >= $max_files || $bytes >= $max_bytes ) ) {
 				$done = false;
 				break;
 			}
@@ -537,6 +433,46 @@ class Archive {
 				}
 				continue;
 			}
+			if ( (int) $stat['size'] > $max_bytes || ( $resume && (int) $resume['index'] === $i ) ) {
+				$room = $max_bytes - $bytes;
+				if ( $i > (int) $start_index && $room < 65536 ) {
+					$done = false;
+					break;
+				}
+				$piece = $this->extract_piece( $zip, $zip_path, $name, $stat, $dest, $resume && (int) $resume['index'] === $i ? $resume : null, $room );
+				$resume = null;
+				if ( is_wp_error( $piece ) ) {
+					$zip->close();
+					return $piece;
+				}
+				$bytes  += $piece['written'];
+				$current = $safe;
+				if ( ! $piece['complete'] ) {
+					$zip->close();
+					return array(
+						'next'          => $i,
+						'done'          => false,
+						'extracted'     => $extracted,
+						'bytes'         => $bytes,
+						'current'       => $safe,
+						'total'         => $total,
+						'skipped'       => $skipped,
+						'skipped_paths' => $skipped_paths,
+						'partial'       => array(
+							'index'  => $i,
+							'offset' => $piece['offset'],
+							'crc'    => $piece['crc'],
+							'tmp'    => $dest . '.jisento-tmp',
+						),
+					);
+				}
+				$extracted++;
+				continue;
+			}
+			if ( $i > (int) $start_index && $bytes + (int) $stat['size'] > $max_bytes ) {
+				$done = false;
+				break;
+			}
 			$written = $this->stream_entry( $zip, $name, $stat, $dest );
 			if ( is_wp_error( $written ) ) {
 				$zip->close();
@@ -563,7 +499,226 @@ class Archive {
 			'total'         => $total,
 			'skipped'       => $skipped,
 			'skipped_paths' => $skipped_paths,
+			'partial'       => null,
 		);
+	}
+
+	/**
+	 * Write up to $limit more bytes of one large entry into "<dest>.jisento-tmp".
+	 * Stored entries are read straight from the package at their data offset; deflated entries
+	 * (only in packages from older versions) are decompressed from the start and the bytes
+	 * already written are skipped, so writes stay bounded either way.
+	 *
+	 * @return array{complete:bool,written:int,offset:int,crc:int}|\WP_Error
+	 */
+	private function extract_piece( \ZipArchive $zip, $zip_path, $name, array $stat, $dest, $resume, $limit ) {
+		$tmp    = $dest . '.jisento-tmp';
+		$size   = (int) $stat['size'];
+		$offset = $resume ? (int) $resume['offset'] : 0;
+		$crc    = $resume ? (int) $resume['crc'] : 0;
+		clearstatcache( true, $tmp );
+		if ( $offset > 0 && ( ! is_file( $tmp ) || (int) filesize( $tmp ) < $offset || $offset > $size ) ) {
+			// The saved position does not match the file on disk: restart this entry.
+			$offset = 0;
+			$crc    = 0;
+		}
+		if ( ! is_dir( dirname( $dest ) ) && ! wp_mkdir_p( dirname( $dest ) ) ) {
+			return new \WP_Error( 'jisento_write', sprintf( __( 'Unable to create folder %s.', 'jisento' ), self::printable( dirname( $dest ) ) ) );
+		}
+		$out = @fopen( $tmp, $offset > 0 ? 'r+b' : 'wb' );
+		if ( ! $out ) {
+			return new \WP_Error( 'jisento_write', sprintf( __( 'Unable to write %s (permission denied or disk full).', 'jisento' ), self::printable( $tmp ) ) );
+		}
+		ftruncate( $out, $offset );
+		fseek( $out, $offset );
+
+		$method = isset( $stat['comp_method'] ) ? (int) $stat['comp_method'] : -1;
+		$in     = null;
+		if ( 0 === $method ) {
+			$start = self::data_offset( $zip_path, $name );
+			if ( is_wp_error( $start ) ) {
+				fclose( $out );
+				return $start;
+			}
+			$in = @fopen( $zip_path, 'rb' );
+			if ( ! $in || 0 !== fseek( $in, $start + $offset ) ) {
+				if ( $in ) {
+					fclose( $in );
+				}
+				fclose( $out );
+				return new \WP_Error( 'jisento_stream', sprintf( __( 'Unable to read %s from the package.', 'jisento' ), self::printable( $name ) ) );
+			}
+		} else {
+			$in = $zip->getStream( $name );
+			if ( ! $in ) {
+				fclose( $out );
+				return new \WP_Error( 'jisento_stream', sprintf( __( 'Unable to read %s from the package.', 'jisento' ), self::printable( $name ) ) );
+			}
+			$skip = $offset;
+			while ( $skip > 0 ) {
+				$buffer = fread( $in, (int) min( 1048576, $skip ) );
+				if ( false === $buffer || '' === $buffer ) {
+					fclose( $in );
+					fclose( $out );
+					return new \WP_Error( 'jisento_stream', sprintf( __( 'Reading %s from the package failed (damaged ZIP data).', 'jisento' ), self::printable( $name ) ) );
+				}
+				$skip -= strlen( $buffer );
+			}
+		}
+
+		$piece   = hash_init( 'crc32b' );
+		$written = 0;
+		$want    = (int) min( $limit, $size - $offset );
+		$error   = null;
+		while ( $written < $want ) {
+			$buffer = fread( $in, (int) min( 1048576, $want - $written ) );
+			if ( false === $buffer || '' === $buffer ) {
+				$error = new \WP_Error( 'jisento_stream', sprintf( __( 'Reading %s from the package failed (damaged ZIP data).', 'jisento' ), self::printable( $name ) ) );
+				break;
+			}
+			$wrote = fwrite( $out, $buffer );
+			if ( false === $wrote || $wrote !== strlen( $buffer ) ) {
+				$error = new \WP_Error( 'jisento_write', sprintf( __( 'Writing %s failed after %d bytes (disk full or quota reached).', 'jisento' ), self::printable( $dest ), $offset + $written ) );
+				break;
+			}
+			hash_update( $piece, $buffer );
+			$written += $wrote;
+		}
+		fclose( $in );
+		if ( ! fclose( $out ) && ! $error ) {
+			$error = new \WP_Error( 'jisento_write', sprintf( __( 'Closing %s failed (disk full).', 'jisento' ), self::printable( $tmp ) ) );
+		}
+		if ( $error ) {
+			@unlink( $tmp );
+			return $error;
+		}
+		$crc    = Streaming_Zip_Writer::crc32_combine( $crc, (int) hexdec( hash_final( $piece ) ), $written );
+		$offset += $written;
+		if ( $offset < $size ) {
+			return array(
+				'complete' => false,
+				'written'  => $written,
+				'offset'   => $offset,
+				'crc'      => $crc,
+			);
+		}
+		if ( isset( $stat['crc'] ) && ( (int) $stat['crc'] & 0xFFFFFFFF ) !== $crc ) {
+			@unlink( $tmp );
+			return new \WP_Error( 'jisento_entry_crc', sprintf( __( '%s failed its ZIP CRC check. The package is damaged; export or upload it again.', 'jisento' ), self::printable( $name ) ) );
+		}
+		$committed = self::commit_tmp( $tmp, $dest );
+		if ( is_wp_error( $committed ) ) {
+			return $committed;
+		}
+		return array(
+			'complete' => true,
+			'written'  => $written,
+			'offset'   => $offset,
+			'crc'      => $crc,
+		);
+	}
+
+	/**
+	 * Absolute byte offset of an entry's data, read from the central directory and local header.
+	 *
+	 * @param string $zip_path Package.
+	 * @param string $name     Entry name.
+	 * @return int|\WP_Error
+	 */
+	public static function data_offset( $zip_path, $name ) {
+		$bad = new \WP_Error( 'jisento_zip_directory', sprintf( __( 'The package directory could not be read to locate %s. The package is damaged; export or upload it again.', 'jisento' ), self::printable( $name ) ) );
+		$fh  = @fopen( $zip_path, 'rb' );
+		if ( ! $fh ) {
+			return $bad;
+		}
+		$size = (int) filesize( $zip_path );
+		$tail = min( $size, 65557 );
+		fseek( $fh, $size - $tail );
+		$buf = (string) fread( $fh, $tail );
+		$pos = strrpos( $buf, "PK\x05\x06" );
+		if ( false === $pos || strlen( $buf ) < $pos + 22 ) {
+			fclose( $fh );
+			return $bad;
+		}
+		$eocd      = unpack( 'vdisk/vcd_disk/vcount_disk/vcount/Vcd_size/Vcd_offset', substr( $buf, $pos + 4, 16 ) );
+		$cd_offset = (int) $eocd['cd_offset'];
+		$cd_size   = (int) $eocd['cd_size'];
+		if ( 0xFFFFFFFF === $cd_offset || 0xFFFFFFFF === $cd_size || 0xFFFF === (int) $eocd['count'] ) {
+			$loc = $pos - 20;
+			if ( $loc < 0 || "PK\x06\x07" !== substr( $buf, $loc, 4 ) ) {
+				fclose( $fh );
+				return $bad;
+			}
+			$rec_at = unpack( 'P', substr( $buf, $loc + 8, 8 ) );
+			fseek( $fh, (int) $rec_at[1] );
+			$rec = (string) fread( $fh, 56 );
+			if ( "PK\x06\x06" !== substr( $rec, 0, 4 ) ) {
+				fclose( $fh );
+				return $bad;
+			}
+			$z64       = unpack( 'Pcount_disk/Pcount/Pcd_size/Pcd_offset', substr( $rec, 24, 32 ) );
+			$cd_offset = (int) $z64['cd_offset'];
+			$cd_size   = (int) $z64['cd_size'];
+		}
+		fseek( $fh, $cd_offset );
+		$read = 0;
+		while ( $read < $cd_size ) {
+			$head = (string) fread( $fh, 46 );
+			if ( strlen( $head ) < 46 || "PK\x01\x02" !== substr( $head, 0, 4 ) ) {
+				break;
+			}
+			$h     = unpack( 'Vcsize/Vusize/vnlen/velen/vclen/vdisk/vint/Vext/Voffset', substr( $head, 20, 26 ) );
+			$ename = (string) fread( $fh, $h['nlen'] );
+			$extra = $h['elen'] > 0 ? (string) fread( $fh, $h['elen'] ) : '';
+			if ( $h['clen'] > 0 ) {
+				fseek( $fh, $h['clen'], SEEK_CUR );
+			}
+			$read += 46 + $h['nlen'] + $h['elen'] + $h['clen'];
+			if ( $ename !== $name ) {
+				continue;
+			}
+			$local = (int) $h['offset'];
+			if ( 0xFFFFFFFF === $local ) {
+				$local = self::zip64_local_offset( $extra, $h );
+				if ( $local < 0 ) {
+					break;
+				}
+			}
+			fseek( $fh, $local );
+			$lh = (string) fread( $fh, 30 );
+			fclose( $fh );
+			if ( strlen( $lh ) < 30 || "PK\x03\x04" !== substr( $lh, 0, 4 ) ) {
+				return $bad;
+			}
+			$lens = unpack( 'vnlen/velen', substr( $lh, 26, 4 ) );
+			return $local + 30 + (int) $lens['nlen'] + (int) $lens['elen'];
+		}
+		fclose( $fh );
+		return $bad;
+	}
+
+	private static function zip64_local_offset( $extra, array $h ) {
+		$at = 0;
+		while ( $at + 4 <= strlen( $extra ) ) {
+			$field = unpack( 'vid/vlen', substr( $extra, $at, 4 ) );
+			if ( 0x0001 === (int) $field['id'] ) {
+				$data = substr( $extra, $at + 4, (int) $field['len'] );
+				$pos  = 0;
+				if ( 0xFFFFFFFF === (int) $h['usize'] ) {
+					$pos += 8;
+				}
+				if ( 0xFFFFFFFF === (int) $h['csize'] ) {
+					$pos += 8;
+				}
+				if ( strlen( $data ) < $pos + 8 ) {
+					return -1;
+				}
+				$v = unpack( 'P', substr( $data, $pos, 8 ) );
+				return (int) $v[1];
+			}
+			$at += 4 + (int) $field['len'];
+		}
+		return -1;
 	}
 
 	/**

@@ -233,6 +233,8 @@ class Job_Runner {
 	public static function finish( $job ) {
 		if ( in_array( $job->type, array( 'import', 'receive' ), true ) ) {
 			\Jisento\Migration\Import\Importer::cleanup( $job );
+		} elseif ( 'export' === $job->type ) {
+			\Jisento\Migration\Export\Exporter::cleanup( $job );
 		}
 		Lease::release( $job->job_id );
 	}
