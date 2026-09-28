@@ -4,9 +4,10 @@
     Run tests/roundtrip-test.php against the local Docker database containers.
 
 .DESCRIPTION
-    Starts jisento-mariadb (port 3307) and jisento-mysql8 (port 3308), waits until
-    both accept root/root connections, then runs the roundtrip test in a separate
-    child process per scenario so environment variables cannot leak between runs.
+    Starts jisento-mariadb (port 3307), jisento-mysql8 (port 3308), and in full mode
+    jisento-mariadb11 (port 3309), waits until they accept root/root connections, then
+    runs the roundtrip test in a separate child process per scenario so environment
+    variables cannot leak between runs.
 
     -Quick sets JISENTO_TEST_ROWS=10000 and runs only MariaDB -> MariaDB.
 
@@ -52,6 +53,34 @@ function Start-DbContainer {
     }
 }
 
+function Ensure-Mariadb11 {
+    $exists = & docker ps -a --format '{{.Names}}' 2>$null | Where-Object { $_ -eq 'jisento-mariadb11' }
+    if (-not $exists) {
+        Write-Line "Creating container jisento-mariadb11 (mariadb:11.4 on port 3309) ..."
+        & docker run -d --name jisento-mariadb11 -e MARIADB_ROOT_PASSWORD=root -e MARIADB_DATABASE=jisento_test -p 3309:3306 mariadb:11.4
+        if ($LASTEXITCODE -ne 0) {
+            Write-Line "Failed to create Docker container 'jisento-mariadb11'."
+            exit 1
+        }
+        return
+    }
+    Start-DbContainer -Name 'jisento-mariadb11'
+}
+
+function Ensure-Mariadb106 {
+    $exists = & docker ps -a --format '{{.Names}}' 2>$null | Where-Object { $_ -eq 'jisento-mariadb106' }
+    if (-not $exists) {
+        Write-Line "Creating container jisento-mariadb106 (mariadb:10.6 on port 3310) ..."
+        & docker run -d --name jisento-mariadb106 -e MARIADB_ROOT_PASSWORD=root -e MARIADB_DATABASE=jisento_test -p 3310:3306 mariadb:10.6
+        if ($LASTEXITCODE -ne 0) {
+            Write-Line "Failed to create Docker container 'jisento-mariadb106'."
+            exit 1
+        }
+        return
+    }
+    Start-DbContainer -Name 'jisento-mariadb106'
+}
+
 function Wait-DbReady {
     param(
         [int]$Port,
@@ -64,7 +93,7 @@ function Wait-DbReady {
     }
 
     Write-Line "Waiting for $Label (127.0.0.1:${Port}, root/root) ..."
-    $deadline = (Get-Date).AddSeconds(90)
+    $deadline = (Get-Date).AddSeconds(120)
     $phpCode = "mysqli_report(MYSQLI_REPORT_OFF); exit(@mysqli_connect('127.0.0.1','root','root','',$Port) ? 0 : 1);"
 
     while ($true) {
@@ -76,7 +105,7 @@ function Wait-DbReady {
 
         $remaining = ($deadline - (Get-Date)).TotalSeconds
         if ($remaining -le 0) {
-            Write-Line "Timed out after 90 seconds waiting for $Label on 127.0.0.1:${Port} (root/root)."
+            Write-Line "Timed out after 120 seconds waiting for $Label on 127.0.0.1:${Port} (root/root)."
             exit 1
         }
 
@@ -248,6 +277,13 @@ Start-DbContainer -Name 'jisento-mysql8'
 Wait-DbReady -Port 3307 -Label 'MariaDB (jisento-mariadb)'
 Wait-DbReady -Port 3308 -Label 'MySQL 8 (jisento-mysql8)'
 
+if (-not $Quick) {
+    Ensure-Mariadb11
+    Ensure-Mariadb106
+    Wait-DbReady -Port 3309 -Label 'MariaDB 11.4 (jisento-mariadb11)'
+    Wait-DbReady -Port 3310 -Label 'MariaDB 10.6 (jisento-mariadb106)'
+}
+
 if ($Quick) {
     Write-Line "Quick mode: JISENTO_TEST_ROWS=10000, running MariaDB -> MariaDB only."
 }
@@ -278,6 +314,32 @@ if (-not $Quick) {
             JISENTO_TEST_DEST_DB_PORT   = '3307'
             JISENTO_TEST_DEST_DB_USER   = 'root'
             JISENTO_TEST_DEST_DB_PASS   = 'root'
+        }
+    }
+    $runs += @{
+        Title = 'MariaDB 11.4 -> MariaDB 11.4 (uca1400 kept)'
+        Vars  = @{
+            JISENTO_TEST_DB_HOST = '127.0.0.1'
+            JISENTO_TEST_DB_PORT = '3309'
+            JISENTO_TEST_DB_USER = 'root'
+            JISENTO_TEST_DB_PASS = 'root'
+            JISENTO_TEST_ROWS    = '10000'
+        }
+    }
+    # MariaDB 10.11+ accepts utf8mb*_uca1400_* via CONVERT/COLLATE even though SHOW COLLATION
+    # only lists the short name uca1400_ai_ci. MariaDB 10.6 rejects them, so it exercises mapping.
+    $runs += @{
+        Title = 'MariaDB 11.4 -> MariaDB 10.6 (uca1400 mapped)'
+        Vars  = @{
+            JISENTO_TEST_SOURCE_DB_HOST = '127.0.0.1'
+            JISENTO_TEST_SOURCE_DB_PORT = '3309'
+            JISENTO_TEST_SOURCE_DB_USER = 'root'
+            JISENTO_TEST_SOURCE_DB_PASS = 'root'
+            JISENTO_TEST_DEST_DB_HOST   = '127.0.0.1'
+            JISENTO_TEST_DEST_DB_PORT   = '3310'
+            JISENTO_TEST_DEST_DB_USER   = 'root'
+            JISENTO_TEST_DEST_DB_PASS   = 'root'
+            JISENTO_TEST_ROWS           = '10000'
         }
     }
 }

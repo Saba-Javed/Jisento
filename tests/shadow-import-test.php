@@ -52,8 +52,15 @@ $split = Database_Importer::split_create( "CREATE TABLE `t` (`a` varchar(5) DEFA
 check( 'split_create ignores parentheses in strings', is_array( $split ) && ' ENGINE=MyISAM ROW_FORMAT=FIXED' === $split[1] );
 check( 'MyISAM options become InnoDB', ' ENGINE=InnoDB' === Database_Importer::convert_engine_options( ' ENGINE=MyISAM ROW_FORMAT=FIXED' ) );
 check( 'engines without an InnoDB equivalent are refused', null === Database_Importer::convert_engine_options( ' ENGINE=MRG_MyISAM' ) );
-check( 'MySQL 8 collation maps to a MariaDB one', 'utf8mb4_unicode_520_ci' === Database_Importer::map_collation( 'utf8mb4_0900_ai_ci', array( 'utf8mb4_unicode_520_ci', 'utf8mb4_unicode_ci' ) ) );
+check( 'MySQL 8 collation maps to a MariaDB one', 'utf8mb4_unicode_520_ci' === Database_Importer::map_collation( 'utf8mb4_0900_ai_ci', array( 'utf8mb4_uca1400_ai_ci', 'utf8mb4_unicode_520_ci', 'utf8mb4_unicode_ci' ) ) );
+check( 'MySQL 8 bin collation maps to utf8mb4_bin', 'utf8mb4_bin' === Database_Importer::map_collation( 'utf8mb4_0900_bin', array( 'utf8mb4_bin', 'utf8mb4_unicode_ci' ) ) );
+check( 'uca1400 ai_ci candidate list prefers unicode_520 when uca1400 is absent', 'utf8mb4_unicode_520_ci' === Database_Importer::map_collation( 'utf8mb4_uca1400_ai_ci', array( 'utf8mb4_unicode_520_ci', 'utf8mb4_unicode_ci' ) ) );
+check( 'uca1400 as_cs maps to charset_bin', 'utf8mb4_bin' === Database_Importer::map_collation( 'utf8mb4_uca1400_as_cs', array( 'utf8mb4_bin', 'utf8mb4_unicode_ci' ) ) );
+check( 'utf8mb3 candidates also try utf8_', 'utf8_unicode_ci' === Database_Importer::map_collation( 'utf8mb3_uca1400_ai_ci', array( 'utf8_unicode_ci', 'utf8_general_ci' ) ) );
 check( 'unknown collation without a safe equivalent fails', null === Database_Importer::map_collation( 'foo_bar', array( 'utf8mb4_unicode_ci' ) ) );
+check( 'collation kept when listed as supported', 'utf8mb4_uca1400_ai_ci' === Database_Importer::map_collation( 'utf8mb4_uca1400_ai_ci', array( 'utf8mb4_uca1400_ai_ci' ) ) );
+$cands = Database_Importer::collation_candidates( 'utf8mb4_uca1400_ai_ci' );
+check( 'uca1400 ai_ci candidates include unicode_520 then unicode then general', in_array( 'utf8mb4_unicode_520_ci', $cands, true ) && in_array( 'utf8mb4_unicode_ci', $cands, true ) && in_array( 'utf8mb4_general_ci', $cands, true ) );
 
 check( 'hostinger options are preserved', Live_Url::preserved_option( 'hostinger_onboarding' ) && Live_Url::preserved_option( 'hostinger-ai-builder' ) );
 check( 'other options are not preserved', ! Live_Url::preserved_option( 'siteurl' ) && ! Live_Url::preserved_option( 'home' ) && ! Live_Url::preserved_option( 'my_hostinger' ) );
@@ -63,6 +70,7 @@ check( 'existing administrators are left alone', ! Admin_Guard::should_restore( 
 $importer = file_get_contents( JISENTO_PATH . 'includes/Database/Database_Importer.php' );
 $swap     = substr( $importer, strpos( $importer, 'function swap_shadows' ), 4000 );
 check( 'swap is a single RENAME TABLE', 1 === substr_count( $swap, "'RENAME TABLE '" ) );
+check( 'importer probes CONVERT COLLATE instead of trusting SHOW COLLATION names', false !== strpos( $importer, "CONVERT('a' USING" ) && false !== strpos( $importer, 'collation_probes' ) && false !== strpos( $importer, 'collations_kept' ) );
 
 $guard = file_get_contents( JISENTO_PATH . 'includes/Security/Admin_Guard.php' );
 check( 'plugin updates are blocked during an import', false !== strpos( $guard, 'upgrader_pre_install' ) && false !== strpos( $guard, 'import_running' ) );

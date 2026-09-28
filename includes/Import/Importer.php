@@ -747,7 +747,7 @@ class Importer {
 			return;
 		}
 		$logger = Plugin::instance()->logger;
-		foreach ( array( 'engines', 'collations', 'constraints' ) as $kind ) {
+		foreach ( array( 'engines', 'collations', 'collations_kept', 'constraints' ) as $kind ) {
 			if ( empty( $notes[ $kind ] ) ) {
 				continue;
 			}
@@ -764,6 +764,8 @@ class Importer {
 						$pairs[] = $from . ' -> ' . $to;
 					}
 					$logger->log( $job->job_id, 'importing_database', 'collation', $table, 'warning', sprintf( '%1$s: collation not supported by this server, mapped: %2$s', $table, implode( ', ', $pairs ) ) );
+				} elseif ( 'collations_kept' === $kind ) {
+					$logger->log( $job->job_id, 'importing_database', 'collation', $table, 'info', sprintf( '%1$s: collation supported, kept: %2$s', $table, implode( ', ', array_keys( (array) $value ) ) ) );
 				}
 			}
 		}

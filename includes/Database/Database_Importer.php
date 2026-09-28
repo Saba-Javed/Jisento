@@ -93,11 +93,6 @@ class Database_Importer {
 	/**
 	 * @var string[]|null
 	 */
-	private $collations = null;
-
-	/**
-	 * @var string[]|null
-	 */
 	private $charsets = null;
 
 	/**
@@ -1005,20 +1000,15 @@ class Database_Importer {
 	 */
 	private function map_collations( $sql, $live ) {
 		$this->load_server_names();
-		$collations = $this->collations;
-		$charsets   = $this->charsets;
-		$notes      = &$this->notes;
-		$failed     = '';
-		$sql = preg_replace_callback(
+		$self   = $this;
+		$failed = '';
+		$sql    = preg_replace_callback(
 			'/\b(COLLATE)(\s*=\s*|\s+)([A-Za-z0-9_]+)/i',
-			static function ( $m ) use ( $collations, $live, &$notes, &$failed ) {
-				$to = Database_Importer::map_collation( $m[3], $collations );
+			static function ( $m ) use ( $self, $live, &$failed ) {
+				$to = $self->resolve_collation( $m[3], $live );
 				if ( null === $to ) {
 					$failed = $m[3];
 					return $m[0];
-				}
-				if ( strtolower( $to ) !== strtolower( $m[3] ) ) {
-					$notes['collations'][ $live ][ $m[3] ] = $to;
 				}
 				return $m[1] . $m[2] . $to;
 			},
@@ -1027,7 +1017,8 @@ class Database_Importer {
 		if ( '' !== $failed ) {
 			return new \WP_Error( 'jisento_sql_collation', sprintf( __( 'Table %1$s uses collation %2$s, which this database server does not support and has no safe equivalent.', 'jisento' ), $live, $failed ) . $this->job_suffix() );
 		}
-		$sql = preg_replace_callback(
+		$charsets = $this->charsets;
+		$sql      = preg_replace_callback(
 			'/\b(CHARSET|CHARACTER\s+SET)(\s*=\s*|\s+)([A-Za-z0-9_]+)/i',
 			static function ( $m ) use ( $charsets ) {
 				return $m[1] . $m[2] . Database_Importer::map_charset( $m[3], $charsets );
@@ -1038,10 +1029,139 @@ class Database_Importer {
 	}
 
 	/**
-	 * MySQL 8 and MariaDB 11 collations mapped to ones older MariaDB servers have.
+	 * Keep the dump collation when the server accepts it; otherwise map to a probed replacement.
+	 *
+	 * @param string $name Collation from the dump.
+	 * @param string $live Live table name (for job notes).
+	 * @return string|null
+	 */
+	private function resolve_collation( $name, $live ) {
+		$name = (string) $name;
+		foreach ( self::charsets_for_collation( $name ) as $charset ) {
+			if ( $this->probe_collation( $charset, $name ) ) {
+				$this->notes['collations_kept'][ $live ][ $name ] = true;
+				return $name;
+			}
+		}
+		foreach ( self::collation_candidates( $name ) as $candidate ) {
+			foreach ( self::charsets_for_collation( $candidate ) as $charset ) {
+				if ( $this->probe_collation( $charset, $candidate ) ) {
+					$this->notes['collations'][ $live ][ $name ] = $candidate;
+					return $candidate;
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Probe whether CONVERT(... USING charset) COLLATE collation is accepted.
+	 * Results are cached on the restore session so each pair is probed once per job.
+	 *
+	 * @param string $charset   Character set.
+	 * @param string $collation Collation name.
+	 * @return bool
+	 */
+	private function probe_collation( $charset, $collation ) {
+		$charset   = strtolower( preg_replace( '/[^A-Za-z0-9]/', '', (string) $charset ) );
+		$collation = strtolower( preg_replace( '/[^A-Za-z0-9_]/', '', (string) $collation ) );
+		if ( '' === $charset || '' === $collation ) {
+			return false;
+		}
+		$key = $charset . '/' . $collation;
+		if ( ! isset( $this->session['collation_probes'] ) || ! is_array( $this->session['collation_probes'] ) ) {
+			$this->session['collation_probes'] = array();
+		}
+		if ( array_key_exists( $key, $this->session['collation_probes'] ) ) {
+			return (bool) $this->session['collation_probes'][ $key ];
+		}
+		$saved_errno = $this->last_errno;
+		$saved_error = $this->last_error;
+		$ok          = null !== $this->rows( "SELECT CONVERT('a' USING {$charset}) COLLATE {$collation}" );
+		$this->last_errno                      = $saved_errno;
+		$this->last_error                      = $saved_error;
+		$this->session['collation_probes'][ $key ] = $ok;
+		return $ok;
+	}
+
+	/**
+	 * Charset names to try for a collation (utf8mb3 and utf8 are aliases on many servers).
+	 *
+	 * @param string $name Collation.
+	 * @return string[]
+	 */
+	public static function charsets_for_collation( $name ) {
+		$charset = self::charset_from_collation( $name );
+		if ( '' === $charset ) {
+			return array();
+		}
+		$out = array( $charset );
+		if ( 'utf8mb3' === $charset ) {
+			$out[] = 'utf8';
+		} elseif ( 'utf8' === $charset ) {
+			$out[] = 'utf8mb3';
+		}
+		return $out;
+	}
+
+	/**
+	 * @param string $name Collation.
+	 * @return string Lowercase charset prefix, or ''.
+	 */
+	public static function charset_from_collation( $name ) {
+		$lower = strtolower( (string) $name );
+		if ( preg_match( '/^(utf8mb4|utf8mb3|utf8|latin1|ascii|binary)_/', $lower, $m ) ) {
+			return $m[1];
+		}
+		return '';
+	}
+
+	/**
+	 * Replacement collations to try when the original is not accepted.
+	 *
+	 * @param string $name Collation from the dump.
+	 * @return string[]
+	 */
+	public static function collation_candidates( $name ) {
+		$lower   = strtolower( (string) $name );
+		$charset = self::charset_from_collation( $lower );
+		if ( '' === $charset ) {
+			return array();
+		}
+		if ( preg_match( '/^utf8mb4_0900_bin$/', $lower ) ) {
+			return array( 'utf8mb4_bin' );
+		}
+		// MySQL 8 utf8mb4_0900_* (except bin): keep the historical MariaDB mapping, not uca1400.
+		if ( preg_match( '/^utf8mb4_0900_/', $lower ) ) {
+			return array( 'utf8mb4_unicode_520_ci', 'utf8mb4_unicode_ci' );
+		}
+		$charsets = self::charsets_for_collation( $lower );
+		$rest     = substr( $lower, strlen( $charset ) + 1 );
+		$rest     = str_replace( '_nopad', '', $rest );
+		$out      = array();
+		if ( preg_match( '/(_|^)(as_)?cs$/', $rest ) || preg_match( '/_bin$/', $rest ) ) {
+			foreach ( $charsets as $cs ) {
+				$out[] = $cs . '_bin';
+			}
+			return array_values( array_unique( $out ) );
+		}
+		$suffixes = array( '_uca1400_ai_ci', '_unicode_520_ci', '_unicode_ci', '_general_ci' );
+		foreach ( $charsets as $cs ) {
+			foreach ( $suffixes as $suffix ) {
+				$candidate = $cs . $suffix;
+				if ( $candidate !== $lower ) {
+					$out[] = $candidate;
+				}
+			}
+		}
+		return array_values( array_unique( $out ) );
+	}
+
+	/**
+	 * Pick a collation from a known-supported list (unit tests / offline). Prefer probe-based resolve_collation at restore time.
 	 *
 	 * @param string   $name      Collation from the dump.
-	 * @param string[] $supported Lowercase collation names on this server. Empty means unknown: keep the name.
+	 * @param string[] $supported Lowercase collation names. Empty means unknown: keep the name.
 	 * @return string|null
 	 */
 	public static function map_collation( $name, array $supported ) {
@@ -1049,23 +1169,8 @@ class Database_Importer {
 		if ( ! $supported || in_array( $lower, $supported, true ) ) {
 			return $name;
 		}
-		$candidates = array();
-		if ( preg_match( '/^utf8mb4_0900_bin$/', $lower ) ) {
-			$candidates = array( 'utf8mb4_bin' );
-		} elseif ( preg_match( '/^utf8mb4_(0900|uca1400)_/', $lower ) ) {
-			$candidates = array( 'utf8mb4_unicode_520_ci', 'utf8mb4_unicode_ci' );
-		} elseif ( preg_match( '/^utf8mb3_(.+)$/', $lower, $m ) ) {
-			$candidates = array( 'utf8_' . $m[1], 'utf8_general_ci' );
-		} elseif ( preg_match( '/^(utf8mb4|utf8|latin1)_/', $lower, $m ) ) {
-			$fallback   = array(
-				'utf8mb4' => array( 'utf8mb4_unicode_520_ci', 'utf8mb4_unicode_ci', 'utf8mb4_general_ci' ),
-				'utf8'    => array( 'utf8_unicode_ci', 'utf8_general_ci' ),
-				'latin1'  => array( 'latin1_swedish_ci' ),
-			);
-			$candidates = $fallback[ $m[1] ];
-		}
-		foreach ( $candidates as $candidate ) {
-			if ( in_array( $candidate, $supported, true ) ) {
+		foreach ( self::collation_candidates( $name ) as $candidate ) {
+			if ( in_array( strtolower( $candidate ), $supported, true ) ) {
 				return $candidate;
 			}
 		}
@@ -1089,17 +1194,18 @@ class Database_Importer {
 	}
 
 	private function load_server_names() {
-		if ( null !== $this->collations ) {
+		if ( null !== $this->charsets ) {
 			return;
 		}
-		$this->collations = array();
-		$this->charsets   = array();
+		$this->charsets = array();
 		foreach ( (array) $this->rows( 'SHOW COLLATION' ) as $row ) {
-			if ( isset( $row['Collation'] ) ) {
-				$this->collations[] = strtolower( $row['Collation'] );
+			if ( isset( $row['Charset'] ) && '' !== (string) $row['Charset'] ) {
+				$this->charsets[ strtolower( (string) $row['Charset'] ) ] = true;
 			}
-			if ( isset( $row['Charset'] ) ) {
-				$this->charsets[ strtolower( $row['Charset'] ) ] = true;
+		}
+		foreach ( (array) $this->rows( 'SHOW CHARACTER SET' ) as $row ) {
+			if ( isset( $row['Charset'] ) && '' !== (string) $row['Charset'] ) {
+				$this->charsets[ strtolower( (string) $row['Charset'] ) ] = true;
 			}
 		}
 		$this->charsets = array_keys( $this->charsets );

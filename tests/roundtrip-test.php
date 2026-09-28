@@ -175,6 +175,22 @@ if ( $src_mysql8 ) {
 	rt_exec( $src, 'CREATE TABLE wp_c0900 (id int NOT NULL, t varchar(40) COLLATE utf8mb4_0900_ai_ci, PRIMARY KEY (id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci' );
 	rt_exec( $src, "INSERT INTO wp_c0900 VALUES (1, 'naïve 100%'), (2, 'Ölfarbe')" );
 }
+$src_uca1400 = false;
+$uca_probe   = @mysqli_query( $src->dbh, "SELECT CONVERT('a' USING utf8mb4) COLLATE utf8mb4_uca1400_ai_ci" );
+if ( $uca_probe ) {
+	$src_uca1400 = true;
+	mysqli_free_result( $uca_probe );
+}
+if ( $src_uca1400 ) {
+	rt_exec( $src, 'CREATE TABLE wp_yith_wcwl (id int NOT NULL, t varchar(40) NOT NULL, PRIMARY KEY (id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_uca1400_ai_ci' );
+	rt_exec( $src, "INSERT INTO wp_yith_wcwl VALUES (1, 'wishlist')" );
+	rt_exec( $src, 'CREATE TABLE wp_uca1400_mb4 (id int NOT NULL, t varchar(40) NOT NULL, PRIMARY KEY (id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci' );
+	rt_exec( $src, "INSERT INTO wp_uca1400_mb4 VALUES (1, 'mb4')" );
+	rt_exec( $src, 'CREATE TABLE wp_uca1400_cs (id int NOT NULL, t varchar(40) NOT NULL, PRIMARY KEY (id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_as_cs' );
+	rt_exec( $src, "INSERT INTO wp_uca1400_cs VALUES (1, 'CaseSensitive')" );
+	rt_exec( $src, 'CREATE TABLE wp_uca1400_col (id int NOT NULL, t varchar(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_uca1400_ai_ci NOT NULL, PRIMARY KEY (id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci' );
+	rt_exec( $src, "INSERT INTO wp_uca1400_col VALUES (1, 'column')" );
+}
 rt_exec( $src, 'CREATE VIEW wp_some_view AS SELECT option_name FROM wp_options' );
 
 /* ---------------------------------------------------------------- export */
@@ -346,6 +362,34 @@ printf( "Imported in %.1fs\n", microtime( true ) - $t0 );
 
 rt_compare( $src, $dst, $tables, 'clean import' );
 
+if ( $src_uca1400 ) {
+	$dest_uca = false;
+	$dup      = @mysqli_query( $dst->dbh, "SELECT CONVERT('a' USING utf8mb4) COLLATE utf8mb4_uca1400_ai_ci" );
+	if ( $dup ) {
+		$dest_uca = true;
+		mysqli_free_result( $dup );
+	}
+	$yith = (string) $dst->get_var( "SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wp_yith_wcwl'" );
+	$mb4  = (string) $dst->get_var( "SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wp_uca1400_mb4'" );
+	$cs   = (string) $dst->get_var( "SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wp_uca1400_cs'" );
+	$col  = (string) $dst->get_var( "SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wp_uca1400_col' AND COLUMN_NAME = 't'" );
+	if ( $dest_uca ) {
+		check( 'uca1400 utf8mb3 table collation unchanged', 'utf8mb3_uca1400_ai_ci' === $yith || 'utf8_uca1400_ai_ci' === $yith, $yith );
+		check( 'uca1400 utf8mb4 table collation unchanged', 'utf8mb4_uca1400_ai_ci' === $mb4, $mb4 );
+		check( 'uca1400 as_cs table collation unchanged', 'utf8mb4_uca1400_as_cs' === $cs, $cs );
+		check( 'uca1400 column collation unchanged', 'utf8mb4_uca1400_ai_ci' === $col, $col );
+		check( 'uca1400 kept with no mapping logged', empty( $GLOBALS['rt_notes']['collations']['wp_yith_wcwl'] ) && empty( $GLOBALS['rt_notes']['collations']['wp_uca1400_mb4'] ) && empty( $GLOBALS['rt_notes']['collations']['wp_uca1400_cs'] ) && empty( $GLOBALS['rt_notes']['collations']['wp_uca1400_col'] ) );
+		check( 'uca1400 kept decisions logged', ! empty( $GLOBALS['rt_notes']['collations_kept']['wp_yith_wcwl'] ) && ! empty( $GLOBALS['rt_notes']['collations_kept']['wp_uca1400_mb4'] ) );
+	} else {
+		check( 'uca1400 utf8mb3 mapped away on older dest', false === strpos( $yith, 'uca1400' ) && '' !== $yith, $yith );
+		check( 'uca1400 utf8mb4 mapped away on older dest', false === strpos( $mb4, 'uca1400' ) && '' !== $mb4, $mb4 );
+		check( 'uca1400 as_cs mapped to bin on older dest', false !== strpos( $cs, '_bin' ), $cs );
+		check( 'uca1400 column mapped away on older dest', false === strpos( $col, 'uca1400' ) && '' !== $col, $col );
+		check( 'uca1400 mapping recorded for the job log', ! empty( $GLOBALS['rt_notes']['collations']['wp_yith_wcwl'] ) && ! empty( $GLOBALS['rt_notes']['collations']['wp_uca1400_mb4'] ) && ! empty( $GLOBALS['rt_notes']['collations']['wp_uca1400_cs'] ) && ! empty( $GLOBALS['rt_notes']['collations']['wp_uca1400_col'] ) );
+	}
+	check( 'uca1400 rows restored', 'wishlist' === $dst->get_var( 'SELECT t FROM wp_yith_wcwl WHERE id = 1' ) && 'column' === $dst->get_var( 'SELECT t FROM wp_uca1400_col WHERE id = 1' ) );
+}
+
 $fk_row = $dst->get_row( "SELECT CONSTRAINT_NAME, REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wp_wc_download_log' AND REFERENCED_TABLE_NAME IS NOT NULL", ARRAY_A );
 check( 'FK keeps its original name after the swap', $fk_row && 'fk_wc_download_log_permission_id' === $fk_row['CONSTRAINT_NAME'], json_encode( $fk_row ) );
 check( 'FK points at the live parent table', $fk_row && 'wp_wc_orders' === $fk_row['REFERENCED_TABLE_NAME'], json_encode( $fk_row ) );
@@ -422,10 +466,15 @@ if ( is_wp_error( $run ) ) {
 } else {
 	$run['importer']->swap_shadows( array( 'wp_c0900' ) );
 	$collation = $run['wpdb']->get_var( "SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wp_c0900'" );
-	$version   = (string) mysqli_get_server_info( $run['wpdb']->dbh );
-	$dest_m8   = false === stripos( $version, 'mariadb' ) && version_compare( $version, '8.0', '>=' );
-	check( 'MySQL 8 collation restored or mapped', $dest_m8 ? 'utf8mb4_0900_ai_ci' === $collation : in_array( $collation, array( 'utf8mb4_unicode_520_ci', 'utf8mb4_unicode_ci' ), true ), (string) $collation );
-	check( 'collation mapping recorded for the job log', $dest_m8 || ! empty( $GLOBALS['rt_notes']['collations']['wp_c0900'] ) );
+	$dest_0900 = false;
+	$p0900     = @mysqli_query( $run['wpdb']->dbh, "SELECT CONVERT('a' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci" );
+	if ( $p0900 ) {
+		$dest_0900 = true;
+		mysqli_free_result( $p0900 );
+	}
+	check( 'MySQL 8 collation restored or mapped', $dest_0900 ? 'utf8mb4_0900_ai_ci' === $collation : in_array( $collation, array( 'utf8mb4_unicode_520_ci', 'utf8mb4_unicode_ci' ), true ), (string) $collation );
+	check( 'collation mapping recorded for the job log', $dest_0900 || ! empty( $GLOBALS['rt_notes']['collations']['wp_c0900'] ) );
+	check( 'collation kept logged when dest accepts 0900', ! $dest_0900 || ! empty( $GLOBALS['rt_notes']['collations_kept']['wp_c0900'] ) );
 	check( 'rows restored under the mapped collation', 'naïve 100%' === $run['wpdb']->get_var( 'SELECT t FROM wp_c0900 WHERE id = 1' ) );
 }
 
