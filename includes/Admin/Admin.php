@@ -17,6 +17,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Admin {
 
+	const DOWNLOAD_CHUNK = 1048576;
+
 	public function register() {
 		add_action( 'admin_menu', array( $this, 'menu' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'assets' ) );
@@ -121,6 +123,13 @@ class Admin {
 			ob_end_clean();
 		}
 
+		if ( function_exists( 'set_time_limit' ) ) {
+			@set_time_limit( 0 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		}
+		if ( function_exists( 'session_status' ) && PHP_SESSION_ACTIVE === session_status() ) {
+			session_write_close();
+		}
+
 		$plugin   = Plugin::instance();
 		$registry = new \Jisento\Migration\Package\Package_Registry();
 		$id       = isset( $_GET['id'] ) ? absint( $_GET['id'] ) : 0;
@@ -156,11 +165,38 @@ class Admin {
 			wp_die( esc_html( $check['reason'] ? $check['reason'] : __( 'Backup unavailable', 'jisento' ) ) );
 		}
 
+		$size   = (int) $check['size'];
+		$range  = isset( $_SERVER['HTTP_RANGE'] ) ? (string) wp_unslash( $_SERVER['HTTP_RANGE'] ) : '';
+		$parsed = self::parse_byte_range( $range, $size );
+		if ( is_wp_error( $parsed ) ) {
+			status_header( 416 );
+			nocache_headers();
+			header( 'Accept-Ranges: bytes' );
+			header( 'Content-Range: bytes */' . $size );
+			header( 'X-LiteSpeed-Cache-Control: no-cache' );
+			header( 'X-Accel-Buffering: no' );
+			header( 'X-Content-Type-Options: nosniff' );
+			header( 'Cache-Control: no-store, no-cache, must-revalidate' );
+			exit;
+		}
+
+		$start   = $parsed['start'];
+		$end     = $parsed['end'];
+		$length  = $end - $start + 1;
+		$partial = ! empty( $parsed['partial'] );
+
 		nocache_headers();
+		if ( $partial ) {
+			status_header( 206 );
+			header( 'Content-Range: bytes ' . $start . '-' . $end . '/' . $size );
+		}
 		header( 'Content-Type: application/octet-stream' );
 		header( 'Content-Transfer-Encoding: binary' );
 		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
-		header( 'Content-Length: ' . (int) $check['size'] );
+		header( 'Content-Length: ' . $length );
+		header( 'Accept-Ranges: bytes' );
+		header( 'X-LiteSpeed-Cache-Control: no-cache' );
+		header( 'X-Accel-Buffering: no' );
 		header( 'X-Content-Type-Options: nosniff' );
 		header( 'Cache-Control: no-store, no-cache, must-revalidate' );
 
@@ -168,12 +204,99 @@ class Admin {
 		if ( ! $fp ) {
 			wp_die( esc_html__( 'Unable to read the package file.', 'jisento' ) );
 		}
-		while ( ! feof( $fp ) ) {
-			echo fread( $fp, 1048576 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-			flush();
-		}
+		self::stream_file_range( $fp, $start, $length );
 		fclose( $fp );
 		exit;
+	}
+
+	/**
+	 * Parse a single HTTP Range request for a download.
+	 *
+	 * @param string $header Raw Range header (e.g. "bytes=100-199"), or empty for the whole file.
+	 * @param int    $size   File size in bytes.
+	 * @return array{start:int,end:int,partial:bool}|\WP_Error
+	 */
+	public static function parse_byte_range( $header, $size ) {
+		$size = (int) $size;
+		if ( $size <= 0 ) {
+			return new \WP_Error( 'jisento_range', 'empty' );
+		}
+		$header = trim( (string) $header );
+		if ( '' === $header ) {
+			return array(
+				'start'   => 0,
+				'end'     => $size - 1,
+				'partial' => false,
+			);
+		}
+		// Reject multi-range and non-bytes units.
+		if ( ! preg_match( '/^bytes=\s*(\d*)\s*-\s*(\d*)\s*$/i', $header, $m ) ) {
+			return new \WP_Error( 'jisento_range', 'invalid' );
+		}
+		if ( '' === $m[1] && '' === $m[2] ) {
+			return new \WP_Error( 'jisento_range', 'invalid' );
+		}
+		if ( '' === $m[1] ) {
+			$suffix = (int) $m[2];
+			if ( $suffix <= 0 ) {
+				return new \WP_Error( 'jisento_range', 'invalid' );
+			}
+			$start = max( 0, $size - $suffix );
+			$end   = $size - 1;
+		} elseif ( '' === $m[2] ) {
+			$start = (int) $m[1];
+			$end   = $size - 1;
+		} else {
+			$start = (int) $m[1];
+			$end   = (int) $m[2];
+		}
+		if ( $start < 0 || $end < $start || $start >= $size ) {
+			return new \WP_Error( 'jisento_range', 'unsatisfiable' );
+		}
+		if ( $end >= $size ) {
+			$end = $size - 1;
+		}
+		return array(
+			'start'   => $start,
+			'end'     => $end,
+			'partial' => ( 0 !== $start || $end !== $size - 1 ),
+		);
+	}
+
+	/**
+	 * Stream $length bytes from $start. Stops on connection abort or fread failure.
+	 *
+	 * @param resource $fp     Open file handle.
+	 * @param int      $start  Byte offset.
+	 * @param int      $length Bytes to send.
+	 * @return int Bytes written.
+	 */
+	public static function stream_file_range( $fp, $start, $length ) {
+		$length = (int) $length;
+		$start  = (int) $start;
+		if ( $length <= 0 || ! is_resource( $fp ) ) {
+			return 0;
+		}
+		if ( 0 !== fseek( $fp, $start ) ) {
+			return 0;
+		}
+		$sent = 0;
+		while ( $sent < $length ) {
+			if ( connection_aborted() ) {
+				break;
+			}
+			$want  = min( self::DOWNLOAD_CHUNK, $length - $sent );
+			$chunk = fread( $fp, $want );
+			if ( false === $chunk || '' === $chunk ) {
+				break;
+			}
+			echo $chunk; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			$sent += strlen( $chunk );
+			if ( function_exists( 'flush' ) ) {
+				flush();
+			}
+		}
+		return $sent;
 	}
 
 	public function download_log() {
