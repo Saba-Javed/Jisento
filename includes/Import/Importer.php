@@ -249,6 +249,7 @@ class Importer {
 			'replace_urls'             => true,
 			'replace_guids'            => false,
 			'replace_emails'           => true,
+			'replace_paths'            => true,
 			'source_url'               => '',
 			'dest_url'                 => home_url(),
 			'preserve_uploads'         => true,
@@ -278,6 +279,7 @@ class Importer {
 		$options['replace_guids']            = ! empty( $options['replace_guids'] );
 		$options['replace_emails']           = ! empty( $options['replace_emails'] );
 		$options['replace_urls']             = ! empty( $options['replace_urls'] );
+		$options['replace_paths']            = ! isset( $options['replace_paths'] ) || ! empty( $options['replace_paths'] );
 		$options['confirm_preserve']         = ! empty( $options['confirm_preserve'] );
 		return $options;
 	}
@@ -915,7 +917,7 @@ class Importer {
 		$plugin->logger->log( $job->job_id, 'importing_database', 'import', '', 'ok', $note );
 		$state['db_done']  = true;
 		$state['db_phase'] = 'done';
-		$next = ! empty( $state['validation']['files'] ) ? 'importing_files' : ( ! empty( $state['options']['replace_urls'] ) ? 'replacing_urls' : 'finalizing' );
+		$next = ! empty( $state['validation']['files'] ) ? 'importing_files' : ( $this->needs_url_stage( $state ) ? 'replacing_urls' : 'finalizing' );
 		return $this->report(
 			$job,
 			$state,
@@ -940,7 +942,7 @@ class Importer {
 		$plugin  = Plugin::instance();
 		$options = $state['options'];
 		$sizes   = isset( $state['sizes'] ) && is_array( $state['sizes'] ) ? $state['sizes'] : array();
-		$next    = ! empty( $options['replace_urls'] ) && ! empty( $state['validation']['database'] ) ? 'replacing_urls' : 'finalizing';
+		$next    = $this->needs_url_stage( $state ) ? 'replacing_urls' : 'finalizing';
 		if ( empty( $state['validation']['files'] ) ) {
 			return $this->report(
 				$job,
@@ -1668,12 +1670,41 @@ class Importer {
 	 * URLs and finalize
 	 * ------------------------------------------------------------------ */
 
+	/**
+	 * Whether the URL/path rewrite stage should run.
+	 *
+	 * @param array $state Job state.
+	 * @return bool
+	 */
+	private function needs_url_stage( array $state ) {
+		if ( empty( $state['validation']['database'] ) ) {
+			return false;
+		}
+		$options = isset( $state['options'] ) ? $state['options'] : array();
+		if ( ! empty( $options['replace_urls'] ) ) {
+			return true;
+		}
+		if ( empty( $options['replace_paths'] ) ) {
+			return false;
+		}
+		return ! empty( $state['manifest']['abspath'] );
+	}
+
 	private function replace_urls( $job, array $state ) {
 		$plugin   = Plugin::instance();
 		$source   = $state['options']['source_url'] ? $state['options']['source_url'] : $state['manifest']['home_url'];
 		$dest     = $state['options']['dest_url'] ? $state['options']['dest_url'] : home_url();
 		$replacer = new Url_Replacer();
 		$prior    = isset( $state['url_state'] ) ? $state['url_state'] : array();
+		$do_urls  = ! empty( $state['options']['replace_urls'] );
+		$do_paths = ! isset( $state['options']['replace_paths'] ) || ! empty( $state['options']['replace_paths'] );
+		$extra    = array();
+		if ( $do_paths && ! empty( $state['manifest']['abspath'] ) ) {
+			$extra = \Jisento\Migration\Replace\Serializer::build_path_replacements(
+				(string) $state['manifest']['abspath'],
+				rtrim( str_replace( '\\', '/', ABSPATH ), '/' ) . '/'
+			);
+		}
 		// Only tables restored from the package: kept tables already hold this site's own URLs.
 		$result   = $replacer->replace_all(
 			$source,
@@ -1681,9 +1712,11 @@ class Importer {
 			max( 1, Step_Budget::seconds( 8 ) ),
 			$prior,
 			array(
-				'only_tables'    => isset( $state['plan']['restore'] ) ? $state['plan']['restore'] : array(),
-				'replace_guids'  => ! empty( $state['options']['replace_guids'] ),
-				'replace_emails' => ! isset( $state['options']['replace_emails'] ) || ! empty( $state['options']['replace_emails'] ),
+				'only_tables'        => isset( $state['plan']['restore'] ) ? $state['plan']['restore'] : array(),
+				'replace_guids'      => ! empty( $state['options']['replace_guids'] ),
+				'replace_emails'     => ! isset( $state['options']['replace_emails'] ) || ! empty( $state['options']['replace_emails'] ),
+				'extra_replacements' => $extra,
+				'skip_url_replace'   => ! $do_urls,
 			)
 		);
 		$state['url_state'] = $result;
@@ -1692,11 +1725,16 @@ class Importer {
 		$table_index = isset( $result['index'] ) ? (int) $result['index'] : 0;
 		$ratio       = ! empty( $result['done'] ) ? 1 : ( $table_total > 0 ? min( 1, $table_index / $table_total ) : 0 );
 		if ( ! empty( $result['done'] ) ) {
-			Live_Url::adopt( $dest );
+			if ( $do_urls ) {
+				Live_Url::adopt( $dest );
+			}
 			Live_Url::hold();
 			$note = 'URL replacement: ' . (int) $result['updated'] . ' row(s) updated.';
 			if ( ! empty( $result['emails_updated'] ) ) {
 				$note .= ' Email addresses updated: ' . (int) $result['emails_updated'] . '.';
+			}
+			if ( $do_paths ) {
+				$note .= ' Path replacement: ' . (int) ( isset( $result['paths_updated'] ) ? $result['paths_updated'] : 0 ) . ' row(s) with source ABSPATH forms.';
 			}
 			if ( ! empty( $result['skipped_values'] ) ) {
 				$note .= ' ' . (int) $result['skipped_values'] . ' value(s) left unchanged because they could not be rewritten safely (unknown serialized data).';

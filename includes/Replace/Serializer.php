@@ -269,10 +269,15 @@ class Serializer {
 		$parts = array();
 		foreach ( $forms as $form ) {
 			// Host/path may end a sentence (".") but must not match a longer domain (".au") or slug ("-shop", "_x").
-			$boundary = self::form_has_path( $form )
-				? '(?![A-Za-z0-9_-]|[.][A-Za-z0-9-])'
-				: '(?![A-Za-z0-9-]|[.][A-Za-z0-9-])';
-			$parts[]  = preg_quote( $form, '~' ) . $boundary;
+			// Filesystem paths must not match a longer path segment (/public_html vs /public_html2).
+			if ( 0 === stripos( $form, 'file:' ) || ( ( preg_match( '~^[A-Za-z]:[\\\\/]~', $form ) || 0 === strpos( $form, '/' ) || 0 === strpos( $form, '\\' ) ) && false === strpos( $form, '://' ) ) ) {
+				$boundary = '(?![A-Za-z0-9_])';
+			} else {
+				$boundary = self::form_has_path( $form )
+					? '(?![A-Za-z0-9_-]|[.][A-Za-z0-9-])'
+					: '(?![A-Za-z0-9-]|[.][A-Za-z0-9-])';
+			}
+			$parts[] = preg_quote( $form, '~' ) . $boundary;
 		}
 		$this->patterns[ $hash ] = '~(?:' . implode( '|', $parts ) . ')~';
 
@@ -315,6 +320,81 @@ class Serializer {
 		}
 
 		return array_values( array_unique( array_filter( $variants ) ) );
+	}
+
+	/**
+	 * Plain and file:// forms of an absolute filesystem path, longest first when used in a map.
+	 * Trailing-slash and no-slash forms are both included; callers must use a boundary so
+	 * /public_html does not match /public_html2.
+	 *
+	 * @param string $abspath Absolute path (Unix or Windows).
+	 * @return string[]
+	 */
+	public static function path_forms( $abspath ) {
+		$abs = str_replace( '\\', '/', (string) $abspath );
+		$abs = rtrim( $abs, '/' );
+		if ( '' === $abs ) {
+			return array();
+		}
+		$forms = array( $abs, $abs . '/' );
+		$win   = str_replace( '/', '\\', $abs );
+		$forms[] = $win;
+		$forms[] = $win . '\\';
+		// file:///path (when $abs is /path) and file://path
+		$forms[] = 'file://' . $abs;
+		$forms[] = 'file://' . $abs . '/';
+		if ( 0 !== strpos( $abs, '/' ) ) {
+			$forms[] = 'file:///' . $abs;
+			$forms[] = 'file:///' . $abs . '/';
+		}
+		$forms[] = 'file://' . $win;
+		$forms[] = 'file://' . $win . '\\';
+		return array_values( array_unique( array_filter( $forms ) ) );
+	}
+
+	/**
+	 * Map source ABSPATH forms onto destination ABSPATH forms (plain and file://).
+	 *
+	 * @param string $source_abspath Source ABSPATH from the package manifest.
+	 * @param string $dest_abspath   Destination ABSPATH.
+	 * @return array<string,string>
+	 */
+	public static function build_path_replacements( $source_abspath, $dest_abspath ) {
+		$src_forms = self::path_forms( $source_abspath );
+		$dst_abs   = rtrim( str_replace( '\\', '/', (string) $dest_abspath ), '/' );
+		if ( ! $src_forms || '' === $dst_abs ) {
+			return array();
+		}
+		$dst_slash = $dst_abs . '/';
+		$dst_win   = str_replace( '/', '\\', $dst_abs );
+		$dst_file  = 'file://' . $dst_abs;
+		$dst_file_s = $dst_file . '/';
+		$map = array();
+		foreach ( $src_forms as $from ) {
+			if ( '' === $from || $from === $dst_abs || $from === $dst_slash ) {
+				continue;
+			}
+			$to = $from;
+			if ( 0 === stripos( $from, 'file:' ) ) {
+				$slash = ( substr( $from, -1 ) === '/' || substr( $from, -1 ) === '\\' );
+				$to    = $slash ? $dst_file_s : $dst_file;
+				if ( false !== strpos( $from, '\\' ) ) {
+					$to = 'file://' . $dst_win . ( $slash ? '\\' : '' );
+				}
+			} elseif ( false !== strpos( $from, '\\' ) ) {
+				$to = ( substr( $from, -1 ) === '\\' ) ? $dst_win . '\\' : $dst_win;
+			} else {
+				$to = ( substr( $from, -1 ) === '/' ) ? $dst_slash : $dst_abs;
+			}
+			$map[ $from ] = $to;
+		}
+		uksort(
+			$map,
+			static function ( $a, $b ) {
+				return strlen( $b ) <=> strlen( $a );
+			}
+		);
+		return $map;
 	}
 
 	public static function build_replacements( $source_url, $dest_url, $replace_emails = true ) {

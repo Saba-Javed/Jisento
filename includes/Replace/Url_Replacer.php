@@ -43,9 +43,11 @@ class Url_Replacer {
 		$state   = is_array( $state ) ? $state : array();
 		$options = array_merge(
 			array(
-				'only_tables'    => isset( $state['only_tables'] ) ? $state['only_tables'] : null,
-				'replace_guids'  => ! empty( $state['replace_guids'] ),
-				'replace_emails' => array_key_exists( 'replace_emails', $state ) ? ! empty( $state['replace_emails'] ) : true,
+				'only_tables'         => isset( $state['only_tables'] ) ? $state['only_tables'] : null,
+				'replace_guids'       => ! empty( $state['replace_guids'] ),
+				'replace_emails'      => array_key_exists( 'replace_emails', $state ) ? ! empty( $state['replace_emails'] ) : true,
+				'extra_replacements'  => isset( $state['extra_replacements'] ) && is_array( $state['extra_replacements'] ) ? $state['extra_replacements'] : array(),
+				'skip_url_replace'    => ! empty( $state['skip_url_replace'] ),
 			),
 			$options
 		);
@@ -54,17 +56,39 @@ class Url_Replacer {
 		} else {
 			$options['replace_emails'] = ! empty( $options['replace_emails'] );
 		}
+		if ( ! isset( $options['extra_replacements'] ) || ! is_array( $options['extra_replacements'] ) ) {
+			$options['extra_replacements'] = array();
+		}
 
 		$updated        = isset( $state['updated'] ) ? (int) $state['updated'] : 0;
 		$skipped_values = isset( $state['skipped_values'] ) ? (int) $state['skipped_values'] : 0;
 		$emails_updated = isset( $state['emails_updated'] ) ? (int) $state['emails_updated'] : 0;
+		$paths_updated  = isset( $state['paths_updated'] ) ? (int) $state['paths_updated'] : 0;
 		$skipped_tables = ( isset( $state['skipped_tables'] ) && is_array( $state['skipped_tables'] ) ) ? $state['skipped_tables'] : array();
 
-		$replacements = Serializer::build_replacements( $source_url, $dest_url, $options['replace_emails'] );
-		$email_from   = $options['replace_emails'] ? array_keys( Serializer::email_forms( $source_url, $dest_url ) ) : array();
+		if ( ! empty( $options['skip_url_replace'] ) ) {
+			$replacements = array();
+			$email_from   = array();
+		} else {
+			$replacements = Serializer::build_replacements( $source_url, $dest_url, $options['replace_emails'] );
+			$email_from   = $options['replace_emails'] ? array_keys( Serializer::email_forms( $source_url, $dest_url ) ) : array();
+		}
+		$path_keys = array();
+		if ( $options['extra_replacements'] ) {
+			foreach ( $options['extra_replacements'] as $from => $to ) {
+				$replacements[ (string) $from ] = (string) $to;
+				$path_keys[ (string) $from ]    = true;
+			}
+			uksort(
+				$replacements,
+				static function ( $a, $b ) {
+					return strlen( $b ) <=> strlen( $a );
+				}
+			);
+		}
 		if ( empty( $replacements ) ) {
 			$tables = ( isset( $state['tables'] ) && is_array( $state['tables'] ) ) ? $state['tables'] : array();
-			return $this->state( true, $updated, $tables, count( $tables ), null, $skipped_tables, $skipped_values, $emails_updated );
+			return $this->state( true, $updated, $tables, count( $tables ), null, $skipped_tables, $skipped_values, $emails_updated, $paths_updated );
 		}
 
 		if ( isset( $state['tables'] ) && is_array( $state['tables'] ) ) {
@@ -82,7 +106,7 @@ class Url_Replacer {
 		while ( $index < $count ) {
 			if ( $batches > 0 && ( time() - $start ) >= $time_budget ) {
 				$skipped_values += $this->serializer->skipped_count() - $baseline;
-				return $this->state( false, $updated, $tables, $index, $cursor, $skipped_tables, $skipped_values, $emails_updated );
+				return $this->state( false, $updated, $tables, $index, $cursor, $skipped_tables, $skipped_values, $emails_updated, $paths_updated );
 			}
 
 			$table = $tables[ $index ];
@@ -94,10 +118,23 @@ class Url_Replacer {
 
 			$rows = $this->fetch_batch( $table, $cursor );
 			$batches++;
+			$path_probe = $path_keys ? array_fill_keys( array_keys( $path_keys ), true ) : array();
 			foreach ( $rows as $row ) {
+				$had_path = false;
+				if ( $path_probe ) {
+					foreach ( $row as $value ) {
+						if ( is_string( $value ) && $this->serializer->contains_source( $value, $path_probe ) ) {
+							$had_path = true;
+							break;
+						}
+					}
+				}
 				$result          = $this->replace_row( $table, $row, $replacements, $email_from );
 				$updated        += $result['updated'];
 				$emails_updated += $result['emails'];
+				if ( $result['updated'] && $had_path ) {
+					$paths_updated++;
+				}
 			}
 
 			if ( count( $rows ) < $this->batch_size ) {
@@ -109,9 +146,11 @@ class Url_Replacer {
 		}
 
 		$skipped_values += $this->serializer->skipped_count() - $baseline;
-		update_option( 'siteurl', $dest_url );
-		update_option( 'home', $dest_url );
-		return $this->state( true, $updated, $tables, $index, null, $skipped_tables, $skipped_values, $emails_updated );
+		if ( empty( $options['skip_url_replace'] ) && is_string( $dest_url ) && '' !== $dest_url ) {
+			update_option( 'siteurl', $dest_url );
+			update_option( 'home', $dest_url );
+		}
+		return $this->state( true, $updated, $tables, $index, null, $skipped_tables, $skipped_values, $emails_updated, $paths_updated );
 	}
 
 	/**
@@ -168,7 +207,7 @@ class Url_Replacer {
 		return $out;
 	}
 
-	private function state( $done, $updated, array $tables, $index, $cursor, array $skipped_tables, $skipped_values, $emails_updated = 0 ) {
+	private function state( $done, $updated, array $tables, $index, $cursor, array $skipped_tables, $skipped_values, $emails_updated = 0, $paths_updated = 0 ) {
 		return array(
 			'done'           => (bool) $done,
 			'updated'        => (int) $updated,
@@ -180,6 +219,7 @@ class Url_Replacer {
 			'skipped_tables' => $skipped_tables,
 			'skipped_values' => (int) $skipped_values,
 			'emails_updated' => (int) $emails_updated,
+			'paths_updated'  => (int) $paths_updated,
 		);
 	}
 

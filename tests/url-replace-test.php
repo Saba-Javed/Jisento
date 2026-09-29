@@ -477,7 +477,7 @@ check( 'other install and plugin job tables are untouched', 'https://old.example
 $expected_updated = 3 + 1 + 5 + 1 + 1 + 3;
 check( 'updated counts only rows actually affected', isset( $st['updated'] ) && $expected_updated === (int) $st['updated'], 'got ' . ( isset( $st['updated'] ) ? $st['updated'] : 'none' ) . ", want $expected_updated" );
 check( 'skipped_values counts serialized values left unchanged', isset( $st['skipped_values'] ) && 1 === (int) $st['skipped_values'] && false !== strpos( $db->row( 'wp_options', 'option_value', 'option_id', 5 ), 'E:7:"Foo:Bar"' ) && false !== strpos( $db->row( 'wp_options', 'option_value', 'option_id', 5 ), 'old.example' ) );
-check( 'return shape keeps legacy and new keys', ! array_diff( array( 'done', 'updated', 'tables', 'index', 'table', 'offset', 'cursor', 'skipped_tables', 'skipped_values', 'emails_updated' ), array_keys( $st ) ), implode( ',', array_keys( $st ) ) );
+check( 'return shape keeps legacy and new keys', ! array_diff( array( 'done', 'updated', 'tables', 'index', 'table', 'offset', 'cursor', 'skipped_tables', 'skipped_values', 'emails_updated', 'paths_updated' ), array_keys( $st ) ), implode( ',', array_keys( $st ) ) );
 check( 'siteurl and home are updated at the end', isset( $GLOBALS['jisento_test_options']['siteurl'], $GLOBALS['jisento_test_options']['home'] ) && 'https://new.example' === $GLOBALS['jisento_test_options']['home'] );
 
 $db  = jisento_test_db();
@@ -506,6 +506,40 @@ if ( method_exists( 'Jisento\Migration\Replace\Url_Replacer', 'own_tables' ) ) {
 } else {
 	check( 'own_tables exists', false );
 }
+
+/* --- filesystem ABSPATH / file:// path replacement --- */
+$src_abs = '/home/source-user/domains/source.example/public_html';
+$dst_abs = '/home/dest-user/domains/dest.example/public_html';
+$path_map = Serializer::build_path_replacements( $src_abs . '/', $dst_abs . '/' );
+check( 'path map includes plain ABSPATH', isset( $path_map[ $src_abs ] ) && $dst_abs === $path_map[ $src_abs ] );
+check( 'path map includes trailing-slash form', isset( $path_map[ $src_abs . '/' ] ) && $dst_abs . '/' === $path_map[ $src_abs . '/' ] );
+$file_from = 'file://' . $src_abs;
+check( 'path map includes file:// form', isset( $path_map[ $file_from ] ), implode( ' | ', array_keys( $path_map ) ) );
+
+$s = new Serializer();
+$wc = 'file:///home/source-user/domains/source.example/public_html/wp-content/uploads/woocommerce_uploads/';
+$got = $s->replace( $wc, $path_map );
+check(
+	'WooCommerce download directory file:// path is rewritten',
+	'file:///home/dest-user/domains/dest.example/public_html/wp-content/uploads/woocommerce_uploads/' === $got,
+	(string) $got
+);
+
+$ser = serialize( array( 'path' => $src_abs . '/wp-content/uploads/file.pdf' ) );
+$out = $s->replace( $ser, $path_map );
+$back = unserialize( $out );
+check(
+	'serialized setting holding a path is rewritten',
+	is_array( $back ) && $dst_abs . '/wp-content/uploads/file.pdf' === $back['path'],
+	var_export( $back, true )
+);
+
+$similar = '/home/source-user/domains/source.example/public_html2/wp-content/uploads/x';
+$got = $s->replace( $similar, $path_map );
+check( 'similar non-matching path is unchanged', $similar === $got, (string) $got );
+
+$exporter = file_get_contents( $jisento_src . '/includes/Export/Exporter.php' );
+check( 'manifest records source abspath', false !== strpos( $exporter, "'abspath'" ) );
 
 echo $failed ? "\n$failed failed\n" : "\nURL checks passed\n";
 exit( $failed ? 1 : 0 );

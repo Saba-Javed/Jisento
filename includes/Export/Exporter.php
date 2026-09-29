@@ -888,6 +888,7 @@ class Exporter {
 			'wordpress_version' => get_bloginfo( 'version' ),
 			'php_version'       => PHP_VERSION,
 			'site_url'          => site_url(),
+			'abspath'           => rtrim( str_replace( '\\', '/', ABSPATH ), '/' ) . '/',
 			'home_url'          => home_url(),
 			'database_prefix'   => $GLOBALS['wpdb']->prefix,
 			'charset'           => $GLOBALS['wpdb']->charset,
