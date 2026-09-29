@@ -262,6 +262,13 @@ class Rest_Controller {
 				'methods'             => 'GET',
 				'callback'            => array( $this, 'diagnostics' ),
 				'permission_callback' => array( $this, 'admin_permission' ),
+				'args'                => array(
+					'check' => array(
+						'type'              => 'string',
+						'sanitize_callback' => 'sanitize_key',
+						'default'           => '',
+					),
+				),
 			)
 		);
 		register_rest_route(
@@ -985,8 +992,9 @@ class Rest_Controller {
 		);
 	}
 
-	public function diagnostics() {
-		return rest_ensure_response( ( new \Jisento\Migration\Core\Diagnostics() )->run() );
+	public function diagnostics( $request ) {
+		$check = is_object( $request ) && method_exists( $request, 'get_param' ) ? (string) $request->get_param( 'check' ) : '';
+		return rest_ensure_response( ( new \Jisento\Migration\Core\Diagnostics() )->run( $check ) );
 	}
 
 	private function upload_chunk_bytes( $preferred = null ) {

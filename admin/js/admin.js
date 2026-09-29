@@ -1500,22 +1500,138 @@
 		}
 		const diag = $('#jisento-run-diagnostics');
 		if (diag) {
-			diag.addEventListener('click', async function () {
+			diag.addEventListener('click', function () {
+				runDiagnostics();
+			});
+		}
+		const copyDiag = $('#jisento-copy-diagnostics');
+		if (copyDiag) {
+			copyDiag.addEventListener('click', function () {
 				const box = $('#jisento-diagnostics');
-				box.textContent = 'Running…';
-				try {
-					const data = await api.req('diagnostics');
-					fill(box, (data.items || []).map(function (i) {
-						return el('p', null, [
-							(i.ok ? '✓' : '✗') + ' ',
-							el('strong', null, (i.label || '') + ':'),
-							' ' + (i.value == null ? '' : String(i.value))
-						]);
-					}));
-				} catch (err) {
-					box.textContent = plainError(err, 'Diagnostics failed.');
+				const text = box ? (box.innerText || box.textContent || '') : '';
+				if (!text) {
+					return;
+				}
+				if (navigator.clipboard && navigator.clipboard.writeText) {
+					navigator.clipboard.writeText(text).then(function () {
+						copyDiag.textContent = 'Copied';
+						setTimeout(function () {
+							copyDiag.textContent = 'Copy results';
+						}, 1500);
+					}).catch(function () {
+						window.prompt('Copy diagnostics:', text);
+					});
+				} else {
+					window.prompt('Copy diagnostics:', text);
 				}
 			});
+		}
+	}
+
+	function diagIcon(item) {
+		if (item && (item.timed_out || item.warn)) {
+			return '⚠';
+		}
+		return item && item.ok ? '✓' : '✗';
+	}
+
+	function diagLine(item) {
+		const parts = [
+			diagIcon(item) + ' ',
+			el('strong', null, (item.label || '') + ':'),
+			' ' + (item.value == null ? '' : String(item.value))
+		];
+		if (item.note) {
+			parts.push(' ');
+			parts.push(el('span', { className: 'jisento-diag-note' }, '(' + item.note + ')'));
+		}
+		return el('p', { 'data-diag-id': item.id || '' }, parts);
+	}
+
+	function setDiagNode(nodes, id, item) {
+		if (!nodes[id] || !nodes[id].parentNode) {
+			return;
+		}
+		const fresh = diagLine(item);
+		nodes[id].parentNode.replaceChild(fresh, nodes[id]);
+		nodes[id] = fresh;
+	}
+
+	async function runDiagnostics() {
+		const box = $('#jisento-diagnostics');
+		const copyBtn = $('#jisento-copy-diagnostics');
+		if (!box) {
+			return;
+		}
+		if (copyBtn) {
+			hide(copyBtn);
+		}
+		const ids = [
+			'php', 'wordpress', 'zip', 'curl', 'openssl', 'memory', 'max_execution',
+			'upload_max', 'post_max', 'disk', 'rest', 'writable', 'https', 'loopback', 'outbound'
+		];
+		const labels = {
+			php: 'PHP Version', wordpress: 'WordPress Version', zip: 'ZipArchive', curl: 'cURL', openssl: 'OpenSSL',
+			memory: 'Memory Limit', max_execution: 'Max Execution Time', upload_max: 'Upload Max Filesize',
+			post_max: 'Post Max Size', disk: 'Free disk space (reported by server)', rest: 'REST API',
+			writable: 'Filesystem Writable', https: 'HTTPS', loopback: 'Loopback Requests', outbound: 'Outbound Connections'
+		};
+		const results = {};
+		const nodes = {};
+		fill(box, ids.map(function (id) {
+			const p = el('p', { 'data-diag-id': id }, '… ' + (labels[id] || id));
+			nodes[id] = p;
+			return p;
+		}));
+		let hardFail = null;
+		await Promise.all(ids.map(async function (id) {
+			try {
+				const data = await api.req('diagnostics?check=' + encodeURIComponent(id), {
+					method: 'GET',
+					timeout: 10000
+				});
+				const item = (data.items && data.items[0]) ? data.items[0] : { id: id, label: labels[id] || id, value: 'No result', ok: false };
+				results[id] = item;
+				setDiagNode(nodes, id, item);
+			} catch (err) {
+				const timed = !!(err && (err.timeout || err.name === 'AbortError' || /timed out|abort/i.test(String(err.message || ''))));
+				if (timed) {
+					const item = { id: id, label: labels[id] || id, value: 'Timed out', ok: false, warn: true, timed_out: true };
+					results[id] = item;
+					setDiagNode(nodes, id, item);
+					return;
+				}
+				hardFail = err;
+				const item = {
+					id: id,
+					label: labels[id] || id,
+					value: plainError(err, 'request failed'),
+					ok: false
+				};
+				results[id] = item;
+				setDiagNode(nodes, id, item);
+			}
+		}));
+		const values = ids.map(function (id) { return results[id]; }).filter(Boolean);
+		const allFailed = hardFail && values.length === ids.length && values.every(function (i) {
+			return !i.ok && !i.timed_out;
+		});
+		if (allFailed) {
+			const code = hardFail.status || '';
+			fill(box, [
+				el('p', null, 'Could not run diagnostics (HTTP ' + (code || 'network error') + ' / network error)'),
+				el('button', {
+					type: 'button',
+					className: 'button',
+					onclick: function () {
+						runDiagnostics();
+					}
+				}, 'Retry')
+			]);
+			return;
+		}
+		if (copyBtn) {
+			show(copyBtn);
 		}
 	}
 

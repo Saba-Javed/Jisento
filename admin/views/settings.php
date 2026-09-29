@@ -60,5 +60,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 	<h2><?php esc_html_e( 'Diagnostics', 'jisento' ); ?></h2>
 	<p><?php esc_html_e( 'Hosting checks used when a migration fails before it starts.', 'jisento' ); ?></p>
 	<button type="button" class="button" id="jisento-run-diagnostics"><?php esc_html_e( 'Run Diagnostics', 'jisento' ); ?></button>
-	<div id="jisento-diagnostics"></div>
+	<button type="button" class="button" id="jisento-copy-diagnostics" hidden><?php esc_html_e( 'Copy results', 'jisento' ); ?></button>
+	<div id="jisento-diagnostics" role="status"></div>
 </section>

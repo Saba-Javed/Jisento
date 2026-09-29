@@ -7,6 +7,7 @@
 
 namespace Jisento\Migration\Core;
 
+use Jisento\Migration\Jobs\Job_Scheduler;
 use Jisento\Migration\Package\Archive;
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -15,39 +16,138 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Diagnostics {
 
-	public function run() {
-		$disk = @disk_free_space( WP_CONTENT_DIR );
-		$items = array(
-			array( 'label' => __( 'PHP Version', 'jisento' ), 'value' => PHP_VERSION, 'ok' => version_compare( PHP_VERSION, '7.4', '>=' ) ),
-			array( 'label' => __( 'WordPress Version', 'jisento' ), 'value' => get_bloginfo( 'version' ), 'ok' => true ),
-			array( 'label' => __( 'ZipArchive', 'jisento' ), 'value' => Archive::zip_available() ? 'Yes' : 'No', 'ok' => Archive::zip_available() ),
-			array( 'label' => __( 'cURL', 'jisento' ), 'value' => function_exists( 'curl_init' ) ? 'Yes' : 'No', 'ok' => function_exists( 'curl_init' ) ),
-			array( 'label' => __( 'OpenSSL', 'jisento' ), 'value' => extension_loaded( 'openssl' ) ? 'Yes' : 'No', 'ok' => extension_loaded( 'openssl' ) ),
-			array( 'label' => __( 'Memory Limit', 'jisento' ), 'value' => ini_get( 'memory_limit' ), 'ok' => true ),
-			array( 'label' => __( 'Max Execution Time', 'jisento' ), 'value' => (string) ini_get( 'max_execution_time' ), 'ok' => true ),
-			array( 'label' => __( 'Upload Max Filesize', 'jisento' ), 'value' => ini_get( 'upload_max_filesize' ), 'ok' => true ),
-			array( 'label' => __( 'Post Max Size', 'jisento' ), 'value' => ini_get( 'post_max_size' ), 'ok' => true ),
-			array( 'label' => __( 'Disk Space', 'jisento' ), 'value' => false === $disk ? 'Unknown' : size_format( $disk ), 'ok' => false === $disk || $disk > 20 * 1024 * 1024 ),
-			array( 'label' => __( 'REST API', 'jisento' ), 'value' => rest_url( 'jisento/v1/' ), 'ok' => true ),
-			array( 'label' => __( 'Filesystem Writable', 'jisento' ), 'value' => is_writable( WP_CONTENT_DIR ) ? 'Yes' : 'No', 'ok' => is_writable( WP_CONTENT_DIR ) ),
-			array( 'label' => __( 'HTTPS', 'jisento' ), 'value' => is_ssl() ? 'Yes' : 'No', 'ok' => is_ssl() || $this->is_local() ),
+	/**
+	 * All check ids, in display order.
+	 *
+	 * @return string[]
+	 */
+	public static function check_ids() {
+		return array(
+			'php',
+			'wordpress',
+			'zip',
+			'curl',
+			'openssl',
+			'memory',
+			'max_execution',
+			'upload_max',
+			'post_max',
+			'disk',
+			'rest',
+			'writable',
+			'https',
+			'loopback',
+			'outbound',
 		);
+	}
 
-		$loopback = $this->loopback();
-		$items[]  = array( 'label' => __( 'Loopback Requests', 'jisento' ), 'value' => $loopback['label'], 'ok' => $loopback['ok'] );
+	/**
+	 * Run every check, or one named check.
+	 *
+	 * @param string $only Optional check id.
+	 * @return array{items:array,remote:array}
+	 */
+	public function run( $only = '' ) {
+		$ids   = self::check_ids();
+		$items = array();
+		if ( '' !== (string) $only ) {
+			$ids = array( sanitize_key( $only ) );
+		}
+		foreach ( $ids as $id ) {
+			$item = $this->run_check( $id );
+			if ( $item ) {
+				$items[] = $item;
+			}
+		}
 
-		$outbound = $this->outbound();
-		$items[]  = array( 'label' => __( 'Outbound Connections', 'jisento' ), 'value' => $outbound['label'], 'ok' => $outbound['ok'] );
+		$outbound_ok = true;
+		$loopback_ok = true;
+		foreach ( $items as $item ) {
+			if ( isset( $item['id'] ) && 'outbound' === $item['id'] ) {
+				$outbound_ok = ! empty( $item['ok'] );
+			}
+			if ( isset( $item['id'] ) && 'loopback' === $item['id'] ) {
+				$loopback_ok = ! empty( $item['ok'] );
+			}
+		}
 
 		return array(
 			'items'  => $items,
 			'remote' => array(
-				'https'               => is_ssl() || $this->is_local(),
-				'rest_api'            => true,
-				'outbound'            => $outbound['ok'],
-				'remote_http_requests'=> $outbound['ok'],
+				'https'                => ( function_exists( 'is_ssl' ) && is_ssl() ) || $this->is_local(),
+				'rest_api'             => true,
+				'outbound'             => $outbound_ok,
+				'remote_http_requests' => $outbound_ok,
+				'loopback'             => $loopback_ok,
 			),
 		);
+	}
+
+	/**
+	 * @param string $id Check id.
+	 * @return array|null
+	 */
+	public function run_check( $id ) {
+		switch ( $id ) {
+			case 'php':
+				return $this->item( $id, __( 'PHP Version', 'jisento' ), PHP_VERSION, version_compare( PHP_VERSION, '7.4', '>=' ) );
+			case 'wordpress':
+				return $this->item( $id, __( 'WordPress Version', 'jisento' ), get_bloginfo( 'version' ), true );
+			case 'zip':
+				return $this->item( $id, __( 'ZipArchive', 'jisento' ), Archive::zip_available() ? 'Yes' : 'No', Archive::zip_available() );
+			case 'curl':
+				return $this->item( $id, __( 'cURL', 'jisento' ), function_exists( 'curl_init' ) ? 'Yes' : 'No', function_exists( 'curl_init' ) );
+			case 'openssl':
+				return $this->item( $id, __( 'OpenSSL', 'jisento' ), extension_loaded( 'openssl' ) ? 'Yes' : 'No', extension_loaded( 'openssl' ) );
+			case 'memory':
+				return $this->item( $id, __( 'Memory Limit', 'jisento' ), ini_get( 'memory_limit' ), true );
+			case 'max_execution':
+				return $this->item( $id, __( 'Max Execution Time', 'jisento' ), (string) ini_get( 'max_execution_time' ), true );
+			case 'upload_max':
+				return $this->item( $id, __( 'Upload Max Filesize', 'jisento' ), ini_get( 'upload_max_filesize' ), true );
+			case 'post_max':
+				return $this->item( $id, __( 'Post Max Size', 'jisento' ), ini_get( 'post_max_size' ), true );
+			case 'disk':
+				$disk = @disk_free_space( \WP_CONTENT_DIR );
+				return $this->item(
+					$id,
+					__( 'Free disk space (reported by server)', 'jisento' ),
+					false === $disk ? 'Unknown' : size_format( $disk ),
+					false === $disk || $disk > 20 * 1024 * 1024,
+					false,
+					__( 'Your hosting plan may have a lower limit than this figure.', 'jisento' )
+				);
+			case 'rest':
+				return $this->item( $id, __( 'REST API', 'jisento' ), rest_url( 'jisento/v1/' ), true );
+			case 'writable':
+				return $this->item( $id, __( 'Filesystem Writable', 'jisento' ), is_writable( \WP_CONTENT_DIR ) ? 'Yes' : 'No', is_writable( \WP_CONTENT_DIR ) );
+			case 'https':
+				$ssl = function_exists( 'is_ssl' ) && is_ssl();
+				return $this->item( $id, __( 'HTTPS', 'jisento' ), $ssl ? 'Yes' : 'No', $ssl || $this->is_local() );
+			case 'loopback':
+				return $this->loopback();
+			case 'outbound':
+				return $this->outbound();
+			default:
+				return null;
+		}
+	}
+
+	private function item( $id, $label, $value, $ok, $warn = false, $note = '' ) {
+		$out = array(
+			'id'    => $id,
+			'label' => $label,
+			'value' => $value,
+			'ok'    => (bool) $ok,
+			'warn'  => (bool) $warn,
+		);
+		if ( '' !== (string) $note ) {
+			$out['note'] = $note;
+			if ( ! $warn && $ok ) {
+				$out['warn'] = true; // Soft note such as disk plan limits.
+			}
+		}
+		return $out;
 	}
 
 	private function is_local() {
@@ -55,27 +155,29 @@ class Diagnostics {
 	}
 
 	private function loopback() {
-		$url      = rest_url( 'jisento/v1/compatibility' );
-		$response = wp_remote_get(
-			$url,
-			array(
-				'timeout' => 10,
-				'cookies' => $_COOKIE, // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
-				'sslverify' => false,
-			)
-		);
-		if ( is_wp_error( $response ) ) {
-			return array( 'ok' => false, 'label' => $response->get_error_message() );
+		try {
+			$ok = Job_Scheduler::probe_loopback();
+		} catch ( \Throwable $e ) {
+			$ok = false;
 		}
-		$code = wp_remote_retrieve_response_code( $response );
-		return array( 'ok' => $code < 500, 'label' => 'HTTP ' . $code );
+		if ( $ok ) {
+			return $this->item( 'loopback', __( 'Loopback Requests', 'jisento' ), __( 'Background processing works', 'jisento' ), true );
+		}
+		return $this->item(
+			'loopback',
+			__( 'Loopback Requests', 'jisento' ),
+			__( 'Background processing is blocked by the server. Migrations still work, but keep this tab open.', 'jisento' ),
+			false,
+			true
+		);
 	}
 
 	private function outbound() {
 		$response = wp_remote_get( 'https://api.wordpress.org/core/version-check/1.7/', array( 'timeout' => 8 ) );
 		if ( is_wp_error( $response ) ) {
-			return array( 'ok' => false, 'label' => $response->get_error_message() );
+			return $this->item( 'outbound', __( 'Outbound Connections', 'jisento' ), $response->get_error_message(), false );
 		}
-		return array( 'ok' => wp_remote_retrieve_response_code( $response ) < 500, 'label' => 'Yes' );
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		return $this->item( 'outbound', __( 'Outbound Connections', 'jisento' ), $code < 500 ? 'Yes' : 'HTTP ' . $code, $code < 500 );
 	}
 }
