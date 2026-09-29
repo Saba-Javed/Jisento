@@ -51,9 +51,15 @@ class Importer {
 	public static $extract_bytes = 33554432;
 
 	/**
-	 * Files never restored, wherever they are in the package.
+	 * Files never restored at the site root or outside wp-content. Protective .htaccess /
+	 * web.config under wp-content may be restored when their contents are access-restriction only.
 	 */
 	const SKIP_BASENAMES = array( '.htaccess', 'web.config', '.user.ini', 'php.ini', 'wp-config.php', '.env' );
+
+	/**
+	 * Config basenames that may be restored inside wp-content when protective-only.
+	 */
+	const PROTECTIVE_CONFIG_BASENAMES = array( '.htaccess', 'web.config' );
 
 	/**
 	 * Drop-ins that describe the source server; only skipped directly in wp-content.
@@ -963,7 +969,8 @@ class Importer {
 			$index,
 			400,
 			max( 1, Step_Budget::seconds( 12 ) ),
-			function ( $relative ) use ( $state ) {
+			function ( $relative ) use ( $state, $job ) {
+				$state['job_id'] = $job->job_id;
 				return $this->destination_for_archive_file( $relative, $state );
 			},
 			isset( $state['zip_partial'] ) && is_array( $state['zip_partial'] ) ? $state['zip_partial'] : null,
@@ -1046,7 +1053,20 @@ class Importer {
 			return '';
 		}
 		$base = strtolower( basename( $relative ) );
-		if ( in_array( $base, self::SKIP_BASENAMES, true ) ) {
+		if ( in_array( $base, self::PROTECTIVE_CONFIG_BASENAMES, true ) ) {
+			// Root .htaccess / web.config and anything outside wp-content stay skipped.
+			$under_content = 0 === strpos( $relative, 'wp-content/' ) && false !== strpos( substr( $relative, strlen( 'wp-content/' ) ), '/' );
+			if ( ! $under_content ) {
+				$this->log_config_decision( $state, $relative, 'skipped', 'outside wp-content subdirectory or site root' );
+				return '';
+			}
+			$contents = self::read_package_entry( isset( $state['package_path'] ) ? $state['package_path'] : '', 'files/' . $relative );
+			if ( null === $contents || ! self::is_protective_config( $contents, $base ) ) {
+				$this->log_config_decision( $state, $relative, 'skipped', 'not access-restriction-only' );
+				return '';
+			}
+			$this->log_config_decision( $state, $relative, 'restored', 'access-restriction-only' );
+		} elseif ( in_array( $base, self::SKIP_BASENAMES, true ) ) {
 			return '';
 		}
 		$dest = $core ? rtrim( ABSPATH, '/\\' ) . '/' . $relative : rtrim( WP_CONTENT_DIR, '/\\' ) . '/' . $content_rel;
@@ -1057,8 +1077,15 @@ class Importer {
 		}
 		$normalized = str_replace( '\\', '/', $dest );
 		$plugin_dir = rtrim( str_replace( '\\', '/', JISENTO_PATH ), '/' );
-		$storage    = rtrim( str_replace( '\\', '/', Plugin::instance()->storage->root() ), '/' );
+		$storage    = '';
+		$plugin     = Plugin::instance();
+		if ( isset( $plugin->storage ) && is_object( $plugin->storage ) && method_exists( $plugin->storage, 'root' ) ) {
+			$storage = rtrim( str_replace( '\\', '/', (string) $plugin->storage->root() ), '/' );
+		}
 		foreach ( array( $plugin_dir, $storage ) as $own ) {
+			if ( '' === $own ) {
+				continue;
+			}
 			if ( $normalized === $own || 0 === strpos( $normalized, $own . '/' ) ) {
 				return '';
 			}
@@ -1272,6 +1299,146 @@ class Importer {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Read one package entry as a string, or null when missing/unreadable.
+	 *
+	 * @param string $package_path Package zip.
+	 * @param string $entry        Zip entry name (e.g. files/wp-content/...).
+	 * @return string|null
+	 */
+	public static function read_package_entry( $package_path, $entry ) {
+		if ( '' === (string) $package_path || ! is_file( $package_path ) ) {
+			return null;
+		}
+		$zip = new \ZipArchive();
+		if ( true !== $zip->open( $package_path ) ) {
+			return null;
+		}
+		$data = $zip->getFromName( $entry );
+		$zip->close();
+		return false === $data ? null : (string) $data;
+	}
+
+	/**
+	 * Whether .htaccess / web.config contents are only access-restriction directives.
+	 *
+	 * @param string $contents File contents.
+	 * @param string $basename Lowercase basename.
+	 * @return bool
+	 */
+	public static function is_protective_config( $contents, $basename ) {
+		$basename = strtolower( (string) $basename );
+		if ( '.htaccess' === $basename ) {
+			return self::is_protective_htaccess( $contents );
+		}
+		if ( 'web.config' === $basename ) {
+			return self::is_protective_web_config( $contents );
+		}
+		return false;
+	}
+
+	/**
+	 * Allow Deny/Allow/Order/Require/Options -Indexes and IfModule wrappers + comments only.
+	 *
+	 * @param string $contents Contents.
+	 * @return bool
+	 */
+	public static function is_protective_htaccess( $contents ) {
+		$contents = str_replace( array( "\r\n", "\r" ), "\n", (string) $contents );
+		// Strip block comments is rare in htaccess; line comments start with #.
+		$lines = explode( "\n", $contents );
+		$depth = 0;
+		foreach ( $lines as $line ) {
+			$line = trim( $line );
+			if ( '' === $line || '#' === $line[0] ) {
+				continue;
+			}
+			if ( preg_match( '/^<\/?IfModule\b/i', $line ) ) {
+				if ( 0 === strpos( $line, '</' ) ) {
+					$depth = max( 0, $depth - 1 );
+				} else {
+					$depth++;
+				}
+				continue;
+			}
+			if ( preg_match( '/^Order\s+(Allow,\s*Deny|Deny,\s*Allow)\s*$/i', $line ) ) {
+				continue;
+			}
+			if ( preg_match( '/^(Deny|Allow)\s+from\b/i', $line ) ) {
+				continue;
+			}
+			if ( preg_match( '/^Require\s+(all\s+denied|all\s+granted|local)\s*$/i', $line ) ) {
+				continue;
+			}
+			if ( preg_match( '/^Options\s+(-Indexes|\-ExecCGI|\-Includes|\-FollowSymLinks)(\s+(-Indexes|\-ExecCGI|\-Includes|\-FollowSymLinks))*\s*$/i', $line ) ) {
+				continue;
+			}
+			if ( preg_match( '/^Satisfy\s+(All|Any)\s*$/i', $line ) ) {
+				continue;
+			}
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Allow IIS authorization/requestFiltering deny rules only (no rewrite/URL rewrite).
+	 *
+	 * @param string $contents Contents.
+	 * @return bool
+	 */
+	public static function is_protective_web_config( $contents ) {
+		$contents = (string) $contents;
+		if ( '' === trim( $contents ) ) {
+			return true;
+		}
+		if ( preg_match( '/<(rewrite|rules|rule|action|match|conditions)\b/i', $contents ) ) {
+			return false;
+		}
+		if ( preg_match( '/<(phpSettings|handlers|httpRedirect|proxy)\b/i', $contents ) ) {
+			return false;
+		}
+		// Must look like XML configuration and only use authorization / security deny patterns.
+		if ( ! preg_match( '/<configuration\b/i', $contents ) ) {
+			return false;
+		}
+		$stripped = preg_replace( '/<!--.*?-->/s', '', $contents );
+		$stripped = preg_replace( '/<\?xml[^?]*\?>/i', '', (string) $stripped );
+		// Remove allowed container and deny tags; anything substantive left is rejected.
+		$stripped = preg_replace(
+			'/<(\/?)(configuration|system\.webServer|system\.web|authorization|deny|allow|requestFiltering|hiddenSegments|add|remove|security|authentication)\b[^>]*>/i',
+			'',
+			(string) $stripped
+		);
+		$stripped = preg_replace( '/\s+/', '', (string) $stripped );
+		return '' === $stripped;
+	}
+
+	/**
+	 * @param array  $state    Job state.
+	 * @param string $relative Package path.
+	 * @param string $decision restored|skipped.
+	 * @param string $reason   Short reason.
+	 */
+	private function log_config_decision( array $state, $relative, $decision, $reason ) {
+		$job_id = isset( $state['job_id'] ) ? (string) $state['job_id'] : '';
+		if ( '' === $job_id && isset( $GLOBALS['jisento_current_job_id'] ) ) {
+			$job_id = (string) $GLOBALS['jisento_current_job_id'];
+		}
+		$plugin = Plugin::instance();
+		if ( '' === $job_id || ! isset( $plugin->logger ) || ! is_object( $plugin->logger ) || ! method_exists( $plugin->logger, 'log' ) ) {
+			return;
+		}
+		$plugin->logger->log(
+			$job_id,
+			'importing_files',
+			'config',
+			$relative,
+			'restored' === $decision ? 'ok' : 'info',
+			sprintf( 'Protective config %s: %s (%s)', $decision, $relative, $reason )
+		);
 	}
 
 	/**
