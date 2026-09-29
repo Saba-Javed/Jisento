@@ -8,6 +8,9 @@
  * - Replace mode swaps every table in the package.
  * - Preserve mode swaps only tables that do not exist on this site yet, plus existing tables the
  *   administrator explicitly listed in replace_tables. Every other existing table is kept as is.
+ * - File restore snapshots existing plugin/theme folders before writing, so install_missing cannot
+ *   skip the rest of a folder after the first file creates it. Restored plugins/themes are verified
+ *   against the package (names + sizes) before the job can complete.
  *
  * Nothing destructive happens before the package has been verified: format marker, manifest,
  * file count and bytes, and the SHA-256 of every database segment.
@@ -928,6 +931,7 @@ class Importer {
 		$index = isset( $state['zip_index'] ) ? (int) $state['zip_index'] : 0;
 		if ( 0 === $index ) {
 			$this->assert_disk_space( $job, (int) ( isset( $sizes['files'] ) ? $sizes['files'] : 0 ) );
+			$state = $this->snapshot_existing_extensions( $state );
 		}
 		$archive = new Archive();
 		$batch   = $archive->extract_files_batch(
@@ -962,6 +966,10 @@ class Importer {
 		$files_bytes = (int) ( isset( $sizes['files'] ) ? $sizes['files'] : 0 );
 		$done        = ! empty( $batch['done'] );
 		if ( $done ) {
+			$check = $this->verify_restored_extensions( $state['package_path'], $state );
+			if ( is_wp_error( $check ) ) {
+				throw self::error( $job, 'verify restored plugins and themes', $check->get_error_message(), __( 'Free disk space and fix permissions, then press Retry so missing files can be restored, or re-export the package.', 'jisento' ) );
+			}
 			$ratio = 1;
 		} elseif ( $files_bytes > 0 ) {
 			$ratio = min( 1, $state['file_bytes'] / $files_bytes );
@@ -1030,10 +1038,185 @@ class Importer {
 				return '';
 			}
 		}
-		if ( $this->should_skip_file( $relative, $dest, $options ) ) {
+		if ( $this->should_skip_file( $relative, $dest, $state ) ) {
 			return '';
 		}
 		return $dest;
+	}
+
+	/**
+	 * Plugins and themes already on the destination before this file restore started.
+	 * Existence is snapshotted once: a folder created by the first restored file must not flip
+	 * install_missing / keep_destination into "skip the rest" mid-batch.
+	 *
+	 * @param array $state Job state.
+	 * @return array
+	 */
+	private function snapshot_existing_extensions( array $state ) {
+		$plugins = array();
+		$themes  = array();
+		if ( defined( 'WP_PLUGIN_DIR' ) && is_dir( WP_PLUGIN_DIR ) ) {
+			foreach ( scandir( WP_PLUGIN_DIR ) as $item ) {
+				if ( '.' === $item || '..' === $item ) {
+					continue;
+				}
+				$path = WP_PLUGIN_DIR . '/' . $item;
+				if ( is_dir( $path ) || ( is_file( $path ) && '.php' === strtolower( substr( $item, -4 ) ) ) ) {
+					$plugins[ $item ] = true;
+				}
+			}
+		}
+		$theme_root = function_exists( 'get_theme_root' ) ? get_theme_root() : ( defined( 'WP_CONTENT_DIR' ) ? WP_CONTENT_DIR . '/themes' : '' );
+		if ( $theme_root && is_dir( $theme_root ) ) {
+			foreach ( scandir( $theme_root ) as $item ) {
+				if ( '.' === $item || '..' === $item ) {
+					continue;
+				}
+				if ( is_dir( $theme_root . '/' . $item ) ) {
+					$themes[ $item ] = true;
+				}
+			}
+		}
+		$state['existing_plugins'] = $plugins;
+		$state['existing_themes']  = $themes;
+		return $state;
+	}
+
+	/**
+	 * Every plugin/theme folder this job restored must contain every package entry for it (name + size).
+	 * Intentionally skipped basenames and protected paths are excluded from the expected set.
+	 *
+	 * @param string $package_path Package zip.
+	 * @param array  $state        Job state (options, existing_* snapshots, jisento_copies).
+	 * @return true|\WP_Error
+	 */
+	public function verify_restored_extensions( $package_path, array $state ) {
+		$copies   = isset( $state['jisento_copies'] ) && is_array( $state['jisento_copies'] ) ? $state['jisento_copies'] : array();
+		$expected = $this->package_extension_entries( $package_path, $copies );
+		if ( is_wp_error( $expected ) ) {
+			return $expected;
+		}
+		$missing = array();
+		foreach ( array( 'plugins' => 'plugin', 'themes' => 'theme' ) as $bucket => $kind ) {
+			foreach ( $expected[ $bucket ] as $slug => $files ) {
+				if ( ! $this->extension_was_restored( $slug, $kind, $state ) ) {
+					continue;
+				}
+				foreach ( $files as $relative => $size ) {
+					$dest = $this->destination_path_for_extension_entry( $relative );
+					if ( '' === $dest ) {
+						continue;
+					}
+					clearstatcache( true, $dest );
+					if ( ! is_file( $dest ) ) {
+						$missing[] = $relative . ' (missing)';
+						continue;
+					}
+					if ( (int) filesize( $dest ) !== (int) $size ) {
+						$missing[] = $relative . ' (size ' . (int) filesize( $dest ) . ' != ' . (int) $size . ')';
+					}
+				}
+			}
+		}
+		if ( $missing ) {
+			$list = implode( ', ', array_slice( $missing, 0, 30 ) );
+			if ( count( $missing ) > 30 ) {
+				$list .= ', ...';
+			}
+			return new \WP_Error(
+				'jisento_incomplete_restore',
+				sprintf(
+					/* translators: %s: comma-separated file paths with reason */
+					__( 'Restored plugins/themes are incomplete. Missing or wrong-sized files: %s', 'jisento' ),
+					$list
+				)
+			);
+		}
+		return true;
+	}
+
+	/**
+	 * Package file entries under plugins/ and themes/, keyed by slug then relative path => size.
+	 * Skips directories, SKIP_BASENAMES, and protected content paths.
+	 *
+	 * @param string $package_path Package.
+	 * @return array{plugins:array<string,array<string,int>>,themes:array<string,array<string,int>>}|\WP_Error
+	 */
+	public function package_extension_entries( $package_path, array $copies = array() ) {
+		$zip = new \ZipArchive();
+		if ( true !== $zip->open( $package_path ) ) {
+			return new \WP_Error( 'jisento_zip_open', __( 'Unable to open the package.', 'jisento' ) );
+		}
+		$out = array(
+			'plugins' => array(),
+			'themes'  => array(),
+		);
+		for ( $i = 0; $i < $zip->numFiles; $i++ ) {
+			$stat = $zip->statIndex( $i );
+			$name = $stat ? (string) $stat['name'] : '';
+			if ( 0 !== strpos( $name, 'files/' ) || '/' === substr( $name, -1 ) ) {
+				continue;
+			}
+			$relative = ltrim( str_replace( '\\', '/', substr( $name, strlen( 'files/' ) ) ), '/' );
+			$base     = strtolower( basename( $relative ) );
+			if ( in_array( $base, self::SKIP_BASENAMES, true ) ) {
+				continue;
+			}
+			$content_rel = 0 === strpos( $relative, 'wp-content/' ) ? substr( $relative, strlen( 'wp-content/' ) ) : $relative;
+			if ( self::is_protected_content_path( $content_rel, $copies ) ) {
+				continue;
+			}
+			$plugin_slug = $this->plugin_slug_from_relative( $relative );
+			$theme_slug  = $this->theme_slug_from_relative( $relative );
+			$is_plugin   = $plugin_slug && ( false !== strpos( $relative, '/plugins/' ) || 0 === strpos( $relative, 'wp-content/plugins/' ) || 0 === strpos( $relative, 'plugins/' ) );
+			$is_theme    = $theme_slug && ( false !== strpos( $relative, '/themes/' ) || 0 === strpos( $relative, 'wp-content/themes/' ) || 0 === strpos( $relative, 'themes/' ) );
+			if ( $is_plugin ) {
+				$out['plugins'][ $plugin_slug ][ $relative ] = (int) $stat['size'];
+			} elseif ( $is_theme ) {
+				$out['themes'][ $theme_slug ][ $relative ] = (int) $stat['size'];
+			}
+		}
+		$zip->close();
+		return $out;
+	}
+
+	/**
+	 * @param string $slug  Plugin or theme folder name.
+	 * @param string $kind  "plugin" or "theme".
+	 * @param array  $state Job state.
+	 * @return bool
+	 */
+	public function extension_was_restored( $slug, $kind, array $state ) {
+		$options = isset( $state['options'] ) && is_array( $state['options'] ) ? $state['options'] : array();
+		if ( 'replace' === ( isset( $options['destination_mode'] ) ? $options['destination_mode'] : '' ) ) {
+			return true;
+		}
+		if ( 'plugin' === $kind ) {
+			$strategy = $this->plugin_strategy( $slug, $options );
+			$existing = isset( $state['existing_plugins'] ) && is_array( $state['existing_plugins'] ) ? $state['existing_plugins'] : array();
+		} else {
+			$strategy = $this->theme_strategy( $slug, $options );
+			$existing = isset( $state['existing_themes'] ) && is_array( $state['existing_themes'] ) ? $state['existing_themes'] : array();
+		}
+		if ( 'skip' === $strategy ) {
+			return false;
+		}
+		if ( ( 'keep_destination' === $strategy || 'install_missing' === $strategy ) && ! empty( $existing[ $slug ] ) ) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Disk path for a package-relative plugin/theme file (no strategy checks).
+	 *
+	 * @param string $relative Path below files/.
+	 * @return string
+	 */
+	private function destination_path_for_extension_entry( $relative ) {
+		$relative    = ltrim( str_replace( '\\', '/', (string) $relative ), '/' );
+		$content_rel = 0 === strpos( $relative, 'wp-content/' ) ? substr( $relative, strlen( 'wp-content/' ) ) : $relative;
+		return rtrim( WP_CONTENT_DIR, '/\\' ) . '/' . $content_rel;
 	}
 
 	/**
@@ -1119,7 +1302,8 @@ class Importer {
 		}
 	}
 
-	private function should_skip_file( $relative, $dest, array $options ) {
+	private function should_skip_file( $relative, $dest, array $state ) {
+		$options = isset( $state['options'] ) && is_array( $state['options'] ) ? $state['options'] : $state;
 		if ( 'replace' === $options['destination_mode'] ) {
 			return false;
 		}
@@ -1133,7 +1317,11 @@ class Importer {
 
 		if ( $is_plugin && $plugin_slug ) {
 			$strategy = $this->plugin_strategy( $plugin_slug, $options );
-			$exists   = is_dir( WP_PLUGIN_DIR . '/' . $plugin_slug ) || file_exists( WP_PLUGIN_DIR . '/' . $plugin_slug . '.php' );
+			if ( isset( $state['existing_plugins'] ) && is_array( $state['existing_plugins'] ) ) {
+				$exists = ! empty( $state['existing_plugins'][ $plugin_slug ] );
+			} else {
+				$exists = is_dir( WP_PLUGIN_DIR . '/' . $plugin_slug ) || file_exists( WP_PLUGIN_DIR . '/' . $plugin_slug . '.php' );
+			}
 			if ( 'skip' === $strategy ) {
 				return true;
 			}
@@ -1144,7 +1332,11 @@ class Importer {
 
 		if ( $is_theme && $theme_slug ) {
 			$strategy = $this->theme_strategy( $theme_slug, $options );
-			$exists   = is_dir( get_theme_root() . '/' . $theme_slug );
+			if ( isset( $state['existing_themes'] ) && is_array( $state['existing_themes'] ) ) {
+				$exists = ! empty( $state['existing_themes'][ $theme_slug ] );
+			} else {
+				$exists = is_dir( get_theme_root() . '/' . $theme_slug );
+			}
 			if ( 'skip' === $strategy ) {
 				return true;
 			}
