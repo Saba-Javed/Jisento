@@ -127,6 +127,95 @@ check(
 );
 check( 'release removes the pin', ! is_file( WP_CONTENT_DIR . '/jisento/live-url.json' ) );
 
+// --- theme pin during import / release -------------------------------------
+
+$themes = WP_CONTENT_DIR . '/themes';
+@mkdir( $themes . '/dest-theme', 0777, true );
+file_put_contents( $themes . '/dest-theme/style.css', "/* Theme Name: Dest */\n" );
+@mkdir( $themes . '/grillino', 0777, true );
+file_put_contents( $themes . '/grillino/functions.php', "<?php require_once __DIR__ . '/inc/grillino-constants.php';\n" );
+// Incomplete: no style.css and missing include — must not be activated on release.
+check( 'incomplete imported theme is not ready', ! Live_Url::theme_files_ready( 'grillino', 'grillino' ) );
+
+file_put_contents(
+	WP_CONTENT_DIR . '/jisento/live-url.json',
+	json_encode(
+		array(
+			'job_id'               => 'job_theme_pin',
+			'home'                 => 'https://destination.test',
+			'template'             => 'dest-theme',
+			'stylesheet'           => 'dest-theme',
+			'imported_template'    => 'grillino',
+			'imported_stylesheet'  => 'grillino',
+			'active_plugins'       => array( JISENTO_BASENAME ),
+			'released'             => false,
+		)
+	)
+);
+$warn = Live_Url::apply_imported_theme(
+	array(
+		'imported_template'   => 'grillino',
+		'imported_stylesheet' => 'grillino',
+	)
+);
+check( 'release keeps destination theme when imported theme files are incomplete', '' !== $warn && ! isset( $GLOBALS['jisento_test_options']['stylesheet'] ), $warn );
+
+file_put_contents( $themes . '/grillino/style.css', "/* Theme Name: Grillino */\n" );
+@mkdir( $themes . '/grillino/inc', 0777, true );
+file_put_contents( $themes . '/grillino/inc/grillino-constants.php', "<?php\n" );
+check( 'complete imported theme is ready', Live_Url::theme_files_ready( 'grillino', 'grillino' ) );
+$warn = Live_Url::apply_imported_theme(
+	array(
+		'imported_template'   => 'grillino',
+		'imported_stylesheet' => 'grillino',
+	)
+);
+check( 'release activates imported theme when files are complete', '' === $warn && 'grillino' === $GLOBALS['jisento_test_options']['stylesheet'] && 'grillino' === $GLOBALS['jisento_test_options']['template'] );
+
+$warn = Live_Url::apply_imported_theme(
+	array(
+		'imported_template'   => 'grillino',
+		'imported_stylesheet' => 'grillino',
+		'skip_themes'         => true,
+	)
+);
+check( 'skip_themes keeps destination theme with a warning', '' !== $warn && false !== strpos( $warn, 'skip-themes' ), $warn );
+
+file_put_contents(
+	WP_CONTENT_DIR . '/jisento/live-url.json',
+	json_encode(
+		array(
+			'job_id'     => 'job_skip_theme',
+			'home'       => 'https://destination.test',
+			'template'   => 'dest-theme',
+			'stylesheet' => 'dest-theme',
+			'released'   => false,
+		)
+	)
+);
+Live_Url::skip_themes( 'job_skip_theme' );
+$pin = json_decode( (string) file_get_contents( WP_CONTENT_DIR . '/jisento/live-url.json' ), true );
+check( 'skip_themes is stored on the pin', ! empty( $pin['skip_themes'] ) );
+@unlink( WP_CONTENT_DIR . '/jisento/live-url.json' );
+
+$live = file_get_contents( JISENTO_PATH . 'includes/Core/Live_Url.php' );
+check( 'hold pins template via pre_option_template', false !== strpos( $live, 'pre_option_template' ) && false !== strpos( $live, 'pre_option_stylesheet' ) );
+check( 'capture stores destination template and stylesheet', false !== strpos( $live, "'template'" ) && false !== strpos( $live, "'stylesheet'" ) );
+
+$import = file_get_contents( JISENTO_PATH . 'includes/Import/Importer.php' );
+$swap_pos = strpos( $import, 'function swap_database' );
+$files_pos = strpos( $import, "case 'importing_files'" );
+$fin_pos = strpos( $import, 'function finalize' );
+$rel_pos = strpos( $import, 'Live_Url::release' );
+check( 'file restore stage is registered before finalize', false !== $files_pos && false !== $fin_pos && $files_pos < $fin_pos );
+check( 'theme pin is released only in cleanup after the job finishes', false !== $rel_pos && false !== strpos( substr( $import, strpos( $import, 'function cleanup' ), 800 ), 'Live_Url::release' ) );
+check( 'swap calls hold so the destination theme stays pinned', false !== strpos( substr( $import, $swap_pos, 1200 ), 'Live_Url::hold()' ) );
+
+$cli = file_get_contents( JISENTO_PATH . 'includes/Cli/Commands.php' );
+check( 'CLI resume documents --skip-themes', false !== strpos( $cli, 'skip-themes' ) && false !== strpos( $cli, 'skip_themes' ) );
+$readme = file_get_contents( JISENTO_PATH . 'readme.txt' );
+check( 'readme documents wp jisento resume --skip-themes', false !== strpos( $readme, 'wp jisento resume --job=<id> --skip-themes' ) );
+
 // --- no unauthenticated URL changes ---------------------------------------
 
 $live = file_get_contents( JISENTO_PATH . 'includes/Core/Live_Url.php' );

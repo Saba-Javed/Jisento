@@ -132,7 +132,21 @@ class Importer {
 		}
 		Admin_Guard::ensure( $job->job_id );
 		Admin_Guard::forget( $job->job_id );
-		Live_Url::release( $job->job_id );
+		$warnings = Live_Url::release( $job->job_id );
+		if ( $warnings && 'completed' === $job->status ) {
+			$state = is_array( $job->state ) ? $job->state : array();
+			if ( ! isset( $state['report'] ) || ! is_array( $state['report'] ) ) {
+				$state['report'] = array();
+			}
+			if ( empty( $state['report']['warnings'] ) || ! is_array( $state['report']['warnings'] ) ) {
+				$state['report']['warnings'] = array();
+			}
+			$state['report']['warnings'] = array_values( array_merge( $state['report']['warnings'], $warnings ) );
+			foreach ( $warnings as $warning ) {
+				$plugin->logger->log( $job->job_id, 'finalizing', 'theme', '', 'warning', $warning );
+			}
+			$plugin->jobs->update( $job, array( 'state' => $state ) );
+		}
 		if ( ! empty( $state['zip_partial']['tmp'] ) && '.jisento-tmp' === substr( (string) $state['zip_partial']['tmp'], -12 ) ) {
 			@unlink( (string) $state['zip_partial']['tmp'] );
 		}

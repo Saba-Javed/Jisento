@@ -69,6 +69,15 @@ If a finished import leaves home or siteurl pointing at the old domain, fix them
     wp option update home 'https://your-site.example'
     wp option update siteurl 'https://your-site.example'
 
+If an import dies after the database swap because the imported theme is incomplete on disk
+(theme fatals on every request, including migration steps), resume over SSH without activating
+that theme:
+
+    wp jisento resume --job=<id> --skip-themes
+
+Then restore or fix the theme files and switch themes under Appearance, or resume again without
+--skip-themes once the theme directory is complete.
+
 A failed import is never restarted automatically. Press Retry on the job to re-validate the
 package and continue; before the table swap it restarts from package validation.
 

@@ -53,6 +53,8 @@ class Live_Url {
 				'home'           => self::db_option( 'home' ),
 				'siteurl'        => self::db_option( 'siteurl' ),
 				'active_plugins' => self::db_option( 'active_plugins' ),
+				'template'       => self::db_option( 'template' ),
+				'stylesheet'     => self::db_option( 'stylesheet' ),
 				'hostinger'      => self::hostinger_options(),
 				'released'       => false,
 			)
@@ -70,11 +72,28 @@ class Live_Url {
 			$pin['imported_active_plugins'] = $imported;
 			self::write( $pin );
 		}
+		$imported_template = self::db_option( 'template' );
+		if ( false !== $imported_template && (string) $imported_template !== (string) ( isset( $pin['template'] ) ? $pin['template'] : '' ) ) {
+			$pin['imported_template'] = $imported_template;
+			self::write( $pin );
+		}
+		$imported_style = self::db_option( 'stylesheet' );
+		if ( false !== $imported_style && (string) $imported_style !== (string) ( isset( $pin['stylesheet'] ) ? $pin['stylesheet'] : '' ) ) {
+			$pin['imported_stylesheet'] = $imported_style;
+			self::write( $pin );
+		}
 		self::force_option( 'home', isset( $pin['home'] ) ? $pin['home'] : '' );
 		self::force_option( 'siteurl', isset( $pin['siteurl'] ) ? $pin['siteurl'] : '' );
 		if ( array_key_exists( 'active_plugins', $pin ) ) {
 			self::force_option( 'active_plugins', $pin['active_plugins'] );
 		}
+		if ( array_key_exists( 'template', $pin ) && false !== $pin['template'] && null !== $pin['template'] && '' !== (string) $pin['template'] ) {
+			self::force_option( 'template', $pin['template'] );
+		}
+		if ( array_key_exists( 'stylesheet', $pin ) && false !== $pin['stylesheet'] && null !== $pin['stylesheet'] && '' !== (string) $pin['stylesheet'] ) {
+			self::force_option( 'stylesheet', $pin['stylesheet'] );
+		}
+		self::attach_theme_pins( $pin );
 		if ( ! empty( $pin['hostinger'] ) && is_array( $pin['hostinger'] ) ) {
 			foreach ( $pin['hostinger'] as $name => $raw ) {
 				self::ensure_raw_option( (string) $name, $raw );
@@ -117,16 +136,25 @@ class Live_Url {
 
 	/**
 	 * Stop pinning. With a job id, only that job's pin is released.
+	 * Applies imported active_plugins and theme when their files are present.
 	 *
 	 * @param string $job_id Optional job id.
+	 * @return string[] Warnings (e.g. imported theme kept off because files were missing).
 	 */
 	public static function release( $job_id = '' ) {
-		$pin = self::read();
+		$warnings = array();
+		$pin      = self::read();
 		if ( $pin && ( '' === (string) $job_id || ( isset( $pin['job_id'] ) && (string) $pin['job_id'] === (string) $job_id ) ) ) {
-			if ( empty( $pin['released'] ) && isset( $pin['imported_active_plugins'] ) && is_array( $pin['imported_active_plugins'] ) && function_exists( 'update_option' ) ) {
-				$skipped = isset( $pin['skipped_plugin_dirs'] ) && is_array( $pin['skipped_plugin_dirs'] ) ? $pin['skipped_plugin_dirs'] : array();
-				$own     = defined( 'JISENTO_BASENAME' ) ? (string) JISENTO_BASENAME : '';
-				update_option( 'active_plugins', self::filter_active_plugins( $pin['imported_active_plugins'], $skipped, $own ) );
+			if ( empty( $pin['released'] ) && function_exists( 'update_option' ) ) {
+				if ( isset( $pin['imported_active_plugins'] ) && is_array( $pin['imported_active_plugins'] ) ) {
+					$skipped = isset( $pin['skipped_plugin_dirs'] ) && is_array( $pin['skipped_plugin_dirs'] ) ? $pin['skipped_plugin_dirs'] : array();
+					$own     = defined( 'JISENTO_BASENAME' ) ? (string) JISENTO_BASENAME : '';
+					update_option( 'active_plugins', self::filter_active_plugins( $pin['imported_active_plugins'], $skipped, $own ) );
+				}
+				$theme_warning = self::apply_imported_theme( $pin );
+				if ( '' !== $theme_warning ) {
+					$warnings[] = $theme_warning;
+				}
 			}
 			$path = self::path();
 			if ( is_file( $path ) ) {
@@ -136,6 +164,80 @@ class Live_Url {
 		if ( ! self::read() ) {
 			self::remove_guard();
 		}
+		return $warnings;
+	}
+
+	/**
+	 * Do not activate the imported theme when this job's pin is released.
+	 *
+	 * @param string $job_id Job id.
+	 */
+	public static function skip_themes( $job_id ) {
+		$pin = self::read();
+		if ( ! $pin || ! empty( $pin['released'] ) || ! isset( $pin['job_id'] ) || (string) $pin['job_id'] !== (string) $job_id ) {
+			return;
+		}
+		$pin['skip_themes'] = true;
+		self::write( $pin );
+	}
+
+	/**
+	 * Whether a theme (and its parent, for a child theme) can be loaded from disk.
+	 *
+	 * @param string $stylesheet Stylesheet slug.
+	 * @param string $template   Template slug (parent for child themes).
+	 * @return bool
+	 */
+	public static function theme_files_ready( $stylesheet, $template = '' ) {
+		if ( ! defined( 'WP_CONTENT_DIR' ) ) {
+			return false;
+		}
+		$stylesheet = (string) $stylesheet;
+		$template   = (string) $template;
+		if ( '' === $stylesheet ) {
+			return false;
+		}
+		$dir = WP_CONTENT_DIR . '/themes/' . $stylesheet;
+		if ( ! is_dir( $dir ) || ! is_readable( $dir . '/style.css' ) ) {
+			return false;
+		}
+		if ( '' !== $template && $template !== $stylesheet ) {
+			$parent = WP_CONTENT_DIR . '/themes/' . $template;
+			if ( ! is_dir( $parent ) || ! is_readable( $parent . '/style.css' ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Activate the imported theme on release, or keep the destination theme with a warning.
+	 *
+	 * @param array $pin Pin data.
+	 * @return string Warning message, or ''.
+	 */
+	public static function apply_imported_theme( array $pin ) {
+		if ( ! empty( $pin['skip_themes'] ) ) {
+			return __( 'The imported theme was not activated (--skip-themes). The destination theme stays active.', 'jisento' );
+		}
+		$style = isset( $pin['imported_stylesheet'] ) ? (string) $pin['imported_stylesheet'] : '';
+		$tmpl  = isset( $pin['imported_template'] ) ? (string) $pin['imported_template'] : $style;
+		if ( '' === $style ) {
+			return '';
+		}
+		if ( ! self::theme_files_ready( $style, $tmpl ) ) {
+			return sprintf(
+				/* translators: 1: stylesheet slug, 2: template slug */
+				__( 'The imported theme "%1$s" (template "%2$s") is incomplete on disk, so the destination theme was kept. Finish restoring theme files, then switch themes in Appearance, or resume with: wp jisento resume --job=<id> after the files are present.', 'jisento' ),
+				$style,
+				$tmpl
+			);
+		}
+		if ( function_exists( 'update_option' ) ) {
+			update_option( 'stylesheet', $style );
+			update_option( 'template', '' !== $tmpl ? $tmpl : $style );
+		}
+		return '';
 	}
 
 	/**
@@ -184,6 +286,42 @@ class Live_Url {
 			$out[] = $own;
 		}
 		return $out;
+	}
+
+	/**
+	 * Pin template/stylesheet for the rest of this request so a half-restored theme cannot load.
+	 *
+	 * @param array $pin Pin data.
+	 */
+	private static function attach_theme_pins( array $pin ) {
+		if ( ! function_exists( 'add_filter' ) ) {
+			return;
+		}
+		$template   = isset( $pin['template'] ) ? (string) $pin['template'] : '';
+		$stylesheet = isset( $pin['stylesheet'] ) ? (string) $pin['stylesheet'] : '';
+		if ( '' === $template && '' === $stylesheet ) {
+			return;
+		}
+		if ( ! empty( $GLOBALS['jisento_theme_pins_attached'] ) ) {
+			return;
+		}
+		$GLOBALS['jisento_theme_pins_attached'] = true;
+		if ( '' !== $template ) {
+			add_filter(
+				'pre_option_template',
+				static function () use ( $template ) {
+					return $template;
+				}
+			);
+		}
+		if ( '' !== $stylesheet ) {
+			add_filter(
+				'pre_option_stylesheet',
+				static function () use ( $stylesheet ) {
+					return $stylesheet;
+				}
+			);
+		}
 	}
 
 	/**

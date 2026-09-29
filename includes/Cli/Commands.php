@@ -137,6 +137,10 @@ class Commands {
 	 * --job=<id>
 	 * : Job id.
 	 *
+	 * [--skip-themes]
+	 * : Keep the destination theme active when the pin is released (do not activate the imported theme).
+	 *   Use this when the imported theme fatals because its files are incomplete, e.g. after a crash mid-file-restore.
+	 *
 	 * @param array $args       Positional.
 	 * @param array $assoc_args Flags.
 	 */
@@ -162,6 +166,10 @@ class Commands {
 			}
 		} elseif ( 'running' !== $job->status ) {
 			\WP_CLI::error( 'Job status is ' . $job->status . '; nothing to resume.' );
+		}
+		if ( ! empty( $assoc_args['skip-themes'] ) ) {
+			\Jisento\Migration\Core\Live_Url::skip_themes( $job_id );
+			\WP_CLI::log( 'Will keep the destination theme (--skip-themes).' );
 		}
 		$state                = is_array( $job->state ) ? $job->state : array();
 		$state['worker_mode'] = 'cli';
