@@ -91,8 +91,18 @@ check( 'serialized lengths are recomputed in bytes', is_array( $got ) && 'https:
 // (c) Boundaries.
 $hmap = Serializer::build_replacements( 'https://old.example', 'https://new.example' );
 check( 'old.example does not match old.example.au', 'x https://old.example.au/p y' === $s->replace( 'x https://old.example.au/p y', $hmap ), $s->replace( 'x https://old.example.au/p y', $hmap ) );
+check( 'old.example does not match old.example.com', 'https://old.example.com/x' === $s->replace( 'https://old.example.com/x', $hmap ) );
 check( 'old.example does not match old.example-shop.com', 'https://old.example-shop.com' === $s->replace( 'https://old.example-shop.com', $hmap ) );
 check( 'escaped old.example does not match escaped old.example.au', 'https:\\/\\/old.example.au\\/p' === $s->replace( 'https:\\/\\/old.example.au\\/p', $hmap ) );
+check( 'sentence-ending period after host is replaced', 'See https://new.example.' === $s->replace( 'See https://old.example.', $hmap ), $s->replace( 'See https://old.example.', $hmap ) );
+check( 'host before </p> with a period is replaced', 'Our website address is: https://new.example.</p>' === $s->replace( 'Our website address is: https://old.example.</p>', $hmap ) );
+check( 'host inside parentheses is replaced', '(https://new.example)' === $s->replace( '(https://old.example)', $hmap ) );
+check( 'host before a comma is replaced', 'Visit https://new.example, please' === $s->replace( 'Visit https://old.example, please', $hmap ) );
+$ser_period = serialize( array( 'p' => 'Site: https://old.example.</p>' ) );
+$ser_got    = @unserialize( $s->replace( $ser_period, $hmap ) );
+check( 'serialized sentence-ending period is replaced', is_array( $ser_got ) && 'Site: https://new.example.</p>' === $ser_got['p'], is_array( $ser_got ) ? $ser_got['p'] : 'fail' );
+$json_period = '{"u":"https:\\/\\/old.example."}';
+check( 'JSON sentence-ending period is replaced', '{"u":"https:\\/\\/new.example."}' === $s->replace( $json_period, $hmap ), $s->replace( $json_period, $hmap ) );
 check( 'host form keeps following path and port', 'https://new.example/p https://new.example:8080/q https://new.example' === $s->replace( 'http://www.old.example/p https://old.example:8080/q https://old.example', $hmap ) );
 check( '/blog does not match /blogger', 'https://old.example/blogger' === $s->replace( 'https://old.example/blogger', $map ), $s->replace( 'https://old.example/blogger', $map ) );
 check( '/blog does not match /blog_x or /blog-x', 'https://old.example/blog_x https://old.example/blog-x' === $s->replace( 'https://old.example/blog_x https://old.example/blog-x', $map ) );

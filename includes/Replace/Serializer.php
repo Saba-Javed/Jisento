@@ -268,7 +268,11 @@ class Serializer {
 		);
 		$parts = array();
 		foreach ( $forms as $form ) {
-			$parts[] = preg_quote( $form, '~' ) . ( self::form_has_path( $form ) ? '(?![A-Za-z0-9._-])' : '(?![A-Za-z0-9.-])' );
+			// Host/path may end a sentence (".") but must not match a longer domain (".au") or slug ("-shop", "_x").
+			$boundary = self::form_has_path( $form )
+				? '(?![A-Za-z0-9_-]|[.][A-Za-z0-9-])'
+				: '(?![A-Za-z0-9-]|[.][A-Za-z0-9-])';
+			$parts[]  = preg_quote( $form, '~' ) . $boundary;
 		}
 		$this->patterns[ $hash ] = '~(?:' . implode( '|', $parts ) . ')~';
 
