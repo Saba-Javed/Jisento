@@ -222,7 +222,8 @@ $live = file_get_contents( JISENTO_PATH . 'includes/Core/Live_Url.php' );
 check( 'Live_Url never reads the Host header', false === strpos( $live, 'HTTP_HOST' ) && false === strpos( $live, 'heal_from_package' ) );
 check( 'jisento-recover.php is gone', ! file_exists( JISENTO_PATH . 'jisento-recover.php' ) );
 check( 'hostinger options are preserved', Live_Url::preserved_option( 'hostinger_onboarding' ) && Live_Url::preserved_option( 'hostinger-ai-builder' ) );
-check( 'other options are not preserved', ! Live_Url::preserved_option( 'siteurl' ) && ! Live_Url::preserved_option( 'my_hostinger' ) );
+check( 'identity options are preserved', Live_Url::preserved_option( 'siteurl' ) && Live_Url::preserved_option( 'admin_email' ) );
+check( 'unrelated options are not preserved', ! Live_Url::preserved_option( 'blogname' ) && ! Live_Url::preserved_option( 'my_hostinger' ) );
 
 $controller = file_get_contents( JISENTO_PATH . 'includes/Api/Rest_Controller.php' );
 $archive    = file_get_contents( JISENTO_PATH . 'includes/Package/Archive.php' );

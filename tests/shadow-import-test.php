@@ -63,7 +63,8 @@ $cands = Database_Importer::collation_candidates( 'utf8mb4_uca1400_ai_ci' );
 check( 'uca1400 ai_ci candidates include unicode_520 then unicode then general', in_array( 'utf8mb4_unicode_520_ci', $cands, true ) && in_array( 'utf8mb4_unicode_ci', $cands, true ) && in_array( 'utf8mb4_general_ci', $cands, true ) );
 
 check( 'hostinger options are preserved', Live_Url::preserved_option( 'hostinger_onboarding' ) && Live_Url::preserved_option( 'hostinger-ai-builder' ) );
-check( 'other options are not preserved', ! Live_Url::preserved_option( 'siteurl' ) && ! Live_Url::preserved_option( 'home' ) && ! Live_Url::preserved_option( 'my_hostinger' ) );
+check( 'identity options are preserved', Live_Url::preserved_option( 'siteurl' ) && Live_Url::preserved_option( 'home' ) && Live_Url::preserved_option( 'admin_email' ) );
+check( 'unrelated options are not preserved', ! Live_Url::preserved_option( 'blogname' ) && ! Live_Url::preserved_option( 'my_hostinger' ) );
 check( 'missing administrators are restored', Admin_Guard::should_restore( 0 ) );
 check( 'existing administrators are left alone', ! Admin_Guard::should_restore( 1 ) && ! Admin_Guard::should_restore( -1 ) );
 

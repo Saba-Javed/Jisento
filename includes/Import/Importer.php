@@ -6,8 +6,10 @@
  * by one RENAME TABLE after every segment has been restored and verified.
  *
  * - Replace mode swaps every table in the package.
- * - Preserve mode swaps only tables that do not exist on this site yet, plus existing tables the
- *   administrator explicitly listed in replace_tables. Every other existing table is kept as is.
+ * - Preserve mode imports every table from the package like Replace, but keeps the destination
+ *   wp_users and wp_usermeta tables, and restores destination siteurl, home, admin_email, and any
+ *   auth/salt options stored in the database after the swap. Existing plugin and theme folders on
+ *   the destination are never overwritten; missing ones are added completely.
  * - File restore snapshots existing plugin/theme folders before writing, so install_missing cannot
  *   skip the rest of a folder after the first file creates it. Restored plugins/themes are verified
  *   against the package (names + sizes) before the job can complete.
@@ -234,6 +236,7 @@ class Importer {
 			'package'                  => '',
 			'destination_mode'         => 'preserve',
 			'confirm_replace'          => false,
+			'confirm_preserve'         => false,
 			'replace_tables'           => array(),
 			'repair_placeholders'      => false,
 			'restore_original_engines' => false,
@@ -244,12 +247,18 @@ class Importer {
 			'dest_url'                 => home_url(),
 			'preserve_uploads'         => true,
 			'plugin_strategy'          => 'install_missing',
-			'theme_strategy'           => 'keep_destination',
+			'theme_strategy'           => 'install_missing',
 			'plugin_conflicts'         => array(),
 			'theme_conflicts'          => array(),
 		);
 		$options = wp_parse_args( $options, $defaults );
 		$options['destination_mode'] = 'replace' === $options['destination_mode'] ? 'replace' : 'preserve';
+		if ( 'preserve' === $options['destination_mode'] ) {
+			// Preserve always keeps existing plugin/theme folders and adds missing ones completely.
+			$options['plugin_strategy'] = 'install_missing';
+			$options['theme_strategy']  = 'install_missing';
+			$options['replace_tables']  = array();
+		}
 		$tables = array();
 		foreach ( (array) $options['replace_tables'] as $table ) {
 			$table = preg_replace( '/[^A-Za-z0-9_$]/', '', (string) $table );
@@ -263,6 +272,7 @@ class Importer {
 		$options['replace_guids']            = ! empty( $options['replace_guids'] );
 		$options['replace_emails']           = ! empty( $options['replace_emails'] );
 		$options['replace_urls']             = ! empty( $options['replace_urls'] );
+		$options['confirm_preserve']         = ! empty( $options['confirm_preserve'] );
 		return $options;
 	}
 
@@ -381,6 +391,12 @@ class Importer {
 		$mode = $state['options']['destination_mode'];
 		if ( 'replace' === $mode && empty( $state['options']['confirm_replace'] ) ) {
 			throw self::error( $job, 'check options', __( 'Complete replacement requires explicit confirmation.', 'jisento' ), __( 'Tick the confirmation box and start again.', 'jisento' ) );
+		}
+		if ( 'preserve' === $mode && empty( $state['options']['confirm_preserve'] ) ) {
+			throw self::error( $job, 'check options', __( 'Preserve mode requires explicit confirmation.', 'jisento' ), __( 'Confirm that logins, themes and plugins on this site should be kept, then start again.', 'jisento' ) );
+		}
+		if ( empty( $state['import_admin_id'] ) && function_exists( 'get_current_user_id' ) ) {
+			$state['import_admin_id'] = (int) get_current_user_id();
 		}
 
 		$state['package_path'] = $path;
@@ -592,19 +608,24 @@ class Importer {
 		foreach ( (array) $wpdb->get_col( 'SHOW TABLES' ) as $name ) {
 			$existing[ (string) $name ] = true;
 		}
-		$selected = array();
-		foreach ( $state['options']['replace_tables'] as $name ) {
-			$selected[ $probe->dest_table( $name ) ] = true;
-		}
 		$replace = 'replace' === $state['options']['destination_mode'];
 		$restore = array();
 		$keep    = array();
-		foreach ( $source_tables as $table ) {
-			$dest = $probe->dest_table( $table );
-			if ( $replace || ! isset( $existing[ $dest ] ) || isset( $selected[ $dest ] ) ) {
-				$restore[] = $dest;
-			} else {
-				$keep[] = $dest;
+		if ( $replace ) {
+			foreach ( $source_tables as $table ) {
+				$restore[] = $probe->dest_table( $table );
+			}
+		} else {
+			// Preserve: import everything like Replace, but keep destination logins.
+			$users_table    = $dest_prefix . 'users';
+			$usermeta_table = $dest_prefix . 'usermeta';
+			foreach ( $source_tables as $table ) {
+				$dest = $probe->dest_table( $table );
+				if ( ( $dest === $users_table || $dest === $usermeta_table ) && isset( $existing[ $dest ] ) ) {
+					$keep[] = $dest;
+				} else {
+					$restore[] = $dest;
+				}
 			}
 		}
 		$restore = array_values( array_unique( $restore ) );
@@ -625,16 +646,16 @@ class Importer {
 			'keep'     => $keep,
 			'expected' => $expected,
 		);
-		$state['db_phase']    = 'restore';
-		$state['db_segment']  = 0;
-		$state['db_swapped']  = false;
+		$state['db_phase']      = 'restore';
+		$state['db_segment']    = 0;
+		$state['db_swapped']    = false;
 		$state['extract_phase'] = 'done';
-		$users_table = $dest_prefix . 'users';
-		$state['users_replaced'] = in_array( $users_table, $restore, true ) && isset( $existing[ $users_table ] );
+		$users_table              = $dest_prefix . 'users';
+		$state['users_replaced']  = $replace && in_array( $users_table, $restore, true ) && isset( $existing[ $users_table ] );
 
 		$summary = $replace
 			? sprintf( 'Replace mode: %d table(s) will be restored and swapped in.', count( $restore ) )
-			: sprintf( 'Preserve mode: %1$d new or selected table(s) will be restored; %2$d existing table(s) are kept unchanged: %3$s', count( $restore ), count( $keep ), implode( ', ', array_slice( $keep, 0, 40 ) ) );
+			: sprintf( 'Preserve mode: %1$d table(s) will be restored; keeping destination logins (%2$s).', count( $restore ), $keep ? implode( ', ', $keep ) : 'none present' );
 		$plugin->logger->log( $job->job_id, 'extracting', 'plan', '', 'info', $summary );
 
 		return $this->report(
@@ -647,7 +668,7 @@ class Importer {
 			array(
 				'phase'          => 'extracting',
 				'label'          => __( 'Extracting package', 'jisento' ),
-				'detail'         => $replace ? __( 'All tables will be replaced', 'jisento' ) : sprintf( __( '%1$d tables restored, %2$d kept', 'jisento' ), count( $restore ), count( $keep ) ),
+				'detail'         => $replace ? __( 'All tables will be replaced', 'jisento' ) : sprintf( __( '%1$d tables restored, logins kept', 'jisento' ), count( $restore ) ),
 				'stage_progress' => 100,
 			)
 		);
@@ -859,6 +880,9 @@ class Importer {
 		$state['db_swapped'] = true;
 		Live_Url::hold();
 		Admin_Guard::ensure( $job->job_id );
+		if ( 'preserve' === $state['options']['destination_mode'] ) {
+			$state = $this->reassign_orphan_authors( $job, $state );
+		}
 		// Saved before the follow-up work, so a crash after this point never restores into shadows again.
 		$job = $this->report( $job, $state, array( 'stage' => 'importing_database' ), array( 'phase' => 'importing_database', 'label' => __( 'Restoring database', 'jisento' ), 'detail' => __( 'Checking foreign keys', 'jisento' ), 'stage_progress' => 99 ) );
 
@@ -970,6 +994,7 @@ class Importer {
 			if ( is_wp_error( $check ) ) {
 				throw self::error( $job, 'verify restored plugins and themes', $check->get_error_message(), __( 'Free disk space and fix permissions, then press Retry so missing files can be restored, or re-export the package.', 'jisento' ) );
 			}
+			$state = $this->record_kept_extensions( $state );
 			$ratio = 1;
 		} elseif ( $files_bytes > 0 ) {
 			$ratio = min( 1, $state['file_bytes'] / $files_bytes );
@@ -1366,6 +1391,98 @@ class Importer {
 		return '';
 	}
 
+	/**
+	 * After a Preserve swap, point posts whose author no longer exists at the importing admin.
+	 * WooCommerce order customer references are left alone.
+	 *
+	 * @param object $job   Job.
+	 * @param array  $state Job state.
+	 * @return array
+	 */
+	public function reassign_orphan_authors( $job, array $state ) {
+		global $wpdb;
+		if ( ! isset( $wpdb ) || ! is_object( $wpdb ) || empty( $wpdb->posts ) || empty( $wpdb->users ) ) {
+			return $state;
+		}
+		$posts = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->posts ) );
+		$users = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->users ) );
+		if ( (string) $posts !== (string) $wpdb->posts || (string) $users !== (string) $wpdb->users ) {
+			return $state;
+		}
+		$admin_id = ! empty( $state['import_admin_id'] ) ? (int) $state['import_admin_id'] : 0;
+		if ( $admin_id <= 0 || ! $wpdb->get_var( $wpdb->prepare( "SELECT ID FROM {$wpdb->users} WHERE ID = %d", $admin_id ) ) ) {
+			$admin_id = (int) $wpdb->get_var( "SELECT ID FROM {$wpdb->users} ORDER BY ID ASC LIMIT 1" );
+		}
+		if ( $admin_id <= 0 ) {
+			return $state;
+		}
+		// Fixed WooCommerce order post types — not user-controlled.
+		$count = (int) $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$wpdb->posts} SET post_author = %d WHERE post_author > 0 AND post_author NOT IN (SELECT ID FROM {$wpdb->users}) AND post_type NOT IN ('shop_order','shop_order_refund','shop_subscription')",
+				$admin_id
+			)
+		);
+		$state['orphan_authors_reassigned'] = max( 0, $count );
+		if ( $count > 0 ) {
+			$plugin = Plugin::instance();
+			if ( isset( $plugin->logger ) && is_object( $plugin->logger ) && method_exists( $plugin->logger, 'log' ) ) {
+				$plugin->logger->log(
+					$job->job_id,
+					'importing_database',
+					'authors',
+					'',
+					'info',
+					sprintf( 'Preserve: reassigned post_author on %d post(s) to admin ID %d (WooCommerce order types left unchanged).', $count, $admin_id )
+				);
+			}
+		}
+		return $state;
+	}
+
+	/**
+	 * Post types whose customer/author references must not be rewritten in Preserve mode.
+	 *
+	 * @return string[]
+	 */
+	public static function wc_order_post_types() {
+		return array( 'shop_order', 'shop_order_refund', 'shop_subscription' );
+	}
+
+	/**
+	 * Plugin/theme folder names that existed on the destination and were kept (not overwritten).
+	 *
+	 * @param array $state Job state.
+	 * @return array
+	 */
+	private function record_kept_extensions( array $state ) {
+		if ( 'preserve' !== ( isset( $state['options']['destination_mode'] ) ? $state['options']['destination_mode'] : '' ) ) {
+			return $state;
+		}
+		if ( empty( $state['package_path'] ) || ! is_string( $state['package_path'] ) ) {
+			return $state;
+		}
+		$copies   = isset( $state['jisento_copies'] ) && is_array( $state['jisento_copies'] ) ? $state['jisento_copies'] : array();
+		$expected = $this->package_extension_entries( $state['package_path'], $copies );
+		if ( is_wp_error( $expected ) ) {
+			return $state;
+		}
+		$kept = array();
+		foreach ( array_keys( $expected['plugins'] ) as $slug ) {
+			if ( ! empty( $state['existing_plugins'][ $slug ] ) ) {
+				$kept[] = $slug;
+			}
+		}
+		foreach ( array_keys( $expected['themes'] ) as $slug ) {
+			if ( ! empty( $state['existing_themes'][ $slug ] ) ) {
+				$kept[] = $slug;
+			}
+		}
+		sort( $kept );
+		$state['kept_extensions'] = array_values( array_unique( $kept ) );
+		return $state;
+	}
+
 	private function plugin_strategy( $slug, array $options ) {
 		if ( ! empty( $options['plugin_conflicts'][ $slug ] ) ) {
 			return sanitize_key( $options['plugin_conflicts'][ $slug ] );
@@ -1478,6 +1595,11 @@ class Importer {
 			'tables_kept'    => isset( $state['plan']['keep'] ) ? count( $state['plan']['keep'] ) : 0,
 			'users_replaced' => ! empty( $state['users_replaced'] ),
 			'login_notice'   => ! empty( $state['users_replaced'] ) ? __( "Log in with the SOURCE site's username and password.", 'jisento' ) : '',
+			'kept_versions'  => ! empty( $state['kept_extensions'] ) ? sprintf(
+				/* translators: %s: comma-separated plugin/theme folder names */
+				__( 'Kept your existing versions of: %s', 'jisento' ),
+				implode( ', ', $state['kept_extensions'] )
+			) : '',
 			'timings'        => isset( $state['timings'] ) ? $state['timings'] : array(),
 		);
 		$cleanup->verify( $report );

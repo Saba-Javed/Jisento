@@ -38,7 +38,10 @@ check('placeholder repair route is present', /'jobs\/'\s*\+[^;\n]*\+\s*'\/repair
 check('debug log route is present', /jobRoute\(id, 'log'\)|'\/log'/.test(source));
 check('users_replaced shows the source login hint', source.indexOf("Log in with the SOURCE site's username and password.") !== -1);
 check('validation card says format marker, not signature', /Format marker/.test(source) && !/' signature</.test(source));
-check('import sends replace_tables and replace_guids', /replace_tables/.test(source) && /replace_guids/.test(source));
+check('import sends replace_guids and confirm_preserve', /replace_guids/.test(source) && /confirm_preserve/.test(source));
+check('preserve modal text is present', /Keep this site\\?'s logins, themes and plugins/.test(source) || /confirmPreserveModal/.test(source));
+check('preserve modal OK/Cancel handlers exist', /jisento-preserve-ok/.test(source) && /jisento-preserve-cancel/.test(source));
+check('kept_versions shown on complete', /kept_versions/.test(source));
 check('import sends replace_emails (default on)', /replace_emails/.test(source));
 check('HTTP 409 on job creation is handled', /status === 409/.test(source));
 check('esc() helper removed', !/function esc\(/.test(source));

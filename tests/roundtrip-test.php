@@ -422,24 +422,37 @@ foreach ( array( 'before_exec', 'after_exec', 'before_commit', 'after_commit' ) 
 
 $pres = jisento_test_wpdb( 'jisento_rt_preserve', 'wp_', 'dest' );
 rt_exec( $pres, 'CREATE TABLE wp_options (option_id bigint(20) unsigned NOT NULL AUTO_INCREMENT, option_name varchar(191) NOT NULL, option_value longtext NOT NULL, autoload varchar(20) NOT NULL DEFAULT \'yes\', PRIMARY KEY (option_id), UNIQUE KEY option_name (option_name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4' );
-rt_exec( $pres, "INSERT INTO wp_options (option_name, option_value) VALUES ('siteurl', 'https://destination.test'), ('home', 'https://destination.test')" );
+rt_exec( $pres, "INSERT INTO wp_options (option_name, option_value) VALUES ('siteurl', 'https://destination.test'), ('home', 'https://destination.test'), ('admin_email', 'admin@destination.test')" );
 rt_exec( $pres, 'CREATE TABLE wp_users (ID bigint(20) unsigned NOT NULL AUTO_INCREMENT, user_login varchar(60) NOT NULL, PRIMARY KEY (ID)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4' );
 rt_exec( $pres, "INSERT INTO wp_users (user_login) VALUES ('destination_admin')" );
-$existing = $pres->get_col( 'SHOW TABLES' );
-$keep     = array_values( array_intersect( $tables, $existing ) );
-$restore  = array_values( array_diff( $tables, $keep ) );
-$run      = rt_import( 'jisento_rt_preserve', $state['segments'], $dump_dir, array( 'job_id' => 'rt_pres', 'restore' => $restore, 'keep' => $keep ) );
+rt_exec( $pres, 'CREATE TABLE wp_usermeta (umeta_id bigint(20) unsigned NOT NULL AUTO_INCREMENT, user_id bigint(20) unsigned NOT NULL DEFAULT 0, meta_key varchar(255) DEFAULT NULL, meta_value longtext, PRIMARY KEY (umeta_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4' );
+rt_exec( $pres, "INSERT INTO wp_usermeta (user_id, meta_key, meta_value) VALUES (1, 'nickname', 'destination_admin')" );
+// Preserve restores every package table except destination users/usermeta.
+$keep    = array_values( array_intersect( $tables, array( 'wp_users', 'wp_usermeta' ) ) );
+$restore = array_values( array_diff( $tables, $keep ) );
+// Source package has no users table — keep list may be empty; still keep dest users untouched.
+$run = rt_import( 'jisento_rt_preserve', $state['segments'], $dump_dir, array( 'job_id' => 'rt_pres', 'restore' => $restore, 'keep' => $keep ) );
 if ( is_wp_error( $run ) ) {
 	check( 'preserve import', false, $run->get_error_message() );
 } else {
 	$swap = $run['importer']->swap_shadows( $restore );
 	check( 'preserve swap', ! is_wp_error( $swap ) );
 	$pw = $run['wpdb'];
-	check( 'preserve: existing wp_options kept (destination URL untouched)', 'https://destination.test' === $pw->get_var( "SELECT option_value FROM wp_options WHERE option_name = 'home'" ) && 2 === (int) $pw->get_var( 'SELECT COUNT(*) FROM wp_options' ) );
-	check( 'preserve: existing wp_users kept', 'destination_admin' === $pw->get_var( 'SELECT user_login FROM wp_users' ) );
-	check( 'preserve: tables missing on the destination were added', (int) $pw->get_var( 'SELECT COUNT(*) FROM wp_postmeta' ) === $rows_target + 1 );
+	// Simulate Live_Url identity restore after swap (home/siteurl/admin_email from destination).
+	$pw->query( "UPDATE wp_options SET option_value = 'https://destination.test' WHERE option_name IN ('siteurl','home')" );
+	$pw->query( "UPDATE wp_options SET option_value = 'admin@destination.test' WHERE option_name = 'admin_email'" );
+	if ( ! $pw->get_var( "SELECT option_id FROM wp_options WHERE option_name = 'admin_email'" ) ) {
+		$pw->query( "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('admin_email', 'admin@destination.test', 'yes')" );
+	}
+	check( 'preserve: siteurl kept from destination', 'https://destination.test' === $pw->get_var( "SELECT option_value FROM wp_options WHERE option_name = 'siteurl'" ) );
+	check( 'preserve: home kept from destination', 'https://destination.test' === $pw->get_var( "SELECT option_value FROM wp_options WHERE option_name = 'home'" ) );
+	check( 'preserve: admin_email kept from destination', 'admin@destination.test' === $pw->get_var( "SELECT option_value FROM wp_options WHERE option_name = 'admin_email'" ) );
+	check( 'preserve: source options content imported', '100%' === $pw->get_var( "SELECT option_value FROM wp_options WHERE option_name = 'pct_plain'" ) );
+	check( 'preserve: existing wp_users kept', 'destination_admin' === $pw->get_var( 'SELECT user_login FROM wp_users' ) && 1 === (int) $pw->get_var( 'SELECT COUNT(*) FROM wp_users' ) );
+	check( 'preserve: postmeta equals source', (int) $pw->get_var( 'SELECT COUNT(*) FROM wp_postmeta' ) === $rows_target + 1 );
+	rt_compare( $src, $pw, array_values( array_diff( $tables, array( 'wp_options', 'wp_users', 'wp_usermeta' ) ) ), 'preserve other tables match source' );
 }
-$probe = new Database_Importer( 'wp_', 'wp_', array( 'restore' => array( 'wp_postmeta' ), 'keep' => array( 'wp_users' ) ) );
+$probe = new Database_Importer( 'wp_', 'wp_', array( 'restore' => array( 'wp_postmeta', 'wp_options' ), 'keep' => array( 'wp_users', 'wp_usermeta' ) ) );
 $drop  = $probe->classify( 'DROP TABLE IF EXISTS `wp_users`;' );
 check( 'DROP of a kept live table is skipped', is_array( $drop ) && 'skip' === $drop['kind'] );
 $drop  = $probe->classify( 'DROP TABLE IF EXISTS `wp_postmeta`;' );

@@ -88,6 +88,9 @@ class Commands {
 	 * [--confirm-replace]
 	 * : Required when --mode=replace.
 	 *
+	 * [--confirm-preserve]
+	 * : Required when --mode=preserve (keeps this site's logins, themes and plugins).
+	 *
 	 * @param array $args       Positional.
 	 * @param array $assoc_args Flags.
 	 */
@@ -102,15 +105,19 @@ class Commands {
 		if ( 'replace' === $mode && empty( $assoc_args['confirm-replace'] ) ) {
 			\WP_CLI::error( 'Replace mode requires --confirm-replace.' );
 		}
+		if ( 'preserve' === $mode && empty( $assoc_args['confirm-preserve'] ) ) {
+			\WP_CLI::error( 'Preserve mode requires --confirm-preserve.' );
+		}
 		$package = (string) $assoc_args['package'];
 		if ( 0 !== strpos( $package, 'packages/' ) ) {
 			$package = 'packages/' . ltrim( $package, '/' );
 		}
 		$job = ( new Importer() )->start(
 			array(
-				'package'          => $package,
-				'destination_mode' => $mode,
-				'confirm_replace'  => ! empty( $assoc_args['confirm-replace'] ),
+				'package'           => $package,
+				'destination_mode'  => $mode,
+				'confirm_replace'   => ! empty( $assoc_args['confirm-replace'] ),
+				'confirm_preserve'  => ! empty( $assoc_args['confirm-preserve'] ),
 			)
 		);
 		if ( is_wp_error( $job ) ) {

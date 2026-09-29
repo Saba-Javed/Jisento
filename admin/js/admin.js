@@ -595,6 +595,9 @@
 			isImport && report.users_replaced === true
 				? el('p', { className: 'jisento-login-hint' }, el('strong', null, "Log in with the SOURCE site's username and password."))
 				: null,
+			isImport && report.kept_versions
+				? el('p', { className: 'jisento-kept-versions' }, report.kept_versions)
+				: null,
 			el('p', null, 'Source: ' + (report.source || '')),
 			el('p', null, 'Destination: ' + (report.destination || jisentoAdmin.home)),
 			report.package ? el('p', null, ['Package: ', el('code', null, report.package)]) : null,
@@ -1043,6 +1046,43 @@
 		}
 	}
 
+	function confirmPreserveModal() {
+		return new Promise(function (resolve) {
+			const modal = $('#jisento-preserve-modal');
+			const ok = $('#jisento-preserve-ok');
+			const cancel = $('#jisento-preserve-cancel');
+			if (!modal || !ok) {
+				resolve(window.confirm('Keep this site\'s logins, themes and plugins?'));
+				return;
+			}
+			function finish(value) {
+				ok.removeEventListener('click', onOk);
+				if (cancel) {
+					cancel.removeEventListener('click', onCancel);
+				}
+				modal.querySelectorAll('.jisento-close').forEach(function (btn) {
+					btn.removeEventListener('click', onCancel);
+				});
+				hide(modal);
+				resolve(value);
+			}
+			function onOk() {
+				finish(true);
+			}
+			function onCancel() {
+				finish(false);
+			}
+			ok.addEventListener('click', onOk);
+			if (cancel) {
+				cancel.addEventListener('click', onCancel);
+			}
+			modal.querySelectorAll('.jisento-close').forEach(function (btn) {
+				btn.addEventListener('click', onCancel);
+			});
+			show(modal);
+		});
+	}
+
 	function bindImport() {
 		if (window.JisentoFilePicker && $('#jisento-file-picker')) {
 			window.JisentoFilePicker.mount($('#jisento-file-picker'), {
@@ -1059,7 +1099,7 @@
 		});
 		const start = $('#jisento-start-import');
 		if (start) {
-			start.addEventListener('click', function () {
+			start.addEventListener('click', async function () {
 				const mode = destMode();
 				if (!mode) {
 					alert('Choose Replace Destination or Preserve Destination.');
@@ -1074,8 +1114,13 @@
 					alert('Select or upload a package first.');
 					return;
 				}
-				const strategy = document.querySelector('input[name="jisento_plugin_strategy"]:checked');
-				const theme = document.querySelector('input[name="jisento_theme_strategy"]:checked');
+				let confirmPreserve = false;
+				if (mode === 'preserve') {
+					confirmPreserve = await confirmPreserveModal();
+					if (!confirmPreserve) {
+						return;
+					}
+				}
 				const replaceUrls = $('#jisento-replace-urls');
 				const sourceUrl = $('#jisento-source-url');
 				const destUrl = $('#jisento-dest-url');
@@ -1083,17 +1128,14 @@
 					package: uploadedPackage,
 					destination_mode: mode,
 					confirm_replace: mode === 'replace' && !!(confirmReplace && confirmReplace.checked),
+					confirm_preserve: mode === 'preserve' && !!confirmPreserve,
 					safety_backup: false,
 					replace_urls: replaceUrls ? replaceUrls.checked : true,
 					source_url: sourceUrl ? sourceUrl.value : '',
 					dest_url: destUrl ? destUrl.value : '',
-					plugin_strategy: strategy ? strategy.value : 'keep_destination',
-					theme_strategy: theme ? theme.value : 'keep_destination'
+					plugin_strategy: 'install_missing',
+					theme_strategy: 'install_missing'
 				};
-				const replaceTables = $('#jisento-replace-tables');
-				if (replaceTables) {
-					options.replace_tables = csv(replaceTables.value);
-				}
 				const replaceGuids = $('#jisento-replace-guids');
 				if (replaceGuids) {
 					options.replace_guids = !!replaceGuids.checked;
@@ -1368,16 +1410,24 @@
 				const box = $('#jisento-source-info');
 				show(box);
 				const continueRemote = el('button', { type: 'button', className: 'button button-primary', id: 'jisento-continue-remote' }, 'Continue to Migration');
-				continueRemote.addEventListener('click', function () {
+				continueRemote.addEventListener('click', async function () {
 					const mode = destMode();
 					if (mode === 'replace' && !confirm('This will replace the destination site. Continue?')) {
 						return;
+					}
+					let confirmPreserve = false;
+					if (mode === 'preserve') {
+						confirmPreserve = await confirmPreserveModal();
+						if (!confirmPreserve) {
+							return;
+						}
 					}
 					createJob({
 						type: 'receive',
 						options: {
 							destination_mode: mode,
 							confirm_replace: mode === 'replace',
+							confirm_preserve: mode === 'preserve' && !!confirmPreserve,
 							safety_backup: false,
 							replace_urls: true,
 							source_url: info.home_url || $('#jisento-connect-url').value,

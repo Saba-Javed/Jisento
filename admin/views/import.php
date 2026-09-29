@@ -40,7 +40,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<label class="jisento-mode-card">
 			<input type="radio" name="jisento_dest_mode" value="preserve">
 			<strong><?php esc_html_e( 'Preserve Destination', 'jisento' ); ?></strong>
-			<span><?php esc_html_e( 'Keep selected destination components and resolve conflicts.', 'jisento' ); ?></span>
+			<span><?php esc_html_e( 'Import everything from the source, but keep this site\'s logins, themes and plugins.', 'jisento' ); ?></span>
 		</label>
 	</div>
 </section>
@@ -52,23 +52,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 </section>
 
 <section class="jisento-card" id="jisento-preserve-options" hidden>
-	<h2><?php esc_html_e( 'Destination Preservation', 'jisento' ); ?></h2>
-	<label><input type="checkbox" class="jisento-preserve" data-key="preserve_plugins" checked> <?php esc_html_e( 'Preserve existing plugin files', 'jisento' ); ?></label>
-	<label><input type="checkbox" class="jisento-preserve" data-key="preserve_themes" checked> <?php esc_html_e( 'Preserve existing theme files', 'jisento' ); ?></label>
+	<h2><?php esc_html_e( 'Preserve Destination', 'jisento' ); ?></h2>
+	<p><?php esc_html_e( 'Everything from the source site will be imported. Your users and passwords, site address, and the themes and plugins already installed here are kept. Missing themes and plugins are added. Users and customer accounts from the source site are not imported.', 'jisento' ); ?></p>
 	<label><input type="checkbox" class="jisento-preserve" data-key="preserve_uploads" checked> <?php esc_html_e( 'Preserve existing uploads (keep destination files on conflict)', 'jisento' ); ?></label>
-	<h3><?php esc_html_e( 'Database tables', 'jisento' ); ?></h3>
-	<p><?php esc_html_e( 'Preserve mode never changes a table that already exists on this site. Tables from the package that do not exist here are added. To replace an existing table, list it below.', 'jisento' ); ?></p>
-	<label><?php esc_html_e( 'Existing tables to replace (comma separated, e.g. wp_posts, wp_postmeta)', 'jisento' ); ?> <input type="text" id="jisento-replace-tables" class="regular-text"></label>
-	<h3><?php esc_html_e( 'Source Plugin Handling', 'jisento' ); ?></h3>
-	<label><input type="radio" name="jisento_plugin_strategy" value="replace_matching"> <?php esc_html_e( 'Replace matching plugins', 'jisento' ); ?></label>
-	<label><input type="radio" name="jisento_plugin_strategy" value="keep_destination" checked> <?php esc_html_e( 'Keep destination version', 'jisento' ); ?></label>
-	<label><input type="radio" name="jisento_plugin_strategy" value="install_missing"> <?php esc_html_e( 'Install missing source plugins', 'jisento' ); ?></label>
-	<label><input type="radio" name="jisento_plugin_strategy" value="skip"> <?php esc_html_e( 'Skip source plugins', 'jisento' ); ?></label>
-	<h3><?php esc_html_e( 'Source Theme Handling', 'jisento' ); ?></h3>
-	<label><input type="radio" name="jisento_theme_strategy" value="replace_matching"> <?php esc_html_e( 'Replace matching themes', 'jisento' ); ?></label>
-	<label><input type="radio" name="jisento_theme_strategy" value="keep_destination" checked> <?php esc_html_e( 'Keep destination theme unless explicitly replaced', 'jisento' ); ?></label>
-	<label><input type="radio" name="jisento_theme_strategy" value="install_missing"> <?php esc_html_e( 'Install missing source themes', 'jisento' ); ?></label>
-	<label><input type="radio" name="jisento_theme_strategy" value="skip"> <?php esc_html_e( 'Skip source themes', 'jisento' ); ?></label>
 </section>
 
 <section class="jisento-card" id="jisento-url-options" hidden>
@@ -83,6 +69,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 	<label><input type="checkbox" id="jisento-restore-engines"> <?php esc_html_e( 'Convert MyISAM/Aria tables back to their original engine after the restore', 'jisento' ); ?></label>
 	<p><button type="button" class="button button-primary" id="jisento-start-import"><?php esc_html_e( 'Start Import', 'jisento' ); ?></button></p>
 </section>
+
+<div id="jisento-preserve-modal" class="jisento-modal" hidden>
+	<div class="jisento-modal-inner">
+		<h2><?php esc_html_e( 'Keep this site\'s logins, themes and plugins', 'jisento' ); ?></h2>
+		<p><?php esc_html_e( 'Everything from the source site will be imported. Your users and passwords, site address, and the themes and plugins already installed here are kept. Users and customer accounts from the source site are not imported. If a plugin exists on both sites, this site\'s version is used.', 'jisento' ); ?></p>
+		<p>
+			<button type="button" class="button button-primary" id="jisento-preserve-ok"><?php esc_html_e( 'OK', 'jisento' ); ?></button>
+			<button type="button" class="button jisento-close" id="jisento-preserve-cancel"><?php esc_html_e( 'Cancel', 'jisento' ); ?></button>
+		</p>
+	</div>
+</div>
 
 <div id="jisento-progress" class="jisento-panel" hidden></div>
 <div id="jisento-result" class="jisento-panel" hidden></div>

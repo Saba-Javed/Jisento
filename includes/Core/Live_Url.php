@@ -55,6 +55,7 @@ class Live_Url {
 				'active_plugins' => self::db_option( 'active_plugins' ),
 				'template'       => self::db_option( 'template' ),
 				'stylesheet'     => self::db_option( 'stylesheet' ),
+				'identity'       => self::identity_option_raws(),
 				'hostinger'      => self::hostinger_options(),
 				'released'       => false,
 			)
@@ -94,6 +95,11 @@ class Live_Url {
 			self::force_option( 'stylesheet', $pin['stylesheet'] );
 		}
 		self::attach_theme_pins( $pin );
+		if ( ! empty( $pin['identity'] ) && is_array( $pin['identity'] ) ) {
+			foreach ( $pin['identity'] as $name => $raw ) {
+				self::ensure_raw_option( (string) $name, $raw );
+			}
+		}
 		if ( ! empty( $pin['hostinger'] ) && is_array( $pin['hostinger'] ) ) {
 			foreach ( $pin['hostinger'] as $name => $raw ) {
 				self::ensure_raw_option( (string) $name, $raw );
@@ -102,13 +108,72 @@ class Live_Url {
 	}
 
 	/**
-	 * Destination-only options. A package must not turn Hostinger onboarding back on.
+	 * Destination identity and Hostinger options that must survive a Preserve import.
 	 *
 	 * @param string $name Option name.
 	 * @return bool
 	 */
 	public static function preserved_option( $name ) {
-		return is_string( $name ) && 0 === stripos( $name, 'hostinger' );
+		if ( ! is_string( $name ) || '' === $name ) {
+			return false;
+		}
+		if ( 0 === stripos( $name, 'hostinger' ) ) {
+			return true;
+		}
+		return in_array( strtolower( $name ), self::identity_option_names(), true );
+	}
+
+	/**
+	 * siteurl, home, admin_email, and auth/salt option names sometimes stored in the DB.
+	 *
+	 * @return string[]
+	 */
+	public static function identity_option_names() {
+		return array(
+			'siteurl',
+			'home',
+			'admin_email',
+			'auth_key',
+			'secure_auth_key',
+			'logged_in_key',
+			'nonce_key',
+			'auth_salt',
+			'secure_auth_salt',
+			'logged_in_salt',
+			'nonce_salt',
+		);
+	}
+
+	/**
+	 * Raw option_value rows forced back after a Preserve swap (admin_email and DB-stored salts).
+	 * home/siteurl stay on the pin fields so adopt() can update them during URL replacement.
+	 *
+	 * @return array<string,string>
+	 */
+	private static function identity_option_raws() {
+		global $wpdb;
+		if ( ! isset( $wpdb ) || ! is_object( $wpdb ) ) {
+			return array();
+		}
+		$names = array(
+			'admin_email',
+			'auth_key',
+			'secure_auth_key',
+			'logged_in_key',
+			'nonce_key',
+			'auth_salt',
+			'secure_auth_salt',
+			'logged_in_salt',
+			'nonce_salt',
+		);
+		$out = array();
+		foreach ( $names as $name ) {
+			$raw = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1", $name ) );
+			if ( null !== $raw ) {
+				$out[ $name ] = (string) $raw;
+			}
+		}
+		return $out;
 	}
 
 	/**

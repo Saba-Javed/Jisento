@@ -183,6 +183,7 @@ class Jisento_Test_Wpdb {
 		$this->options  = $prefix . 'options';
 		$this->users    = $prefix . 'users';
 		$this->usermeta = $prefix . 'usermeta';
+		$this->posts    = $prefix . 'posts';
 	}
 
 	public function set_charset( $dbh, $charset = null, $collate = null ) {
