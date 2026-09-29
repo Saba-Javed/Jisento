@@ -301,6 +301,11 @@ class Importer {
 	}
 
 	private function report( $job, array $state, array $fields, array $activity ) {
+		$stage = isset( $fields['stage'] ) ? (string) $fields['stage'] : (string) $job->stage;
+		$phase = isset( $activity['phase'] ) ? (string) $activity['phase'] : '';
+		if ( '' !== $stage && '' !== $phase && $stage !== $phase ) {
+			$activity = $this->activity_for_stage( $stage );
+		}
 		$phase = isset( $activity['phase'] ) ? (string) $activity['phase'] : '';
 		$now   = microtime( true );
 		if ( '' !== $phase ) {
@@ -323,6 +328,30 @@ class Importer {
 			$fields['current_item'] = ! empty( $activity['detail'] ) ? $activity['detail'] : $activity['label'];
 		}
 		return Plugin::instance()->jobs->update( $job, $fields );
+	}
+
+	/**
+	 * Activity text for a newly entered stage (used when stage and phase diverge).
+	 *
+	 * @param string $stage Job stage.
+	 * @return array
+	 */
+	private function activity_for_stage( $stage ) {
+		$map = array(
+			'validating'          => array( __( 'Validating package', 'jisento' ), __( 'Checking the package', 'jisento' ) ),
+			'importing_database'  => array( __( 'Restoring database', 'jisento' ), __( 'Starting database restore', 'jisento' ) ),
+			'importing_files'     => array( __( 'Restoring files', 'jisento' ), __( 'Starting file restore', 'jisento' ) ),
+			'replacing_urls'      => array( __( 'Replacing URLs', 'jisento' ), __( 'Updating stored addresses', 'jisento' ) ),
+			'finalizing'          => array( __( 'Finalizing migration', 'jisento' ), __( 'Starting finalization', 'jisento' ) ),
+			'completed'           => array( __( 'Migration completed successfully', 'jisento' ), __( 'Done', 'jisento' ) ),
+		);
+		$pair = isset( $map[ $stage ] ) ? $map[ $stage ] : array( $stage, $stage );
+		return array(
+			'phase'          => $stage,
+			'label'          => $pair[0],
+			'detail'         => $pair[1],
+			'stage_progress' => 0,
+		);
 	}
 
 	private static function error( $job, $operation, $reason, $recovery ) {
