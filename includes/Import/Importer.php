@@ -236,6 +236,7 @@ class Importer {
 			'restore_original_engines' => false,
 			'replace_urls'             => true,
 			'replace_guids'            => false,
+			'replace_emails'           => true,
 			'source_url'               => '',
 			'dest_url'                 => home_url(),
 			'preserve_uploads'         => true,
@@ -257,6 +258,8 @@ class Importer {
 		$options['repair_placeholders']      = ! empty( $options['repair_placeholders'] );
 		$options['restore_original_engines'] = ! empty( $options['restore_original_engines'] );
 		$options['replace_guids']            = ! empty( $options['replace_guids'] );
+		$options['replace_emails']           = ! empty( $options['replace_emails'] );
+		$options['replace_urls']             = ! empty( $options['replace_urls'] );
 		return $options;
 	}
 
@@ -1173,8 +1176,9 @@ class Importer {
 			max( 1, Step_Budget::seconds( 8 ) ),
 			$prior,
 			array(
-				'only_tables'   => isset( $state['plan']['restore'] ) ? $state['plan']['restore'] : array(),
-				'replace_guids' => ! empty( $state['options']['replace_guids'] ),
+				'only_tables'    => isset( $state['plan']['restore'] ) ? $state['plan']['restore'] : array(),
+				'replace_guids'  => ! empty( $state['options']['replace_guids'] ),
+				'replace_emails' => ! isset( $state['options']['replace_emails'] ) || ! empty( $state['options']['replace_emails'] ),
 			)
 		);
 		$state['url_state'] = $result;
@@ -1186,6 +1190,9 @@ class Importer {
 			Live_Url::adopt( $dest );
 			Live_Url::hold();
 			$note = 'URL replacement: ' . (int) $result['updated'] . ' row(s) updated.';
+			if ( ! empty( $result['emails_updated'] ) ) {
+				$note .= ' Email addresses updated: ' . (int) $result['emails_updated'] . '.';
+			}
 			if ( ! empty( $result['skipped_values'] ) ) {
 				$note .= ' ' . (int) $result['skipped_values'] . ' value(s) left unchanged because they could not be rewritten safely (unknown serialized data).';
 			}

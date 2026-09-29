@@ -39,6 +39,7 @@ check('debug log route is present', /jobRoute\(id, 'log'\)|'\/log'/.test(source)
 check('users_replaced shows the source login hint', source.indexOf("Log in with the SOURCE site's username and password.") !== -1);
 check('validation card says format marker, not signature', /Format marker/.test(source) && !/' signature</.test(source));
 check('import sends replace_tables and replace_guids', /replace_tables/.test(source) && /replace_guids/.test(source));
+check('import sends replace_emails (default on)', /replace_emails/.test(source));
 check('HTTP 409 on job creation is handled', /status === 409/.test(source));
 check('esc() helper removed', !/function esc\(/.test(source));
 check('server worker polls every 2s', /await wait\(2000\)/.test(source));

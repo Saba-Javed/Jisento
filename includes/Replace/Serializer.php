@@ -317,7 +317,7 @@ class Serializer {
 		return array_values( array_unique( array_filter( $variants ) ) );
 	}
 
-	public static function build_replacements( $source_url, $dest_url ) {
+	public static function build_replacements( $source_url, $dest_url, $replace_emails = true ) {
 		$source_url = untrailingslashit( $source_url );
 		$dest_url   = untrailingslashit( $dest_url );
 		$map        = array();
@@ -331,6 +331,12 @@ class Serializer {
 			$map[ str_replace( '/', '\\/', $source ) ] = $escaped;
 		}
 
+		if ( $replace_emails ) {
+			foreach ( self::email_forms( $source_url, $dest_url ) as $from => $to ) {
+				$map[ $from ] = $to;
+			}
+		}
+
 		uksort(
 			$map,
 			static function ( $a, $b ) {
@@ -339,6 +345,32 @@ class Serializer {
 		);
 
 		return $map;
+	}
+
+	/**
+	 * @-host forms for email addresses on the source domain.
+	 *
+	 * @param string $source_url Source site URL.
+	 * @param string $dest_url   Destination site URL.
+	 * @return array<string,string>
+	 */
+	public static function email_forms( $source_url, $dest_url ) {
+		$src = wp_parse_url( untrailingslashit( (string) $source_url ) );
+		$dst = wp_parse_url( untrailingslashit( (string) $dest_url ) );
+		if ( empty( $src['host'] ) || empty( $dst['host'] ) ) {
+			return array();
+		}
+		$src_hosts = array( $src['host'] );
+		if ( 0 === strpos( $src['host'], 'www.' ) ) {
+			$src_hosts[] = substr( $src['host'], 4 );
+		} else {
+			$src_hosts[] = 'www.' . $src['host'];
+		}
+		$out = array();
+		foreach ( array_unique( $src_hosts ) as $host ) {
+			$out[ '@' . $host ] = '@' . $dst['host'];
+		}
+		return $out;
 	}
 
 	/**

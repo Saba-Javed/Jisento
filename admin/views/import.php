@@ -77,6 +77,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	<label><?php esc_html_e( 'Destination', 'jisento' ); ?> <input type="url" id="jisento-dest-url" class="regular-text" value="<?php echo esc_attr( home_url() ); ?>"></label>
 	<label><input type="checkbox" id="jisento-replace-urls" checked> <?php esc_html_e( 'Replace source URLs with destination URLs', 'jisento' ); ?></label>
 	<label><input type="checkbox" id="jisento-replace-guids"> <?php esc_html_e( 'Also replace post GUIDs (not recommended; feed readers use them as permanent IDs)', 'jisento' ); ?></label>
+	<label><input type="checkbox" id="jisento-replace-emails" checked> <?php esc_html_e( 'Replace email addresses on the source domain (e.g. wordpress@old.example → wordpress@new.example)', 'jisento' ); ?></label>
 	<h3><?php esc_html_e( 'Advanced', 'jisento' ); ?></h3>
 	<label><input type="checkbox" id="jisento-repair-placeholders"> <?php esc_html_e( 'Repair % characters in packages made by version 1.2.11 or older (only if the import reports placeholder tokens)', 'jisento' ); ?></label>
 	<label><input type="checkbox" id="jisento-restore-engines"> <?php esc_html_e( 'Convert MyISAM/Aria tables back to their original engine after the restore', 'jisento' ); ?></label>

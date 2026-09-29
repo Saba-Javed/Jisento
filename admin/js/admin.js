@@ -1098,6 +1098,8 @@
 				if (replaceGuids) {
 					options.replace_guids = !!replaceGuids.checked;
 				}
+				const replaceEmails = $('#jisento-replace-emails');
+				options.replace_emails = replaceEmails ? !!replaceEmails.checked : true;
 				const repair = $('#jisento-repair-placeholders');
 				options.repair_placeholders = !!(repair && repair.checked);
 				const engines = $('#jisento-restore-engines');

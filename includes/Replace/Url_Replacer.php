@@ -35,28 +35,36 @@ class Url_Replacer {
 	 * @param string $dest_url    Destination site URL.
 	 * @param int    $time_budget Seconds to work before returning a resumable state (at least one batch always runs).
 	 * @param array  $state       State returned by a previous call, or empty to start.
-	 * @param array  $options     only_tables (string[] full table names) and replace_guids (bool); also read from $state. Only used when the table list is first built.
-	 * @return array done, updated, tables, index, table, offset, cursor, skipped_tables, skipped_values.
+	 * @param array  $options     only_tables (string[]), replace_guids (bool), replace_emails (bool, default true); also read from $state.
+	 * @return array done, updated, tables, index, table, offset, cursor, skipped_tables, skipped_values, emails_updated.
 	 * @throws \RuntimeException When a query fails.
 	 */
 	public function replace_all( $source_url, $dest_url, $time_budget = 8, $state = array(), array $options = array() ) {
 		$state   = is_array( $state ) ? $state : array();
 		$options = array_merge(
 			array(
-				'only_tables'   => isset( $state['only_tables'] ) ? $state['only_tables'] : null,
-				'replace_guids' => ! empty( $state['replace_guids'] ),
+				'only_tables'    => isset( $state['only_tables'] ) ? $state['only_tables'] : null,
+				'replace_guids'  => ! empty( $state['replace_guids'] ),
+				'replace_emails' => array_key_exists( 'replace_emails', $state ) ? ! empty( $state['replace_emails'] ) : true,
 			),
 			$options
 		);
+		if ( ! array_key_exists( 'replace_emails', $options ) ) {
+			$options['replace_emails'] = true;
+		} else {
+			$options['replace_emails'] = ! empty( $options['replace_emails'] );
+		}
 
 		$updated        = isset( $state['updated'] ) ? (int) $state['updated'] : 0;
 		$skipped_values = isset( $state['skipped_values'] ) ? (int) $state['skipped_values'] : 0;
+		$emails_updated = isset( $state['emails_updated'] ) ? (int) $state['emails_updated'] : 0;
 		$skipped_tables = ( isset( $state['skipped_tables'] ) && is_array( $state['skipped_tables'] ) ) ? $state['skipped_tables'] : array();
 
-		$replacements = Serializer::build_replacements( $source_url, $dest_url );
+		$replacements = Serializer::build_replacements( $source_url, $dest_url, $options['replace_emails'] );
+		$email_from   = $options['replace_emails'] ? array_keys( Serializer::email_forms( $source_url, $dest_url ) ) : array();
 		if ( empty( $replacements ) ) {
 			$tables = ( isset( $state['tables'] ) && is_array( $state['tables'] ) ) ? $state['tables'] : array();
-			return $this->state( true, $updated, $tables, count( $tables ), null, $skipped_tables, $skipped_values );
+			return $this->state( true, $updated, $tables, count( $tables ), null, $skipped_tables, $skipped_values, $emails_updated );
 		}
 
 		if ( isset( $state['tables'] ) && is_array( $state['tables'] ) ) {
@@ -74,7 +82,7 @@ class Url_Replacer {
 		while ( $index < $count ) {
 			if ( $batches > 0 && ( time() - $start ) >= $time_budget ) {
 				$skipped_values += $this->serializer->skipped_count() - $baseline;
-				return $this->state( false, $updated, $tables, $index, $cursor, $skipped_tables, $skipped_values );
+				return $this->state( false, $updated, $tables, $index, $cursor, $skipped_tables, $skipped_values, $emails_updated );
 			}
 
 			$table = $tables[ $index ];
@@ -87,7 +95,9 @@ class Url_Replacer {
 			$rows = $this->fetch_batch( $table, $cursor );
 			$batches++;
 			foreach ( $rows as $row ) {
-				$updated += $this->replace_row( $table, $row, $replacements );
+				$result          = $this->replace_row( $table, $row, $replacements, $email_from );
+				$updated        += $result['updated'];
+				$emails_updated += $result['emails'];
 			}
 
 			if ( count( $rows ) < $this->batch_size ) {
@@ -98,11 +108,10 @@ class Url_Replacer {
 			}
 		}
 
+		$skipped_values += $this->serializer->skipped_count() - $baseline;
 		update_option( 'siteurl', $dest_url );
 		update_option( 'home', $dest_url );
-
-		$skipped_values += $this->serializer->skipped_count() - $baseline;
-		return $this->state( true, $updated, $tables, $index, null, $skipped_tables, $skipped_values );
+		return $this->state( true, $updated, $tables, $index, null, $skipped_tables, $skipped_values, $emails_updated );
 	}
 
 	/**
@@ -159,7 +168,7 @@ class Url_Replacer {
 		return $out;
 	}
 
-	private function state( $done, $updated, array $tables, $index, $cursor, array $skipped_tables, $skipped_values ) {
+	private function state( $done, $updated, array $tables, $index, $cursor, array $skipped_tables, $skipped_values, $emails_updated = 0 ) {
 		return array(
 			'done'           => (bool) $done,
 			'updated'        => (int) $updated,
@@ -170,6 +179,7 @@ class Url_Replacer {
 			'cursor'         => $cursor,
 			'skipped_tables' => $skipped_tables,
 			'skipped_values' => (int) $skipped_values,
+			'emails_updated' => (int) $emails_updated,
 		);
 	}
 
@@ -215,23 +225,31 @@ class Url_Replacer {
 		return $rows;
 	}
 
-	private function replace_row( array $table, array $row, array $replacements ) {
+	private function replace_row( array $table, array $row, array $replacements, array $email_from = array() ) {
 		global $wpdb;
 
-		$set  = array();
-		$args = array();
+		$set    = array();
+		$args   = array();
+		$emails = 0;
 		foreach ( $table['columns'] as $column ) {
 			if ( ! isset( $row[ $column ] ) || '' === $row[ $column ] ) {
 				continue;
 			}
-			$new = $this->serializer->replace( $row[ $column ], $replacements );
-			if ( $new !== $row[ $column ] ) {
+			$before = (string) $row[ $column ];
+			$new    = $this->serializer->replace( $before, $replacements );
+			if ( $new !== $before ) {
 				$set[]  = $this->ident( $column ) . ' = %s';
 				$args[] = $new;
+				foreach ( $email_from as $from ) {
+					$emails += max( 0, substr_count( $before, $from ) - substr_count( $new, $from ) );
+				}
 			}
 		}
 		if ( ! $set ) {
-			return 0;
+			return array(
+				'updated' => 0,
+				'emails'  => 0,
+			);
 		}
 
 		$where = array();
@@ -252,7 +270,10 @@ class Url_Replacer {
 			throw new \RuntimeException( 'URL replacement failed updating table ' . $table['name'] . ' (key: ' . implode( ', ', $table['key'] ) . '): ' . $wpdb->last_error );
 		}
 
-		return ( (int) $result > 0 ) ? 1 : 0;
+		return array(
+			'updated' => ( (int) $result > 0 ) ? 1 : 0,
+			'emails'  => $emails,
+		);
 	}
 
 	private function encode_cursor( array $table, array $row ) {

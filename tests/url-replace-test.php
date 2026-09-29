@@ -103,6 +103,32 @@ $ser_got    = @unserialize( $s->replace( $ser_period, $hmap ) );
 check( 'serialized sentence-ending period is replaced', is_array( $ser_got ) && 'Site: https://new.example.</p>' === $ser_got['p'], is_array( $ser_got ) ? $ser_got['p'] : 'fail' );
 $json_period = '{"u":"https:\\/\\/old.example."}';
 check( 'JSON sentence-ending period is replaced', '{"u":"https:\\/\\/new.example."}' === $s->replace( $json_period, $hmap ), $s->replace( $json_period, $hmap ) );
+
+// Email addresses on the source host.
+$emap = Serializer::build_replacements( 'https://old.example', 'https://new.example', true );
+check( 'email @-host form is in the replacement map', isset( $emap['@old.example'] ) && '@new.example' === $emap['@old.example'] );
+check( 'plain email on the source host is replaced', 'wordpress@new.example' === $s->replace( 'wordpress@old.example', $emap ) );
+check( 'user@old.example.au stays unchanged', 'user@old.example.au' === $s->replace( 'user@old.example.au', $emap ) );
+check( 'bare host without @ or scheme is not replaced', 'Contact old.example for help' === $s->replace( 'Contact old.example for help', $emap ) );
+$cf7 = serialize(
+	array(
+		'subject' => 'WordPress',
+		'sender'  => 'wordpress@old.example',
+		'body'    => 'From: [your-email]',
+		'recipient' => 'admin@old.example',
+	)
+);
+$cf7_got = @unserialize( $s->replace( $cf7, $emap ) );
+check(
+	'serialized CF7 _mail emails are replaced',
+	is_array( $cf7_got ) && 'wordpress@new.example' === $cf7_got['sender'] && 'admin@new.example' === $cf7_got['recipient'],
+	is_array( $cf7_got ) ? json_encode( $cf7_got ) : 'fail'
+);
+$ej = '{"from":"wordpress@old.example"}';
+check( 'JSON email on the source host is replaced', '{"from":"wordpress@new.example"}' === $s->replace( $ej, $emap ) );
+$no_mail = Serializer::build_replacements( 'https://old.example', 'https://new.example', false );
+check( 'replace_emails off omits @-host forms', ! isset( $no_mail['@old.example'] ) && isset( $no_mail['https://old.example'] ) );
+
 check( 'host form keeps following path and port', 'https://new.example/p https://new.example:8080/q https://new.example' === $s->replace( 'http://www.old.example/p https://old.example:8080/q https://old.example', $hmap ) );
 check( '/blog does not match /blogger', 'https://old.example/blogger' === $s->replace( 'https://old.example/blogger', $map ), $s->replace( 'https://old.example/blogger', $map ) );
 check( '/blog does not match /blog_x or /blog-x', 'https://old.example/blog_x https://old.example/blog-x' === $s->replace( 'https://old.example/blog_x https://old.example/blog-x', $map ) );
@@ -451,7 +477,7 @@ check( 'other install and plugin job tables are untouched', 'https://old.example
 $expected_updated = 3 + 1 + 5 + 1 + 1 + 3;
 check( 'updated counts only rows actually affected', isset( $st['updated'] ) && $expected_updated === (int) $st['updated'], 'got ' . ( isset( $st['updated'] ) ? $st['updated'] : 'none' ) . ", want $expected_updated" );
 check( 'skipped_values counts serialized values left unchanged', isset( $st['skipped_values'] ) && 1 === (int) $st['skipped_values'] && false !== strpos( $db->row( 'wp_options', 'option_value', 'option_id', 5 ), 'E:7:"Foo:Bar"' ) && false !== strpos( $db->row( 'wp_options', 'option_value', 'option_id', 5 ), 'old.example' ) );
-check( 'return shape keeps legacy and new keys', ! array_diff( array( 'done', 'updated', 'tables', 'index', 'table', 'offset', 'cursor', 'skipped_tables', 'skipped_values' ), array_keys( $st ) ), implode( ',', array_keys( $st ) ) );
+check( 'return shape keeps legacy and new keys', ! array_diff( array( 'done', 'updated', 'tables', 'index', 'table', 'offset', 'cursor', 'skipped_tables', 'skipped_values', 'emails_updated' ), array_keys( $st ) ), implode( ',', array_keys( $st ) ) );
 check( 'siteurl and home are updated at the end', isset( $GLOBALS['jisento_test_options']['siteurl'], $GLOBALS['jisento_test_options']['home'] ) && 'https://new.example' === $GLOBALS['jisento_test_options']['home'] );
 
 $db  = jisento_test_db();
