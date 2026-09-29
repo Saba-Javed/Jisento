@@ -42,6 +42,7 @@ check('import sends replace_guids and confirm_preserve', /replace_guids/.test(so
 check('preserve modal text is present', /Keep this site\\?'s logins, themes and plugins/.test(source) || /confirmPreserveModal/.test(source));
 check('preserve modal OK/Cancel handlers exist', /jisento-preserve-ok/.test(source) && /jisento-preserve-cancel/.test(source));
 check('kept_versions shown on complete', /kept_versions/.test(source));
+check('completion mentions hosting cache/CDN', /hosting cache\/CDN and your browser cache/.test(source));
 check('import sends replace_emails (default on)', /replace_emails/.test(source));
 check('HTTP 409 on job creation is handled', /status === 409/.test(source));
 check('esc() helper removed', !/function esc\(/.test(source));

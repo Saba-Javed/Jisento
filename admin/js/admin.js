@@ -598,6 +598,9 @@
 			isImport && report.kept_versions
 				? el('p', { className: 'jisento-kept-versions' }, report.kept_versions)
 				: null,
+			isImport
+				? el('p', { className: 'jisento-cache-hint' }, 'If you still see old images or links, clear your hosting cache/CDN and your browser cache.')
+				: null,
 			el('p', null, 'Source: ' + (report.source || '')),
 			el('p', null, 'Destination: ' + (report.destination || jisentoAdmin.home)),
 			report.package ? el('p', null, ['Package: ', el('code', null, report.package)]) : null,

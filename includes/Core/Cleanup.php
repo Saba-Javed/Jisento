@@ -50,6 +50,73 @@ class Cleanup {
 		foreach ( $cache_dirs as $dir ) {
 			$this->empty_dir( $dir );
 		}
+
+		self::arm_litespeed_purge();
+		self::purge_hostinger();
+	}
+
+	/**
+	 * Ask the next web response to send X-LiteSpeed-Purge: * once (server/CDN cache).
+	 */
+	public static function arm_litespeed_purge() {
+		if ( function_exists( 'update_option' ) ) {
+			update_option( 'jisento_litespeed_purge', 1, false );
+		}
+	}
+
+	/**
+	 * Send X-LiteSpeed-Purge: * at most once after an import, then clear the flag.
+	 *
+	 * @return bool True when the header was sent.
+	 */
+	public static function maybe_send_litespeed_purge_header() {
+		if ( ! function_exists( 'get_option' ) || ! get_option( 'jisento_litespeed_purge' ) ) {
+			return false;
+		}
+		if ( function_exists( 'delete_option' ) ) {
+			delete_option( 'jisento_litespeed_purge' );
+		}
+		if ( headers_sent() ) {
+			return false;
+		}
+		header( 'X-LiteSpeed-Purge: *' );
+		return true;
+	}
+
+	/**
+	 * Best-effort Hostinger cache/CDN purge. Never throws.
+	 *
+	 * @return string Which path ran, or '' when Hostinger tools are absent.
+	 */
+	public static function purge_hostinger() {
+		try {
+			if ( function_exists( 'hostinger_purge_cache' ) ) {
+				hostinger_purge_cache();
+				return 'hostinger_purge_cache';
+			}
+			if ( function_exists( 'do_action' ) && function_exists( 'has_action' ) && has_action( 'hostinger_purge_all_cache' ) ) {
+				do_action( 'hostinger_purge_all_cache' );
+				return 'hostinger_purge_all_cache';
+			}
+			if ( class_exists( '\Hostinger\WpHelper\Utils' ) && method_exists( '\Hostinger\WpHelper\Utils', 'purgeCache' ) ) {
+				\Hostinger\WpHelper\Utils::purgeCache();
+				return 'Hostinger\\WpHelper\\Utils::purgeCache';
+			}
+			if ( class_exists( '\Hostinger\Cache\CacheManager' ) ) {
+				$manager = new \Hostinger\Cache\CacheManager();
+				if ( method_exists( $manager, 'purgeAll' ) ) {
+					$manager->purgeAll();
+					return 'Hostinger\\Cache\\CacheManager::purgeAll';
+				}
+				if ( method_exists( $manager, 'clear_cache' ) ) {
+					$manager->clear_cache();
+					return 'Hostinger\\Cache\\CacheManager::clear_cache';
+				}
+			}
+		} catch ( \Throwable $e ) {
+			return '';
+		}
+		return '';
 	}
 
 	public function elementor() {

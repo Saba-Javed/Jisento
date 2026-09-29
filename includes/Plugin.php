@@ -83,6 +83,7 @@ class Plugin {
 		Security\Admin_Guard::heal_open_import();
 
 		add_action( 'init', array( $this, 'on_init' ) );
+		add_action( 'send_headers', array( 'Jisento\\Migration\\Core\\Cleanup', 'maybe_send_litespeed_purge_header' ) );
 		add_filter( 'upload_mimes', array( $this, 'mimes' ) );
 		add_filter( 'cron_schedules', array( $this, 'cron_schedules' ) );
 		add_action( 'rest_api_init', array( $this, 'register_rest' ) );
