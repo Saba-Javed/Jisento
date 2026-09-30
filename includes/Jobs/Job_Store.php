@@ -170,15 +170,33 @@ class Job_Store {
 
 	public function expire_stale() {
 		global $wpdb;
-		$wpdb->query(
+		$ids = $wpdb->get_col(
 			$wpdb->prepare(
-				"UPDATE {$wpdb->prefix}jisento_jobs SET status = 'failed', error_summary = %s, updated_at = %s, version = version + 1
-				WHERE status IN ('created','preparing','running','paused') AND updated_at < DATE_SUB(%s, INTERVAL 2 DAY)",
-				__( 'Migration expired after inactivity.', 'jisento-migration' ),
-				current_time( 'mysql' ),
+				"SELECT job_id FROM {$wpdb->prefix}jisento_jobs WHERE status IN ('created','preparing','running','paused') AND updated_at < DATE_SUB(%s, INTERVAL 2 DAY)",
 				current_time( 'mysql' )
 			)
 		);
+		if ( ! is_array( $ids ) ) {
+			return;
+		}
+		foreach ( $ids as $job_id ) {
+			$job = $this->get( (string) $job_id );
+			if ( ! $job ) {
+				continue;
+			}
+			try {
+				$job = $this->update(
+					$job,
+					array(
+						'status'        => 'failed',
+						'error_summary' => __( 'Migration expired after inactivity.', 'jisento-migration' ),
+					)
+				);
+			} catch ( \Exception $e ) {
+				continue;
+			}
+			\Jisento\Migration\Jobs\Job_Runner::finish( $job );
+		}
 	}
 
 	/**

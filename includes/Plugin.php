@@ -65,6 +65,7 @@ class Plugin {
 	public static function deactivate() {
 		wp_clear_scheduled_hook( 'jisento_maintenance' );
 		wp_clear_scheduled_hook( 'jisento_job_tick' );
+		\Jisento\Migration\Core\Live_Url::remove_guard();
 		flush_rewrite_rules();
 	}
 

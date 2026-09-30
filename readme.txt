@@ -51,9 +51,22 @@ password.
 
 * wp-config.php, .htaccess, .user.ini, php.ini, web.config, .env
 * The drop-ins object-cache.php, advanced-cache.php, db.php, db-error.php and maintenance.php in wp-content
-* wp-content/jisento (packages, logs, job files) and wp-content/mu-plugins/jisento-live-url.php/.json
+* wp-content/jisento and wp-content/uploads/jisento-* (packages, logs, job files)
+  and wp-content/mu-plugins/jisento-live-url.php/.json (temporary import guard)
 * Any copy of the Jisento Migration plugin, under any folder name
 * Database views (they are listed in the export log; recreate them on the destination)
+
+== FAQ ==
+
+= Why does Jisento create a must-use plugin during import? =
+
+While a database import is running, Jisento writes a temporary must-use plugin
+(`wp-content/mu-plugins/jisento-live-url.php`). It pins this site's URL, active
+theme, and active plugins so the source database cannot take over the destination
+while tables are being swapped. The file exists only while that import job is
+running and is removed when the job completes, fails, or is cancelled, and also
+when the plugin is deactivated or uninstalled. It is safe to delete manually if
+no import is in progress.
 
 = Packages from version 1.2.11 and older =
 
