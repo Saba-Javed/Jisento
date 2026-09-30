@@ -1,4 +1,4 @@
-﻿# Plugin Check remaining findings (D6)
+# Plugin Check remaining findings (D6)
 
 ## Environment
 - WordPress latest + Plugin Check (sqlite local install on D:\jisento-pc)

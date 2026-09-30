@@ -1,4 +1,4 @@
-﻿FILE: .distignore
+FILE: .distignore
 file,line,type,code,message
 .distignore,0,ERROR,hidden_files,"Hidden files are not permitted."
 
