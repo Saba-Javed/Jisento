@@ -70,8 +70,6 @@ class Plugin {
 	}
 
 	public function boot() {
-		load_plugin_textdomain( 'jisento-migration', false, dirname( JISENTO_BASENAME ) . '/languages' );
-
 		$this->settings = new Settings();
 		$this->logger   = new Logger();
 		$this->storage  = new Local_Storage();
