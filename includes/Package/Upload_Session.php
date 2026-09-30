@@ -139,6 +139,25 @@ class Upload_Session {
 	}
 
 	/**
+	 * Delete a partial upload (part, meta, lock).
+	 *
+	 * @param string $upload_id Id.
+	 * @return true|\WP_Error
+	 */
+	public static function discard( $upload_id ) {
+		$paths = self::paths( $upload_id );
+		if ( ! $paths['id'] ) {
+			return new \WP_Error( 'jisento_upload', __( 'Upload id is missing.', 'jisento' ), array( 'status' => 400 ) );
+		}
+		foreach ( array( 'part', 'meta', 'lock' ) as $key ) {
+			if ( ! empty( $paths[ $key ] ) && file_exists( $paths[ $key ] ) ) {
+				@unlink( $paths[ $key ] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			}
+		}
+		return true;
+	}
+
+	/**
 	 * @param string $path Meta path.
 	 * @return array|null
 	 */

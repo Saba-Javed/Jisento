@@ -57,6 +57,8 @@ check('three chunk failures use the retry message', picker.failureMessage({ chun
 var pending = picker.pendingOffsets(30, 10, [[0, 10], [20, 30]]);
 check('pendingOffsets skips covered chunks and keeps the gap', pending.length === 1 && pending[0] === 10, JSON.stringify(pending));
 check('pendingOffsets is empty when fully covered', picker.pendingOffsets(20, 10, [[0, 20]]).length === 0);
+check('readPendingResume helper exported', typeof picker.readPendingResume === 'function');
+check('clearResumeForMeta helper exported', typeof picker.clearResumeForMeta === 'function');
 
 console.log(failed ? '\n' + failed + ' failed' : '\nFile picker checks passed');
 process.exit(failed ? 1 : 0);

@@ -144,6 +144,54 @@
 		return message;
 	}
 
+	var PENDING_KEY = 'jisento-upload-pending';
+
+	function readPendingResume() {
+		try {
+			var raw = sessionStorage.getItem(PENDING_KEY);
+			if (!raw) {
+				return null;
+			}
+			var meta = JSON.parse(raw);
+			if (!meta || !meta.upload_id || !meta.name || !meta.size) {
+				return null;
+			}
+			return meta;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function writePendingResume(meta) {
+		try {
+			sessionStorage.setItem(PENDING_KEY, JSON.stringify({
+				upload_id: meta.upload_id,
+				name: meta.name,
+				size: Number(meta.size) || 0,
+				received: Number(meta.received) || 0
+			}));
+		} catch (e) {}
+	}
+
+	function clearPendingResume() {
+		try {
+			sessionStorage.removeItem(PENDING_KEY);
+		} catch (e) {}
+	}
+
+	function clearResumeForMeta(meta) {
+		if (!meta) {
+			clearPendingResume();
+			return;
+		}
+		try {
+			if (meta.name && meta.size != null) {
+				sessionStorage.removeItem('jisento-upload:' + meta.name + ':' + meta.size);
+			}
+		} catch (e) {}
+		clearPendingResume();
+	}
+
 	function resumeKeyFor(file) {
 		return 'jisento-upload:' + file.name + ':' + file.size;
 	}
@@ -160,12 +208,22 @@
 		try {
 			sessionStorage.setItem(resumeKeyFor(file), id);
 		} catch (e) {}
+		writePendingResume({
+			upload_id: id,
+			name: file.name,
+			size: file.size,
+			received: 0
+		});
 	}
 
 	function clearResumeId(file) {
 		try {
 			sessionStorage.removeItem(resumeKeyFor(file));
 		} catch (e) {}
+		var pending = readPendingResume();
+		if (pending && file && pending.name === file.name && Number(pending.size) === Number(file.size)) {
+			clearPendingResume();
+		}
 	}
 
 	function hexFromBuffer(buf) {
@@ -230,6 +288,16 @@
 		var generation = 0;
 		var chunkSizeRemembered = 0;
 		var onFileChosen = options.onFileChosen || function () {};
+		var onResumeBanner = options.onResumeBanner || function () {};
+		var confirmDiscardOther = options.confirmDiscardOther || function (pending) {
+			return window.confirm(
+				'An upload of ' + (pending && pending.name ? pending.name : 'another file') +
+				' was interrupted. Discard it and upload this file instead?'
+			);
+		};
+		var discardUpload = options.discardUpload || function () {
+			return Promise.resolve();
+		};
 
 		function paint() {
 			var file = state.file;
@@ -250,7 +318,11 @@
 			if (status) {
 				status.classList.toggle('is-error', !!state.error);
 				if (state.phase === 'uploading') {
-					status.textContent = 'Uploading... ' + percent(state.received, state.total) + '%';
+					if (state.resuming) {
+						status.textContent = 'Resuming from ' + formatBytes(state.received) + '…';
+					} else {
+						status.textContent = 'Uploading... ' + percent(state.received, state.total) + '%';
+					}
 				} else if (state.phase === 'complete' || state.phase === 'ready') {
 					status.textContent = 'Upload complete';
 				} else if (state.phase === 'validating') {
@@ -355,7 +427,17 @@
 			var ranges = init.ranges || [];
 			var received = Number(init.received) || 0;
 			state = withProgress(state, received, file.size);
+			state.resuming = received > 0;
+			writePendingResume({
+				upload_id: init.upload_id,
+				name: file.name,
+				size: file.size,
+				received: received
+			});
 			paint();
+			if (received > 0) {
+				onResumeBanner(readPendingResume());
+			}
 
 			var queue = pendingOffsets(file.size, chunkSize, ranges);
 			var cursor = 0;
@@ -385,6 +467,13 @@
 									var next = confirmedReceived(result, state.received);
 									if (next != null) {
 										state = withProgress(state, next, Number(result.size) || file.size);
+										state.resuming = false;
+										writePendingResume({
+											upload_id: init.upload_id,
+											name: file.name,
+											size: file.size,
+											received: next
+										});
 										paint();
 									}
 									if (result.chunk) {
@@ -432,16 +521,48 @@
 				return null;
 			}
 			clearResumeId(file);
+			clearPendingResume();
+			onResumeBanner(null);
 			return done;
 		}
 
 		function applyChosenFile(file) {
+			var pending = readPendingResume();
+			if (file && pending && (pending.name !== file.name || Number(pending.size) !== Number(file.size))) {
+				if (!confirmDiscardOther(pending)) {
+					if (input) {
+						input.value = '';
+					}
+					return;
+				}
+				discardUpload(pending).catch(function () {}).then(function () {
+					clearPendingResume();
+					if (pending.upload_id) {
+						try {
+							sessionStorage.removeItem('jisento-upload:' + pending.name + ':' + pending.size);
+						} catch (e) {}
+					}
+					onResumeBanner(null);
+					finishApply(file);
+				});
+				return;
+			}
+			finishApply(file);
+		}
+
+		function finishApply(file) {
 			generation += 1;
 			onReset();
 			state = selectFile(file);
 			if (file && readResumeId(file)) {
 				state.resumable = true;
 				state.message = UPLOAD_INTERRUPTED;
+				var pending = readPendingResume();
+				if (pending && pending.name === file.name) {
+					state.received = Number(pending.received) || 0;
+					state.message = 'Resuming from ' + formatBytes(state.received) + '…';
+					state.error = false;
+				}
 			}
 			onFileChosen(state);
 			paint();
@@ -541,6 +662,7 @@
 		}
 
 		paint();
+		onResumeBanner(readPendingResume());
 	}
 
 	return {
@@ -551,6 +673,10 @@
 		confirmedReceived: confirmedReceived,
 		failureMessage: failureMessage,
 		pendingOffsets: pendingOffsets,
+		readPendingResume: readPendingResume,
+		writePendingResume: writePendingResume,
+		clearPendingResume: clearPendingResume,
+		clearResumeForMeta: clearResumeForMeta,
 		mount: mount,
 		messages: {
 			noFile: NO_FILE,

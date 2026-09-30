@@ -28,6 +28,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 <section class="jisento-wizard-panel" id="jisento-wizard-step-1" data-wizard-step="1">
 	<h2><?php esc_html_e( 'Choose a package', 'jisento' ); ?></h2>
+	<div id="jisento-upload-resume" class="notice notice-warning inline jisento-upload-resume" hidden>
+		<p id="jisento-upload-resume-text"></p>
+		<p>
+			<button type="button" class="button" id="jisento-upload-discard"><?php esc_html_e( 'Discard', 'jisento' ); ?></button>
+		</p>
+	</div>
 	<div class="jisento-grid jisento-package-grid">
 		<div class="jisento-card">
 			<h3><?php esc_html_e( 'Upload a .jisento file', 'jisento' ); ?></h3>

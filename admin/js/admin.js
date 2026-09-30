@@ -1304,14 +1304,69 @@
 	}
 
 	function bindImport() {
+		function paintResumeBanner(meta) {
+			const banner = $('#jisento-upload-resume');
+			const text = $('#jisento-upload-resume-text');
+			if (!banner || !text) {
+				return;
+			}
+			if (!meta || !meta.upload_id) {
+				hide(banner);
+				text.textContent = '';
+				return;
+			}
+			text.textContent =
+				'An upload was interrupted at ' +
+				bytes(meta.received || 0) +
+				' / ' +
+				bytes(meta.size || 0) +
+				' (' +
+				(meta.name || 'package.jisento') +
+				'). Select the same file to continue.';
+			show(banner);
+		}
+
+		async function discardPendingUpload(meta) {
+			if (!meta || !meta.upload_id) {
+				if (window.JisentoFilePicker && window.JisentoFilePicker.clearPendingResume) {
+					window.JisentoFilePicker.clearPendingResume();
+				}
+				paintResumeBanner(null);
+				return;
+			}
+			try {
+				await api.req('upload/discard', { method: 'POST', body: { upload_id: meta.upload_id } });
+			} catch (err) {
+				// Still clear local resume markers if the server already cleaned up.
+			}
+			if (window.JisentoFilePicker && window.JisentoFilePicker.clearResumeForMeta) {
+				window.JisentoFilePicker.clearResumeForMeta(meta);
+			} else if (window.JisentoFilePicker && window.JisentoFilePicker.clearPendingResume) {
+				window.JisentoFilePicker.clearPendingResume();
+			}
+			paintResumeBanner(null);
+		}
+
 		if (window.JisentoFilePicker && $('#jisento-file-picker')) {
 			window.JisentoFilePicker.mount($('#jisento-file-picker'), {
 				request: api.req.bind(api),
 				formatBytes: bytes,
 				onReset: resetImportChoices,
 				onUploaded: function (done) {
+					paintResumeBanner(null);
 					return showValidatedPackage(done.package, done.manifest);
-				}
+				},
+				onResumeBanner: paintResumeBanner,
+				discardUpload: discardPendingUpload
+			});
+		}
+		const discardBtn = $('#jisento-upload-discard');
+		if (discardBtn) {
+			discardBtn.addEventListener('click', function () {
+				const meta = window.JisentoFilePicker && window.JisentoFilePicker.readPendingResume
+					? window.JisentoFilePicker.readPendingResume()
+					: null;
+				discardPendingUpload(meta).catch(function () {});
 			});
 		}
 		document.querySelectorAll('[data-wizard-goto]').forEach(function (btn) {

@@ -300,6 +300,15 @@ class Rest_Controller {
 		);
 		register_rest_route(
 			self::NS,
+			'/upload/discard',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'upload_discard' ),
+				'permission_callback' => array( $this, 'admin_permission' ),
+			)
+		);
+		register_rest_route(
+			self::NS,
 			'/packages/validate',
 			array(
 				'methods'             => 'POST',
@@ -1309,6 +1318,18 @@ class Rest_Controller {
 				);
 			}
 		);
+	}
+
+	public function upload_discard( \WP_REST_Request $request ) {
+		$upload_id = preg_replace( '/[^a-zA-Z0-9_]/', '', (string) $request->get_param( 'upload_id' ) );
+		if ( ! $upload_id ) {
+			return new \WP_Error( 'jisento_upload', __( 'Upload id is missing.', 'jisento' ), array( 'status' => 400 ) );
+		}
+		$deleted = Upload_Session::discard( $upload_id );
+		if ( is_wp_error( $deleted ) ) {
+			return $deleted;
+		}
+		return rest_ensure_response( array( 'discarded' => true, 'upload_id' => $upload_id ) );
 	}
 
 	public function validate_package( \WP_REST_Request $request ) {
