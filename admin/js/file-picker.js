@@ -219,6 +219,7 @@
 		var onUploaded = options.onUploaded || function () {};
 		var input = rootEl.querySelector('input[type="file"]');
 		var button = rootEl.querySelector('[data-jisento-upload]');
+		var chooseBtn = rootEl.querySelector('[data-jisento-choose]');
 		var selected = rootEl.querySelector('[data-jisento-selected]');
 		var selectedName = rootEl.querySelector('[data-jisento-name]');
 		var selectedSize = rootEl.querySelector('[data-jisento-size]');
@@ -228,6 +229,7 @@
 		var state = createState();
 		var generation = 0;
 		var chunkSizeRemembered = 0;
+		var onFileChosen = options.onFileChosen || function () {};
 
 		function paint() {
 			var file = state.file;
@@ -433,16 +435,58 @@
 			return done;
 		}
 
-		input.addEventListener('change', function () {
+		function applyChosenFile(file) {
 			generation += 1;
 			onReset();
-			var file = input.files && input.files[0] ? input.files[0] : null;
 			state = selectFile(file);
 			if (file && readResumeId(file)) {
 				state.resumable = true;
 				state.message = UPLOAD_INTERRUPTED;
 			}
+			onFileChosen(state);
 			paint();
+		}
+
+		if (chooseBtn && input) {
+			chooseBtn.addEventListener('click', function (event) {
+				event.preventDefault();
+				input.click();
+			});
+		}
+
+		['dragenter', 'dragover'].forEach(function (evt) {
+			rootEl.addEventListener(evt, function (event) {
+				event.preventDefault();
+				event.stopPropagation();
+				rootEl.classList.add('is-dragover');
+			});
+		});
+		['dragleave', 'drop'].forEach(function (evt) {
+			rootEl.addEventListener(evt, function (event) {
+				event.preventDefault();
+				event.stopPropagation();
+				rootEl.classList.remove('is-dragover');
+			});
+		});
+		rootEl.addEventListener('drop', function (event) {
+			var files = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files : null;
+			var file = files && files[0] ? files[0] : null;
+			if (!file) {
+				return;
+			}
+			if (input) {
+				try {
+					var dt = new DataTransfer();
+					dt.items.add(file);
+					input.files = dt.files;
+				} catch (e) {}
+			}
+			applyChosenFile(file);
+		});
+
+		input.addEventListener('change', function () {
+			var file = input.files && input.files[0] ? input.files[0] : null;
+			applyChosenFile(file);
 		});
 
 		button.addEventListener('click', function (event) {

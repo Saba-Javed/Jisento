@@ -40,10 +40,15 @@ check('users_replaced shows the source login hint', /Migration complete\. Log in
 check('login button uses jisentoAdmin.loginUrl', /jisentoAdmin\.loginUrl/.test(source));
 check('auth-check suppressed while job runs', /suppressAuthCheck/.test(source) && /wp-auth-check-wrap/.test(source));
 check('completed import restored after re-login', /jisento-completed-import/.test(source) && /showStoredCompletedImport/.test(source));
-check('validation card says format marker, not signature', /Format marker/.test(source) && !/' signature</.test(source));
+check('import wizard shows uploaded and verified summary', /uploaded and verified/.test(source));
+check('import wizard advances with setWizardStep', /function setWizardStep/.test(source) && /unlockWizardStep/.test(source));
 check('import sends replace_guids and confirm_preserve', /replace_guids/.test(source) && /confirm_preserve/.test(source));
+check('import sends replace_paths', /replace_paths/.test(source));
 check('preserve modal text is present', /Keep this site\\?'s logins, themes and plugins/.test(source) || /confirmPreserveModal/.test(source));
 check('preserve modal OK/Cancel handlers exist', /jisento-preserve-ok/.test(source) && /jisento-preserve-cancel/.test(source));
+check('no format marker jargon in UI copy', !/Format marker/.test(source));
+check('Start migration button id kept', /jisento-start-import/.test(source));
+check('Replace backup confirmation gates start', /I have a backup|confirmReplace|jisento-confirm-replace/.test(source));
 check('kept_versions shown on complete', /kept_versions/.test(source));
 check('completion mentions hosting cache/CDN', /hosting cache\/CDN and your browser cache/.test(source));
 check('import sends replace_emails (default on)', /replace_emails/.test(source));

@@ -284,6 +284,9 @@
 	let paused = false;
 	let runGeneration = 0;
 	let uploadedPackage = '';
+	let packageManifest = null;
+	let preserveConfirmed = false;
+	let wizardMaxStep = 1;
 	let remoteSession = null;
 
 	function $(sel) {
@@ -992,63 +995,178 @@
 		return checked ? checked.value : '';
 	}
 
-	function toggleModeUi() {
-		const mode = destMode();
-		hide($('#jisento-replace-warning'));
-		hide($('#jisento-preserve-options'));
-		hide($('#jisento-url-options'));
-		if (mode === 'replace') {
-			show($('#jisento-replace-warning'));
-			show($('#jisento-url-options'));
-		} else if (mode === 'preserve') {
-			show($('#jisento-preserve-options'));
-			show($('#jisento-url-options'));
+	function scrollToStep(step) {
+		const panel = $('#jisento-wizard-step-' + step);
+		if (panel && typeof panel.scrollIntoView === 'function') {
+			panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 		}
+	}
+
+	function setWizardStep(step, opts) {
+		opts = opts || {};
+		const target = Math.max(1, Math.min(3, Number(step) || 1));
+		if (target > wizardMaxStep) {
+			return;
+		}
+		[1, 2, 3].forEach(function (n) {
+			const panel = $('#jisento-wizard-step-' + n);
+			if (!panel) {
+				return;
+			}
+			if (n === target) {
+				show(panel);
+			} else {
+				hide(panel);
+			}
+		});
+		document.querySelectorAll('[data-wizard-goto]').forEach(function (btn) {
+			const n = Number(btn.getAttribute('data-wizard-goto')) || 0;
+			btn.disabled = n > wizardMaxStep;
+			btn.classList.toggle('is-current', n === target);
+			btn.classList.toggle('is-done', n < target && n <= wizardMaxStep);
+			if (n === target) {
+				btn.setAttribute('aria-current', 'step');
+			} else {
+				btn.removeAttribute('aria-current');
+			}
+		});
+		if (opts.scroll) {
+			scrollToStep(target);
+		}
+	}
+
+	function unlockWizardStep(step) {
+		wizardMaxStep = Math.max(wizardMaxStep, step);
+		document.querySelectorAll('[data-wizard-goto]').forEach(function (btn) {
+			const n = Number(btn.getAttribute('data-wizard-goto')) || 0;
+			btn.disabled = n > wizardMaxStep;
+		});
+	}
+
+	function packageSizeBytes(manifest) {
+		const info = manifest || {};
+		if (info.package_size > 0) {
+			return Number(info.package_size);
+		}
+		return (Number(info.database_size) || 0) + (Number(info.files_size) || 0);
+	}
+
+	function formatPackageSummary(manifest) {
+		const size = packageSizeBytes(manifest);
+		if (size > 0) {
+			return bytes(size) + ' uploaded and verified';
+		}
+		return 'Package uploaded and verified';
+	}
+
+	function updateReviewPanel() {
+		const info = packageManifest || {};
+		const fromEl = $('#jisento-review-from');
+		const toEl = $('#jisento-review-to');
+		const sizeEl = $('#jisento-review-size');
+		const linksEl = $('#jisento-review-links');
+		const warn = $('#jisento-review-warning');
+		const sourceUrl = $('#jisento-source-url');
+		const destUrl = $('#jisento-dest-url');
+		const replaceUrls = $('#jisento-replace-urls');
+		const from = (sourceUrl && sourceUrl.value) || info.home_url || info.site_url || '—';
+		const to = (destUrl && destUrl.value) || (jisentoAdmin && jisentoAdmin.home) || '—';
+		if (fromEl) {
+			fromEl.textContent = from;
+		}
+		if (toEl) {
+			toEl.textContent = to;
+		}
+		if (sizeEl) {
+			const db = Number(info.database_size) || 0;
+			const files = Number(info.files_size) || 0;
+			const parts = [];
+			if (db > 0) {
+				parts.push('database ' + bytes(db));
+			}
+			if (files > 0) {
+				parts.push('files ' + bytes(files));
+			}
+			sizeEl.textContent = parts.length ? parts.join(' + ') : (packageSizeBytes(info) > 0 ? bytes(packageSizeBytes(info)) : '—');
+		}
+		if (linksEl) {
+			linksEl.textContent = replaceUrls && !replaceUrls.checked
+				? 'Links left unchanged'
+				: 'All links updated to the new address';
+		}
+		const mode = destMode();
+		if (warn) {
+			if (mode === 'replace') {
+				warn.textContent = 'Everything on this site will be replaced. You\'ll be logged out and can sign in with the source site\'s password.';
+				show(warn);
+			} else if (mode === 'preserve') {
+				warn.textContent = 'Content will be imported. Your logins, site address, themes and plugins stay.';
+				show(warn);
+			} else {
+				hide(warn);
+			}
+		}
+		updateStartEnabled();
+	}
+
+	function updateStartEnabled() {
+		const start = $('#jisento-start-import');
+		const confirmReplace = $('#jisento-confirm-replace');
+		const backupWrap = $('#jisento-backup-confirm-wrap');
+		const mode = destMode();
+		if (backupWrap) {
+			backupWrap.hidden = mode !== 'replace';
+		}
+		if (!start) {
+			return;
+		}
+		if (!uploadedPackage || !mode) {
+			start.disabled = true;
+			return;
+		}
+		if (mode === 'replace') {
+			start.disabled = !(confirmReplace && confirmReplace.checked);
+			return;
+		}
+		if (mode === 'preserve') {
+			start.disabled = !preserveConfirmed;
+			return;
+		}
+		start.disabled = true;
+	}
+
+	function toggleModeUi() {
+		updateReviewPanel();
+	}
+
+	async function onModeSelected() {
+		const mode = destMode();
+		if (!mode) {
+			return;
+		}
+		if (mode === 'preserve') {
+			const ok = await confirmPreserveModal();
+			if (!ok) {
+				document.querySelectorAll('input[name="jisento_dest_mode"]').forEach(function (input) {
+					input.checked = false;
+				});
+				preserveConfirmed = false;
+				updateStartEnabled();
+				return;
+			}
+			preserveConfirmed = true;
+		} else {
+			preserveConfirmed = false;
+		}
+		unlockWizardStep(3);
+		updateReviewPanel();
+		setWizardStep(3, { scroll: true });
 	}
 
 	async function showValidatedPackage(pkg, manifest) {
 		uploadedPackage = pkg;
-		document.querySelectorAll('input[name="jisento_dest_mode"]').forEach(function (input) {
-			input.checked = false;
-		});
-		const box = $('#jisento-validation');
-		if (box) {
-			show(box);
-			const info = manifest || {};
-			const items = [
-				el('li', null, '✓ Format marker: ' + (info.format_marker || info.signature || 'JISENTO-PACKAGE-v1')),
-				el('li', null, '✓ manifest.json'),
-				el('li', null, '✓ Package version ' + (info.package_version || '1.0'))
-			];
-			if (info.database_size > 0) {
-				items.push(el('li', null, 'Database: ' + bytes(info.database_size)));
-			}
-			if (info.files_size > 0) {
-				items.push(el('li', null, 'Files: ' + bytes(info.files_size)));
-			}
-			if (info.uncompressed_size > 0) {
-				items.push(el('li', null, 'Uncompressed contents: ' + bytes(info.uncompressed_size)));
-			}
-			fill(box, [
-				el('h2', null, 'Package validated ✓'),
-				el('ul', { className: 'jisento-steps' }, items),
-				el('p', null, 'Choose how this site should handle the destination.')
-			]);
-		}
-		if ($('#jisento-source-url') && manifest && manifest.home_url) {
-			$('#jisento-source-url').value = manifest.home_url;
-		}
-		show($('#jisento-dest-mode'));
-		toggleModeUi();
-	}
-
-	function resetImportChoices() {
-		uploadedPackage = '';
-		hide($('#jisento-validation'));
-		hide($('#jisento-dest-mode'));
-		hide($('#jisento-replace-warning'));
-		hide($('#jisento-preserve-options'));
-		hide($('#jisento-url-options'));
+		packageManifest = manifest || {};
+		preserveConfirmed = false;
 		document.querySelectorAll('input[name="jisento_dest_mode"]').forEach(function (input) {
 			input.checked = false;
 		});
@@ -1056,6 +1174,38 @@
 		if (confirmReplace) {
 			confirmReplace.checked = false;
 		}
+		const summary = $('#jisento-package-summary');
+		if (summary) {
+			summary.textContent = formatPackageSummary(packageManifest);
+			show(summary);
+		}
+		if ($('#jisento-source-url') && packageManifest.home_url) {
+			$('#jisento-source-url').value = packageManifest.home_url;
+		}
+		unlockWizardStep(2);
+		updateReviewPanel();
+		setWizardStep(2, { scroll: true });
+	}
+
+	function resetImportChoices() {
+		uploadedPackage = '';
+		packageManifest = null;
+		preserveConfirmed = false;
+		wizardMaxStep = 1;
+		const summary = $('#jisento-package-summary');
+		if (summary) {
+			summary.textContent = '';
+			hide(summary);
+		}
+		document.querySelectorAll('input[name="jisento_dest_mode"]').forEach(function (input) {
+			input.checked = false;
+		});
+		const confirmReplace = $('#jisento-confirm-replace');
+		if (confirmReplace) {
+			confirmReplace.checked = false;
+		}
+		updateStartEnabled();
+		setWizardStep(1);
 	}
 
 	function bindExport() {
@@ -1164,32 +1314,54 @@
 				}
 			});
 		}
+		document.querySelectorAll('[data-wizard-goto]').forEach(function (btn) {
+			btn.addEventListener('click', function () {
+				const n = Number(btn.getAttribute('data-wizard-goto')) || 1;
+				if (n <= wizardMaxStep) {
+					setWizardStep(n, { scroll: true });
+				}
+			});
+		});
 		document.querySelectorAll('input[name="jisento_dest_mode"]').forEach(function (input) {
-			input.addEventListener('change', toggleModeUi);
+			input.addEventListener('change', function () {
+				onModeSelected().catch(function () {});
+			});
+		});
+		const confirmReplace = $('#jisento-confirm-replace');
+		if (confirmReplace) {
+			confirmReplace.addEventListener('change', updateStartEnabled);
+		}
+		['jisento-source-url', 'jisento-dest-url', 'jisento-replace-urls'].forEach(function (id) {
+			const node = $('#' + id);
+			if (node) {
+				node.addEventListener('change', updateReviewPanel);
+				node.addEventListener('input', updateReviewPanel);
+			}
 		});
 		const start = $('#jisento-start-import');
 		if (start) {
 			start.addEventListener('click', async function () {
 				const mode = destMode();
 				if (!mode) {
-					alert('Choose Replace Destination or Preserve Destination.');
+					alert('Choose how this site should be updated.');
 					return;
 				}
-				const confirmReplace = $('#jisento-confirm-replace');
-				if (mode === 'replace' && !(confirmReplace && confirmReplace.checked)) {
-					alert('Please confirm that you understand this will replace the destination site.');
+				const confirmReplaceEl = $('#jisento-confirm-replace');
+				if (mode === 'replace' && !(confirmReplaceEl && confirmReplaceEl.checked)) {
+					alert('Confirm that you have a backup of this site.');
 					return;
 				}
 				if (!uploadedPackage) {
 					alert('Select or upload a package first.');
 					return;
 				}
-				let confirmPreserve = false;
-				if (mode === 'preserve') {
+				let confirmPreserve = preserveConfirmed;
+				if (mode === 'preserve' && !confirmPreserve) {
 					confirmPreserve = await confirmPreserveModal();
 					if (!confirmPreserve) {
 						return;
 					}
+					preserveConfirmed = true;
 				}
 				const replaceUrls = $('#jisento-replace-urls');
 				const sourceUrl = $('#jisento-source-url');
@@ -1197,7 +1369,7 @@
 				const options = {
 					package: uploadedPackage,
 					destination_mode: mode,
-					confirm_replace: mode === 'replace' && !!(confirmReplace && confirmReplace.checked),
+					confirm_replace: mode === 'replace' && !!(confirmReplaceEl && confirmReplaceEl.checked),
 					confirm_preserve: mode === 'preserve' && !!confirmPreserve,
 					safety_backup: false,
 					replace_urls: replaceUrls ? replaceUrls.checked : true,
@@ -1212,6 +1384,8 @@
 				}
 				const replaceEmails = $('#jisento-replace-emails');
 				options.replace_emails = replaceEmails ? !!replaceEmails.checked : true;
+				const replacePaths = $('#jisento-replace-paths');
+				options.replace_paths = replacePaths ? !!replacePaths.checked : true;
 				const repair = $('#jisento-repair-placeholders');
 				options.repair_placeholders = !!(repair && repair.checked);
 				const engines = $('#jisento-restore-engines');
@@ -1246,6 +1420,8 @@
 				}
 			});
 		}
+		setWizardStep(1);
+		updateStartEnabled();
 	}
 
 	async function loadExistingBackups() {
