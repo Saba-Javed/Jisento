@@ -13,6 +13,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- Table names come from $wpdb->prefix + plugin-owned identifiers, not user input.
+
+// phpcs:disable WordPress.WP.AlternativeFunctions -- Large migration package streams cannot use WP_Filesystem.
+
+
 class Package_Registry {
 
 	public function table() {

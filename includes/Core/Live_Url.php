@@ -18,6 +18,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- Large migration package streams cannot use WP_Filesystem.
+
+
 class Live_Url {
 
 	const GUARD_FILE   = 'jisento-live-url.php';

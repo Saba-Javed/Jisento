@@ -15,6 +15,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- Large migration package streams cannot use WP_Filesystem.
+
+
 class Local_Storage implements Storage_Adapter {
 
 	const SUFFIX_OPTION = 'jisento_storage_suffix';

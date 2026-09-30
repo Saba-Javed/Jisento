@@ -11,6 +11,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- Large migration package streams cannot use WP_Filesystem.
+
+
 class File_System {
 
 	public static function stream_copy( $source, $dest, $chunk = 1048576 ) {

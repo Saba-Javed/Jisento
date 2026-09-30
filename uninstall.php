@@ -5,6 +5,8 @@
  * @package Jisento\Migration
  */
 
+// phpcs:disable WordPress.WP.AlternativeFunctions.unlink_unlink -- Direct unlink for mu-plugin leftovers; WP_Filesystem is unavailable during uninstall.
+
 if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 	exit;
 }

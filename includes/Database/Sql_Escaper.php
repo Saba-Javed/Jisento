@@ -15,6 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// phpcs:disable WordPress.DB.RestrictedFunctions -- Dump SQL must use mysqli escaping; $wpdb helpers corrupt % placeholders.
+
 class Sql_Escaper {
 
 	/**

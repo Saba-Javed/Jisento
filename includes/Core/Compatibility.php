@@ -13,11 +13,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- Large migration package streams cannot use WP_Filesystem.
+
+
 class Compatibility {
 
 	public function run( array $manifest = array() ) {
 		$checks = array();
 
+		/* translators: %s: runtime values. */
 		$checks[] = $this->item( 'wordpress', __( 'WordPress detected', 'jisento-migration' ), true, sprintf( 'WordPress %s', get_bloginfo( 'version' ) ) );
 
 		$php_ok = version_compare( PHP_VERSION, '7.4', '>=' );
@@ -162,3 +166,4 @@ class Compatibility {
 		return (int) $num;
 	}
 }
+

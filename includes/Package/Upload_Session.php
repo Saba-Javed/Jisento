@@ -13,6 +13,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- Large migration package streams cannot use WP_Filesystem.
+
+
 class Upload_Session {
 
 	const DEFAULT_CHUNK = 8388608;
@@ -51,7 +54,7 @@ class Upload_Session {
 			$a = (int) $r[0];
 			$b = (int) $r[1];
 			if ( $b <= $a || $a < 0 ) {
-				return new \WP_Error( 'jisento_upload_range', __( 'Upload range is invalid.', 'jisento-migration' ), array( 'status' => 400 ) );
+				return new \WP_Error( 'jisento_upload_range', esc_html__( 'Upload range is invalid.', 'jisento-migration' ), array( 'status' => 400 ) );
 			}
 			$clean[] = array( $a, $b );
 		}
@@ -70,7 +73,7 @@ class Upload_Session {
 			$last = count( $out ) - 1;
 			if ( $r[0] < $out[ $last ][1] && $r[1] > $out[ $last ][1] && $r[0] > $out[ $last ][0] ) {
 				// Partial overlap with different bounds: refuse (two writers disagreed).
-				return new \WP_Error( 'jisento_upload_range', __( 'Upload ranges overlap. Retry the upload.', 'jisento-migration' ), array( 'status' => 409 ) );
+				return new \WP_Error( 'jisento_upload_range', esc_html__( 'Upload ranges overlap. Retry the upload.', 'jisento-migration' ), array( 'status' => 409 ) );
 			}
 			if ( $r[0] <= $out[ $last ][1] ) {
 				if ( $r[1] > $out[ $last ][1] ) {
@@ -147,7 +150,7 @@ class Upload_Session {
 	public static function discard( $upload_id ) {
 		$paths = self::paths( $upload_id );
 		if ( ! $paths['id'] ) {
-			return new \WP_Error( 'jisento_upload', __( 'Upload id is missing.', 'jisento-migration' ), array( 'status' => 400 ) );
+			return new \WP_Error( 'jisento_upload', esc_html__( 'Upload id is missing.', 'jisento-migration' ), array( 'status' => 400 ) );
 		}
 		foreach ( array( 'part', 'meta', 'lock' ) as $key ) {
 			if ( ! empty( $paths[ $key ] ) && file_exists( $paths[ $key ] ) ) {
@@ -179,12 +182,12 @@ class Upload_Session {
 	public static function write_meta( $path, array $meta ) {
 		$json = wp_json_encode( $meta );
 		if ( ! is_string( $json ) ) {
-			return new \WP_Error( 'jisento_upload', __( 'Unable to save upload progress.', 'jisento-migration' ), array( 'status' => 500 ) );
+			return new \WP_Error( 'jisento_upload', esc_html__( 'Unable to save upload progress.', 'jisento-migration' ), array( 'status' => 500 ) );
 		}
 		$tmp = $path . '.tmp';
 		if ( false === file_put_contents( $tmp, $json, LOCK_EX ) || ! @rename( $tmp, $path ) ) {
 			@unlink( $tmp );
-			return new \WP_Error( 'jisento_upload', __( 'Unable to save upload progress.', 'jisento-migration' ), array( 'status' => 500 ) );
+			return new \WP_Error( 'jisento_upload', esc_html__( 'Unable to save upload progress.', 'jisento-migration' ), array( 'status' => 500 ) );
 		}
 		return true;
 	}
@@ -200,11 +203,11 @@ class Upload_Session {
 		wp_mkdir_p( dirname( $paths['lock'] ) );
 		$fh = @fopen( $paths['lock'], 'c+' );
 		if ( ! $fh ) {
-			return new \WP_Error( 'jisento_upload', __( 'Unable to lock the upload session.', 'jisento-migration' ), array( 'status' => 500 ) );
+			return new \WP_Error( 'jisento_upload', esc_html__( 'Unable to lock the upload session.', 'jisento-migration' ), array( 'status' => 500 ) );
 		}
 		if ( ! flock( $fh, LOCK_EX ) ) {
 			fclose( $fh );
-			return new \WP_Error( 'jisento_upload', __( 'Unable to lock the upload session.', 'jisento-migration' ), array( 'status' => 500 ) );
+			return new \WP_Error( 'jisento_upload', esc_html__( 'Unable to lock the upload session.', 'jisento-migration' ), array( 'status' => 500 ) );
 		}
 		try {
 			return call_user_func( $fn );
@@ -234,7 +237,7 @@ class Upload_Session {
 			}
 			$try = $base . '-' . $n . '.jisento';
 		}
-		return new \WP_Error( 'jisento_upload', __( 'No free package file name was found. Delete old packages and try again.', 'jisento-migration' ), array( 'status' => 409 ) );
+		return new \WP_Error( 'jisento_upload', esc_html__( 'No free package file name was found. Delete old packages and try again.', 'jisento-migration' ), array( 'status' => 409 ) );
 	}
 
 	/**

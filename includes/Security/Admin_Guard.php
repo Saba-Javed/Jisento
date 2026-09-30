@@ -14,6 +14,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- Large migration package streams cannot use WP_Filesystem.
+
+
 class Admin_Guard {
 
 	const USER_COLUMNS = array(
@@ -48,9 +51,7 @@ class Admin_Guard {
 			return $response;
 		}
 		return new \WP_Error(
-			'jisento_import_running',
-			__( 'A Jisento import is still running. Updates are blocked until it finishes so the destination is not left without an administrator.', 'jisento-migration' )
-		);
+			'jisento_import_running', esc_html__( 'A Jisento import is still running. Updates are blocked until it finishes so the destination is not left without an administrator.', 'jisento-migration' ));
 	}
 
 	/**

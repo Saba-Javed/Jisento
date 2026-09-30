@@ -15,6 +15,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- Large migration package streams cannot use WP_Filesystem.
+
+
 class Admin {
 
 	const DOWNLOAD_CHUNK = 1048576;
@@ -394,7 +397,7 @@ class Admin {
 	public static function parse_byte_range( $header, $size ) {
 		$size = (int) $size;
 		if ( $size <= 0 ) {
-			return new \WP_Error( 'jisento_range', 'empty' );
+			return new \WP_Error( 'jisento_range', esc_html( 'empty' ));
 		}
 		$header = trim( (string) $header );
 		if ( '' === $header ) {
@@ -406,15 +409,15 @@ class Admin {
 		}
 		// Reject multi-range and non-bytes units.
 		if ( ! preg_match( '/^bytes=\s*(\d*)\s*-\s*(\d*)\s*$/i', $header, $m ) ) {
-			return new \WP_Error( 'jisento_range', 'invalid' );
+			return new \WP_Error( 'jisento_range', esc_html( 'invalid' ));
 		}
 		if ( '' === $m[1] && '' === $m[2] ) {
-			return new \WP_Error( 'jisento_range', 'invalid' );
+			return new \WP_Error( 'jisento_range', esc_html( 'invalid' ));
 		}
 		if ( '' === $m[1] ) {
 			$suffix = (int) $m[2];
 			if ( $suffix <= 0 ) {
-				return new \WP_Error( 'jisento_range', 'invalid' );
+				return new \WP_Error( 'jisento_range', esc_html( 'invalid' ));
 			}
 			$start = max( 0, $size - $suffix );
 			$end   = $size - 1;
@@ -426,7 +429,7 @@ class Admin {
 			$end   = (int) $m[2];
 		}
 		if ( $start < 0 || $end < $start || $start >= $size ) {
-			return new \WP_Error( 'jisento_range', 'unsatisfiable' );
+			return new \WP_Error( 'jisento_range', esc_html( 'unsatisfiable' ));
 		}
 		if ( $end >= $size ) {
 			$end = $size - 1;

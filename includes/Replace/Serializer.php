@@ -99,7 +99,7 @@ class Serializer {
 			$string
 		);
 		if ( null === $result ) {
-			throw new \RuntimeException( 'URL replacement pattern failed with PCRE error ' . preg_last_error() );
+			throw new \RuntimeException(esc_html( 'URL replacement pattern failed with PCRE error ' . preg_last_error() ));
 		}
 
 		return $result;

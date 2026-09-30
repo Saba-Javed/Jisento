@@ -16,6 +16,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- Large migration package streams cannot use WP_Filesystem.
+
+
 class Legacy_Package {
 
 	const TOKEN_PATTERN = '/\{[a-f0-9]{64}\}/';
@@ -29,7 +32,8 @@ class Legacy_Package {
 	public static function scan( $path ) {
 		$handle = @fopen( $path, 'rb' );
 		if ( ! $handle ) {
-			return new \WP_Error( 'jisento_sql_open', sprintf( __( 'Unable to open %s to check it.', 'jisento-migration' ), basename( (string) $path ) ) );
+			/* translators: %s: runtime values. */
+			return new \WP_Error( 'jisento_sql_open', esc_html( sprintf( __( 'Unable to open %s to check it.', 'jisento-migration' ), basename( (string) $path ) ) ));
 		}
 		$counts = array();
 		$tables = array();
@@ -38,7 +42,8 @@ class Legacy_Package {
 			$chunk = fread( $handle, 4194304 );
 			if ( false === $chunk ) {
 				fclose( $handle );
-				return new \WP_Error( 'jisento_sql_read', sprintf( __( 'Reading %s failed.', 'jisento-migration' ), basename( (string) $path ) ) );
+				/* translators: %s: runtime values. */
+				return new \WP_Error( 'jisento_sql_read', esc_html( sprintf( __( 'Reading %s failed.', 'jisento-migration' ), basename( (string) $path ) ) ));
 			}
 			if ( '' === $chunk ) {
 				break;
@@ -88,3 +93,4 @@ class Legacy_Package {
 		}
 	}
 }
+

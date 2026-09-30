@@ -14,6 +14,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- Table names come from $wpdb->prefix + plugin-owned identifiers, not user input.
+
 class Job_Store {
 
 	const HEX_KEY = '__jisento_hex';
@@ -47,7 +49,8 @@ class Job_Store {
 		);
 		if ( ! $ok ) {
 			throw new \RuntimeException(
-				sprintf( __( 'Stage: start. Operation: create the job record. Reason: database error %1$s. Recovery: deactivate and reactivate Jisento Migration so its tables are repaired, then retry. Job: %2$s', 'jisento-migration' ), $wpdb->last_error, $job_id )
+				/* translators: 1: database error, 2: job id. */
+				esc_html( sprintf( __( 'Stage: start. Operation: create the job record. Reason: database error %1$s. Recovery: deactivate and reactivate Jisento Migration so its tables are repaired, then retry. Job: %2$s', 'jisento-migration' ), $wpdb->last_error, $job_id ) )
 			);
 		}
 		return $this->get( $job_id );
@@ -89,7 +92,8 @@ class Job_Store {
 		if ( null === $version ) {
 			$current = $this->get( $job_id );
 			if ( ! $current ) {
-				throw new \RuntimeException( sprintf( __( 'Job %s no longer exists.', 'jisento-migration' ), $job_id ) );
+				/* translators: %s: runtime values. */
+				throw new \RuntimeException(esc_html( sprintf( __( 'Job %s no longer exists.', 'jisento-migration' ), $job_id ) ));
 			}
 			$version = (int) $current->version;
 		}
@@ -122,17 +126,20 @@ class Job_Store {
 		$result = $wpdb->query( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		if ( false === $result ) {
 			throw new \RuntimeException(
-				sprintf( __( 'Operation: save job state. Reason: database error %1$s. Recovery: check the database connection and disk space, then press Retry. Job: %2$s', 'jisento-migration' ), $wpdb->last_error, $job_id )
+				/* translators: 1: database error, 2: job id. */
+				esc_html( sprintf( __( 'Operation: save job state. Reason: database error %1$s. Recovery: check the database connection and disk space, then press Retry. Job: %2$s', 'jisento-migration' ), $wpdb->last_error, $job_id ) )
 			);
 		}
 		if ( 1 !== (int) $result ) {
 			throw new Job_Conflict(
-				sprintf( __( 'Operation: save job state. Reason: the job was changed by another request (paused, cancelled, or a second worker) since this step started, so this step\'s result was discarded. Recovery: none needed; reload the job status. Job: %s', 'jisento-migration' ), $job_id )
+				/* translators: %s: job id. */
+				esc_html( sprintf( __( 'Operation: save job state. Reason: the job was changed by another request (paused, cancelled, or a second worker) since this step started, so this step\'s result was discarded. Recovery: none needed; reload the job status. Job: %s', 'jisento-migration' ), $job_id ) )
 			);
 		}
 		$saved = $this->get( $job_id );
 		if ( ! $saved ) {
-			throw new \RuntimeException( sprintf( __( 'Job %s disappeared while it was being saved.', 'jisento-migration' ), $job_id ) );
+			/* translators: %s: runtime values. */
+			throw new \RuntimeException(esc_html( sprintf( __( 'Job %s disappeared while it was being saved.', 'jisento-migration' ), $job_id ) ));
 		}
 		return $saved;
 	}
@@ -262,7 +269,8 @@ class Job_Store {
 		$json = wp_json_encode( self::encode_value( $state ) );
 		if ( ! is_string( $json ) || '' === $json ) {
 			throw new \RuntimeException(
-				sprintf( __( 'Operation: save job state. Reason: the state could not be encoded as JSON (%1$s). Recovery: press Retry; if it repeats, send the debug log to support. Job: %2$s', 'jisento-migration' ), function_exists( 'json_last_error_msg' ) ? json_last_error_msg() : 'unknown', $job_id )
+				/* translators: 1: JSON error, 2: job id. */
+				esc_html( sprintf( __( 'Operation: save job state. Reason: the state could not be encoded as JSON (%1$s). Recovery: press Retry; if it repeats, send the debug log to support. Job: %2$s', 'jisento-migration' ), function_exists( 'json_last_error_msg' ) ? json_last_error_msg() : 'unknown', $job_id ) )
 			);
 		}
 		return $json;
@@ -314,3 +322,4 @@ class Job_Store {
 		return 1 === preg_match( '//u', (string) $value );
 	}
 }
+

@@ -54,18 +54,18 @@ class Session_Store {
 			)
 		);
 		if ( ! $row ) {
-			return new \WP_Error( 'jisento_session', __( 'Invalid migration session.', 'jisento-migration' ), array( 'status' => 401 ) );
+			return new \WP_Error( 'jisento_session', esc_html__( 'Invalid migration session.', 'jisento-migration' ), array( 'status' => 401 ) );
 		}
 		if ( 'active' !== $row->status ) {
 			$code = 'expired' === $row->status ? 410 : 403;
-			return new \WP_Error( 'jisento_session', __( 'This migration session is no longer valid.', 'jisento-migration' ), array( 'status' => $code ) );
+			return new \WP_Error( 'jisento_session', esc_html__( 'This migration session is no longer valid.', 'jisento-migration' ), array( 'status' => $code ) );
 		}
 		if ( strtotime( $row->expires_at ) < time() ) {
 			$wpdb->update( $wpdb->prefix . 'jisento_sessions', array( 'status' => 'expired' ), array( 'id' => $row->id ) );
-			return new \WP_Error( 'jisento_session_expired', __( 'The migration session has expired.', 'jisento-migration' ), array( 'status' => 410 ) );
+			return new \WP_Error( 'jisento_session_expired', esc_html__( 'The migration session has expired.', 'jisento-migration' ), array( 'status' => 410 ) );
 		}
 		if ( ! is_string( $token ) || '' === $token || ! hash_equals( $row->token_hash, $this->hash( $token ) ) ) {
-			return new \WP_Error( 'jisento_session', __( 'Invalid migration session.', 'jisento-migration' ), array( 'status' => 401 ) );
+			return new \WP_Error( 'jisento_session', esc_html__( 'Invalid migration session.', 'jisento-migration' ), array( 'status' => 401 ) );
 		}
 		// The lifetime is fixed at creation; using the session never extends it.
 		return $row;

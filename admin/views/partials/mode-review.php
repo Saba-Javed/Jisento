@@ -6,7 +6,10 @@ $wizard_prefix = isset( $wizard_prefix ) ? $wizard_prefix : '';
 ?>
 <section class="jisento-wizard-panel" id="jisento-wizard-step-2" data-wizard-step="2" hidden>
 	<h2><?php esc_html_e( 'What should happen to this site?', 'jisento-migration' ); ?></h2>
-	<p><?php echo esc_html( sprintf( __( 'Current website: %s', 'jisento-migration' ), home_url() ) ); ?></p>
+	<p><?php
+		/* translators: %s: current site URL. */
+		echo esc_html( sprintf( __( 'Current website: %s', 'jisento-migration' ), home_url() ) );
+	?></p>
 	<div class="jisento-grid" id="jisento-dest-mode">
 		<label class="jisento-mode-card">
 			<input type="radio" name="jisento_dest_mode" value="replace">
@@ -76,3 +79,5 @@ $wizard_prefix = isset( $wizard_prefix ) ? $wizard_prefix : '';
 		</p>
 	</div>
 </div>
+
+

@@ -1,0 +1,400 @@
+﻿FILE: .distignore
+file,line,type,code,message
+.distignore,0,ERROR,hidden_files,"Hidden files are not permitted."
+
+
+FILE: includes/Security/Admin_Guard.php
+file,line,type,code,message
+includes/Security/Admin_Guard.php,0,WARNING,update_modification_detected,"Plugin Updater detected. Detected code which may be altering WordPress update routines. Detected: auto_update_plugin"
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\admin\views\layout-start.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\admin\views\layout-start.php",5,WARNING,WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound,"Global variables defined by a theme/plugin should start with the theme/plugin prefix. Found: &quot;$icon_url&quot;."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\admin\views\layout-start.php",13,WARNING,WordPress.Security.NonceVerification.Recommended,"Processing form data without nonce verification."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\admin\views\layout-start.php",13,WARNING,WordPress.Security.NonceVerification.Recommended,"Processing form data without nonce verification."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Admin\Admin.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Admin\Admin.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Admin\Admin.php",301,WARNING,Squiz.PHP.DiscouragedFunctions.Discouraged,"The use of function set_time_limit() is discouraged"
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Api\Rest_Controller.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Api\Rest_Controller.php",486,WARNING,Squiz.PHP.DiscouragedFunctions.Discouraged,"The use of function set_time_limit() is discouraged"
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Cli\Commands.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Cli\Commands.php",237,WARNING,Squiz.PHP.DiscouragedFunctions.Discouraged,"The use of function set_time_limit() is discouraged"
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Cleanup.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Cleanup.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Cleanup.php",97,WARNING,WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound,"Hook names invoked by a theme/plugin should start with the theme/plugin prefix. Found: &quot;hostinger_purge_all_cache&quot;."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Cleanup.php",175,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Cleanup.php",175,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Diagnostics.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Diagnostics.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Diagnostics.php",185,WARNING,WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound,"Hook names invoked by a theme/plugin should start with the theme/plugin prefix. Found: &quot;https_local_ssl_verify&quot;."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",51,WARNING,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,"Use placeholders and $wpdb-&gt;prepare(); found interpolated variable {$table} at &quot;INSERT INTO `{$table}` (name, owner_job, token, heartbeat_at, expires_at)\n"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",52,WARNING,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,"Use placeholders and $wpdb-&gt;prepare(); found interpolated variable {$ttl} at \t\t\tVALUES (%s, %s, %s, UTC_TIMESTAMP(), UTC_TIMESTAMP() + INTERVAL {$ttl} SECOND)\n"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",54,WARNING,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,"Use placeholders and $wpdb-&gt;prepare(); found interpolated variable {$take} at \t\t\t\ttoken        = IF({$take}, VALUES(token), token),\n"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",55,WARNING,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,"Use placeholders and $wpdb-&gt;prepare(); found interpolated variable {$take} at \t\t\t\theartbeat_at = IF({$take}, VALUES(heartbeat_at), heartbeat_at),\n"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",56,WARNING,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,"Use placeholders and $wpdb-&gt;prepare(); found interpolated variable {$take} at \t\t\t\towner_job    = IF({$take}, VALUES(owner_job), owner_job),\n"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",62,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",62,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",62,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $sql used in $wpdb-&gt;query()\n$sql assigned unsafely at line 50."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",96,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",96,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",96,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $table used in $wpdb-&gt;get_row()\n$table assigned unsafely at line 95."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",127,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",127,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",127,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $table used in $wpdb-&gt;query()\n$table assigned unsafely at line 126."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",138,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",138,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",144,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Lease.php",144,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",170,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",170,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",466,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",466,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",466,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $table used in $wpdb-&gt;get_var()\n$table assigned unsafely at line 464."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",485,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",485,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",490,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",503,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",503,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",531,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",531,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",533,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",535,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",545,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Live_Url.php",545,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",20,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",41,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $table used in $wpdb-&gt;get_results()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",41,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",41,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",43,WARNING,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,"Use placeholders and $wpdb-&gt;prepare(); found interpolated variable {$table} at &quot;SELECT * FROM {$table} WHERE migration_id = %s ORDER BY id DESC LIMIT %d&quot;"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",50,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",50,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",50,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $table used in $wpdb-&gt;get_results()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",52,WARNING,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,"Use placeholders and $wpdb-&gt;prepare(); found interpolated variable {$table} at &quot;SELECT * FROM {$table} ORDER BY id DESC LIMIT %d&quot;"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",91,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",91,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",91,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $sql used in $wpdb-&gt;query()\n$sql assigned unsafely at line 89."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",101,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $batch_sql used in $wpdb-&gt;query()\n$batch_sql assigned unsafely at line 95."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",101,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",101,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",103,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $batch_sql used in $wpdb-&gt;query()\n$batch_sql assigned unsafely at line 95."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",103,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",103,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",124,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",124,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",124,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $jobs used in $wpdb-&gt;get_col()\n$jobs assigned unsafely at line 123."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",125,WARNING,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,"Use placeholders and $wpdb-&gt;prepare(); found interpolated variable {$jobs} at &quot;SELECT job_id FROM {$jobs} WHERE status IN (&#039;created&#039;,&#039;preparing&#039;,&#039;running&#039;,&#039;paused&#039;)&quot;"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",138,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Logger.php",138,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Sql_Escaper.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Sql_Escaper.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Filesystem\File_System.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Filesystem\File_System.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Scheduler.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Scheduler.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Scheduler.php",84,WARNING,WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound,"Hook names invoked by a theme/plugin should start with the theme/plugin prefix. Found: &quot;https_local_ssl_verify&quot;."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Scheduler.php",207,WARNING,WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound,"Hook names invoked by a theme/plugin should start with the theme/plugin prefix. Found: &quot;https_local_ssl_verify&quot;."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",33,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",61,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",61,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",61,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;get_row()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",122,WARNING,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,"Incorrect number of replacements passed to $wpdb-&gt;prepare(). Found 1 replacement parameters, expected 2."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",126,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",126,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",126,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $sql used in $wpdb-&gt;query()\n$sql assigned unsafely at line 122."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",149,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",149,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",154,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",154,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",154,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;get_results()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",170,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",170,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",170,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;get_results()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",180,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Jobs\Job_Store.php",180,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",25,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",43,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",43,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",56,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",56,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",65,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",65,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",65,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;get_row()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",70,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",70,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",70,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;get_row()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",82,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",82,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",88,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",88,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",88,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;query()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",97,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",97,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",97,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;query()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",108,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",108,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",283,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",283,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Package_Registry.php",283,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $table used in $wpdb-&gt;get_results()\n$table assigned unsafely at line 281."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Streaming_Zip_Writer.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Streaming_Zip_Writer.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Upload_Session.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Package\Upload_Session.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Plugin.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Plugin.php",73,WARNING,PluginCheck.CodeAnalysis.DiscouragedFunctions.load_plugin_textdomainFound,"load_plugin_textdomain() has been discouraged since WordPress version 4.6. When your plugin is hosted on WordPress.org, you no longer need to manually include this function call for translations under your plugin slug. WordPress will automatically load the translations for you as needed."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",99,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",99,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",111,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",111,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",112,WARNING,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,"Use placeholders and $wpdb-&gt;prepare(); found interpolated variable $holders at &quot;SELECT * FROM {$wpdb-&gt;users} WHERE ID IN ($holders)&quot;"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",112,WARNING,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,"Replacement variables found, but no valid placeholders found in the query."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",115,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",115,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",116,WARNING,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,"Use placeholders and $wpdb-&gt;prepare(); found interpolated variable $holders at &quot;SELECT user_id, meta_key, meta_value FROM {$wpdb-&gt;usermeta} WHERE user_id IN ($holders)&quot;"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",116,WARNING,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,"Replacement variables found, but no valid placeholders found in the query."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",153,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",153,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",168,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",168,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",173,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",185,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",189,WARNING,WordPress.DB.SlowDBQuery.slow_db_query_meta_key,"Detected usage of meta_key, possible slow query."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",190,WARNING,WordPress.DB.SlowDBQuery.slow_db_query_meta_value,"Detected usage of meta_value, possible slow query."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",205,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",205,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",210,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",210,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",235,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",235,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",241,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",241,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Admin_Guard.php",241,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $table used in $wpdb-&gt;get_var()\n$table assigned unsafely at line 234."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",116,WARNING,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,"$_SERVER[&#039;REQUEST_METHOD&#039;] not unslashed before sanitization. Use wp_unslash() or similar"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",116,WARNING,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,"Detected usage of a non-sanitized input variable: $_SERVER[&#039;REQUEST_METHOD&#039;]"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",120,WARNING,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,"$_SERVER[&#039;REQUEST_URI&#039;] not unslashed before sanitization. Use wp_unslash() or similar"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",120,WARNING,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,"Detected usage of a non-sanitized input variable: $_SERVER[&#039;REQUEST_URI&#039;]"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",125,WARNING,WordPress.Security.NonceVerification.Recommended,"Processing form data without nonce verification."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",125,WARNING,WordPress.Security.NonceVerification.Recommended,"Processing form data without nonce verification."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",125,WARNING,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,"$_GET[&#039;rest_route&#039;] not unslashed before sanitization. Use wp_unslash() or similar"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",125,WARNING,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,"Detected usage of a non-sanitized input variable: $_GET[&#039;rest_route&#039;]"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",126,WARNING,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,"$_SERVER[&#039;QUERY_STRING&#039;] not unslashed before sanitization. Use wp_unslash() or similar"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",126,WARNING,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,"Detected usage of a non-sanitized input variable: $_SERVER[&#039;QUERY_STRING&#039;]"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",207,WARNING,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,"$_SERVER[&#039;REQUEST_URI&#039;] not unslashed before sanitization. Use wp_unslash() or similar"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",207,WARNING,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,"Detected usage of a non-sanitized input variable: $_SERVER[&#039;REQUEST_URI&#039;]"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",241,WARNING,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,"$_SERVER[&#039;HTTP_HOST&#039;] not unslashed before sanitization. Use wp_unslash() or similar"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",241,WARNING,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,"Detected usage of a non-sanitized input variable: $_SERVER[&#039;HTTP_HOST&#039;]"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",243,WARNING,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,"$_SERVER[&#039;HTTPS&#039;] not unslashed before sanitization. Use wp_unslash() or similar"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",243,WARNING,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,"Detected usage of a non-sanitized input variable: $_SERVER[&#039;HTTPS&#039;]"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",244,WARNING,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,"$_SERVER[&#039;HTTP_X_FORWARDED_PROTO&#039;] not unslashed before sanitization. Use wp_unslash() or similar"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",244,WARNING,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,"Detected usage of a non-sanitized input variable: $_SERVER[&#039;HTTP_X_FORWARDED_PROTO&#039;]"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",265,WARNING,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,"$_SERVER[&#039;HTTP_X_WP_NONCE&#039;] not unslashed before sanitization. Use wp_unslash() or similar"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Job_Continuation.php",265,WARNING,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,"Detected usage of a non-sanitized input variable: $_SERVER[&#039;HTTP_X_WP_NONCE&#039;]"
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Storage\Local_Storage.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Storage\Local_Storage.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\uninstall.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\uninstall.php",1,WARNING,Internal.LineEndings.Mixed,"File has mixed line endings; this may cause incorrect results"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\uninstall.php",15,WARNING,WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound,"Global variables defined by a theme/plugin should start with the theme/plugin prefix. Found: &quot;$tables&quot;."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\uninstall.php",22,WARNING,WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound,"Global variables defined by a theme/plugin should start with the theme/plugin prefix. Found: &quot;$table&quot;."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\uninstall.php",24,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\uninstall.php",24,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\uninstall.php",24,WARNING,WordPress.DB.DirectDatabaseQuery.SchemaChange,"Attempting a database schema change is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\uninstall.php",30,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\uninstall.php",30,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Installer.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Installer.php",126,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Installer.php",126,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Installer.php",127,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Installer.php",127,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Installer.php",128,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Core\Installer.php",128,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Importer.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Importer.php",463,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Importer.php",463,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Importer.php",465,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $table used in $wpdb-&gt;query()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Importer.php",465,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Importer.php",465,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Importer.php",2078,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $shadow used in $wpdb-&gt;query()\n$shadow assigned unsafely at line 2074."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Importer.php",2078,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Importer.php",2078,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Importer.php",2078,WARNING,WordPress.DB.DirectDatabaseQuery.SchemaChange,"Attempting a database schema change is discouraged."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Import\Importer.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Import\Importer.php",637,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Import\Importer.php",637,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Import\Importer.php",1610,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Import\Importer.php",1610,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Import\Importer.php",1611,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Import\Importer.php",1611,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Import\Importer.php",1616,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Import\Importer.php",1616,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Import\Importer.php",1623,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Import\Importer.php",1623,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Remote\Transfer.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Remote\Transfer.php",25,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Remote\Transfer.php",25,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Remote\Transfer.php",28,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Remote\Transfer.php",28,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",260,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",260,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",260,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $sql used in $wpdb-&gt;get_results()\n$sql assigned unsafely at line 257."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",308,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",308,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",308,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $sql used in $wpdb-&gt;query()\n$sql assigned unsafely at line 307."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",355,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",355,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",364,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",364,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",383,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",383,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",383,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;get_results()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",385,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",385,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Replace\Url_Replacer.php",385,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;get_results()"
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php",25,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php",58,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php",58,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php",79,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php",79,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php",81,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php",81,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php",94,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php",94,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php",103,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php",103,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php",127,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Migration_Key_Store.php",127,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Session_Store.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Session_Store.php",23,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Session_Store.php",50,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Session_Store.php",50,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Session_Store.php",64,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Session_Store.php",64,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Session_Store.php",98,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Session_Store.php",98,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Session_Store.php",111,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Session_Store.php",111,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Session_Store.php",120,WARNING,WordPress.DB.DirectDatabaseQuery.DirectQuery,"Use of a direct database call is discouraged."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Security\Session_Store.php",120,WARNING,WordPress.DB.DirectDatabaseQuery.NoCaching,"Direct database call without caching detected. Consider using wp_cache_get() / wp_cache_set() or wp_cache_delete()."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\admin\views\backups.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\admin\views\backups.php",5,WARNING,WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound,"Global variables defined by a theme/plugin should start with the theme/plugin prefix. Found: &quot;$download_base&quot;."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\admin\views\logs.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\admin\views\logs.php",22,WARNING,WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound,"Global variables defined by a theme/plugin should start with the theme/plugin prefix. Found: &quot;$row&quot;."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\admin\views\logs.php",33,WARNING,WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound,"Global variables defined by a theme/plugin should start with the theme/plugin prefix. Found: &quot;$line&quot;."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\admin\views\logs.php",58,WARNING,WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound,"Global variables defined by a theme/plugin should start with the theme/plugin prefix. Found: &quot;$row&quot;."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\admin\views\partials\mode-review.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\admin\views\partials\mode-review.php",5,WARNING,WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound,"Global variables defined by a theme/plugin should start with the theme/plugin prefix. Found: &quot;$wizard_prefix&quot;."
+
+
+FILE: C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Exporter.php
+file,line,type,code,message
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Exporter.php",199,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;get_row()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Exporter.php",213,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;get_results()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Exporter.php",251,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;get_results()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Exporter.php",339,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $sql used in $wpdb-&gt;get_results()\n$sql assigned unsafely at line 338."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Exporter.php",343,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $sql used in $wpdb-&gt;get_results()\n$sql assigned unsafely at line 342."
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Exporter.php",921,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;get_results()"
+"C:\Users\Qadri Laptop\Downloads\Jisento migration plugin\includes\Database\Database_Exporter.php",923,WARNING,PluginCheck.Security.DirectDB.UnescapedDBParameter,"Unescaped parameter $this used in $wpdb-&gt;get_results()"
+
+

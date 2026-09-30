@@ -27,6 +27,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- Large migration package streams cannot use WP_Filesystem.
+
+
 class Archive {
 
 	const SEGMENT_PATTERN = '#^database/part-\d{5}\.sql$#';
@@ -66,7 +69,7 @@ class Archive {
 	public static function encode_manifest( array $manifest ) {
 		$json = wp_json_encode( $manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 		if ( ! is_string( $json ) || '' === $json ) {
-			throw new \RuntimeException( __( 'The package manifest could not be encoded as JSON.', 'jisento-migration' ) );
+			throw new \RuntimeException(esc_html__( 'The package manifest could not be encoded as JSON.', 'jisento-migration' ));
 		}
 		return $json;
 	}
@@ -79,27 +82,23 @@ class Archive {
 	 */
 	public function inspect( $zip_path ) {
 		if ( ! is_readable( $zip_path ) ) {
-			return new \WP_Error( 'jisento_unreadable', __( 'The package file cannot be read.', 'jisento-migration' ) );
+			return new \WP_Error( 'jisento_unreadable', esc_html__( 'The package file cannot be read.', 'jisento-migration' ));
 		}
 		if ( ! self::zip_available() ) {
-			return new \WP_Error( 'jisento_no_zip', __( 'The PHP ZipArchive extension is required.', 'jisento-migration' ) );
+			return new \WP_Error( 'jisento_no_zip', esc_html__( 'The PHP ZipArchive extension is required.', 'jisento-migration' ));
 		}
 
 		$zip = new \ZipArchive();
 		if ( true !== $zip->open( $zip_path ) ) {
 			return new \WP_Error(
-				'jisento_invalid_package',
-				__( 'Invalid Jisento Package. The file is not a readable ZIP container.', 'jisento-migration' )
-			);
+				'jisento_invalid_package', esc_html__( 'Invalid Jisento Package. The file is not a readable ZIP container.', 'jisento-migration' ));
 		}
 
 		$format = self::format_of( $zip->getFromName( 'JISENTO' ) );
 		if ( 0 === $format ) {
 			$zip->close();
 			return new \WP_Error(
-				'jisento_invalid_package',
-				__( 'Invalid Jisento Package. The format marker is missing, so this file was not created by Jisento Migration or was created by a newer version.', 'jisento-migration' )
-			);
+				'jisento_invalid_package', esc_html__( 'Invalid Jisento Package. The format marker is missing, so this file was not created by Jisento Migration or was created by a newer version.', 'jisento-migration' ));
 		}
 
 		$manifest  = json_decode( (string) $zip->getFromName( 'manifest.json' ), true );
@@ -107,12 +106,13 @@ class Archive {
 
 		if ( ! is_array( $manifest ) || empty( $manifest['package_version'] ) ) {
 			$zip->close();
-			return new \WP_Error( 'jisento_bad_manifest', __( 'The package manifest is missing or invalid.', 'jisento-migration' ) );
+			return new \WP_Error( 'jisento_bad_manifest', esc_html__( 'The package manifest is missing or invalid.', 'jisento-migration' ));
 		}
 		$major = (int) $manifest['package_version'];
 		if ( $major !== $format ) {
 			$zip->close();
-			return new \WP_Error( 'jisento_bad_manifest', sprintf( __( 'The package format marker (v%1$d) does not match its manifest (package_version %2$s).', 'jisento-migration' ), $format, self::printable( (string) $manifest['package_version'] ) ) );
+			/* translators: %1$d, %2$s: runtime values. */
+			return new \WP_Error( 'jisento_bad_manifest', esc_html( sprintf( __( 'The package format marker (v%1$d) does not match its manifest (package_version %2$s).', 'jisento-migration' ), $format, self::printable( (string) $manifest['package_version'] ) ) ));
 		}
 
 		if ( 2 === $format ) {
@@ -162,7 +162,7 @@ class Archive {
 		$manifest = $info['manifest'];
 		$zip      = new \ZipArchive();
 		if ( true !== $zip->open( $zip_path ) ) {
-			return new \WP_Error( 'jisento_zip_open', __( 'Unable to open the package.', 'jisento-migration' ) );
+			return new \WP_Error( 'jisento_zip_open', esc_html__( 'Unable to open the package.', 'jisento-migration' ));
 		}
 
 		$file_entries = 0;
@@ -183,54 +183,62 @@ class Archive {
 		}
 		if ( $bad_names ) {
 			$zip->close();
-			return new \WP_Error( 'jisento_bad_path', sprintf( __( 'The package contains unsafe paths (absolute or with ".."), so it was rejected: %s', 'jisento-migration' ), implode( ', ', array_slice( $bad_names, 0, 5 ) ) ) );
+			/* translators: %s: runtime values. */
+			return new \WP_Error( 'jisento_bad_path', esc_html( sprintf( __( 'The package contains unsafe paths (absolute or with ".."), so it was rejected: %s', 'jisento-migration' ), implode( ', ', array_slice( $bad_names, 0, 5 ) ) ) ));
 		}
 
 		if ( 2 === $info['format'] ) {
 			foreach ( array( 'package_version', 'plugin_version', 'home_url', 'contents' ) as $field ) {
 				if ( empty( $manifest[ $field ] ) || ! is_string( $manifest[ $field ] ) ) {
 					$zip->close();
-					return new \WP_Error( 'jisento_bad_manifest', sprintf( __( 'The package manifest has no "%s" value.', 'jisento-migration' ), $field ) );
+					/* translators: %s: runtime values. */
+					return new \WP_Error( 'jisento_bad_manifest', esc_html( sprintf( __( 'The package manifest has no "%s" value.', 'jisento-migration' ), $field ) ));
 				}
 			}
 			foreach ( array( 'file_count', 'files_bytes' ) as $field ) {
 				if ( ! isset( $manifest[ $field ] ) || ! is_int( $manifest[ $field ] ) || $manifest[ $field ] < 0 ) {
 					$zip->close();
-					return new \WP_Error( 'jisento_bad_manifest', sprintf( __( 'The package manifest has no valid "%s" value.', 'jisento-migration' ), $field ) );
+					/* translators: %s: runtime values. */
+					return new \WP_Error( 'jisento_bad_manifest', esc_html( sprintf( __( 'The package manifest has no valid "%s" value.', 'jisento-migration' ), $field ) ));
 				}
 			}
 			if ( $file_entries !== (int) $manifest['file_count'] ) {
 				$zip->close();
-				return new \WP_Error( 'jisento_package_incomplete', sprintf( __( 'The package lists %1$d files but contains %2$d. It is incomplete or was modified; export it again.', 'jisento-migration' ), (int) $manifest['file_count'], $file_entries ) );
+				/* translators: %1$d, %2$d: runtime values. */
+				return new \WP_Error( 'jisento_package_incomplete', esc_html( sprintf( __( 'The package lists %1$d files but contains %2$d. It is incomplete or was modified; export it again.', 'jisento-migration' ), (int) $manifest['file_count'], $file_entries ) ));
 			}
 			if ( $file_bytes !== (int) $manifest['files_bytes'] ) {
 				$zip->close();
-				return new \WP_Error( 'jisento_package_incomplete', sprintf( __( 'The package lists %1$d bytes of files but contains %2$d. It is incomplete or was modified; export it again.', 'jisento-migration' ), (int) $manifest['files_bytes'], $file_bytes ) );
+				/* translators: %1$d, %2$d: runtime values. */
+				return new \WP_Error( 'jisento_package_incomplete', esc_html( sprintf( __( 'The package lists %1$d bytes of files but contains %2$d. It is incomplete or was modified; export it again.', 'jisento-migration' ), (int) $manifest['files_bytes'], $file_bytes ) ));
 			}
 			$segments = array();
 			$raw      = isset( $manifest['database']['segments'] ) ? $manifest['database']['segments'] : array();
 			if ( ! is_array( $raw ) ) {
 				$zip->close();
-				return new \WP_Error( 'jisento_bad_manifest', __( 'The package manifest has an invalid database segment list.', 'jisento-migration' ) );
+				return new \WP_Error( 'jisento_bad_manifest', esc_html__( 'The package manifest has an invalid database segment list.', 'jisento-migration' ));
 			}
 			if ( 'files' !== $manifest['contents'] && ! $raw ) {
 				$zip->close();
-				return new \WP_Error( 'jisento_package_incomplete', __( 'The package should contain a database dump but lists no database segments.', 'jisento-migration' ) );
+				return new \WP_Error( 'jisento_package_incomplete', esc_html__( 'The package should contain a database dump but lists no database segments.', 'jisento-migration' ));
 			}
 			foreach ( $raw as $index => $segment ) {
 				$entry = is_array( $segment ) && isset( $segment['entry'] ) ? (string) $segment['entry'] : '';
 				if ( ! preg_match( self::SEGMENT_PATTERN, $entry ) || ! isset( $segment['bytes'], $segment['sha256'] ) || ! preg_match( '/^[a-f0-9]{64}$/', (string) $segment['sha256'] ) ) {
 					$zip->close();
-					return new \WP_Error( 'jisento_bad_manifest', sprintf( __( 'Database segment %d in the manifest is malformed.', 'jisento-migration' ), (int) $index + 1 ) );
+					/* translators: %d: runtime values. */
+					return new \WP_Error( 'jisento_bad_manifest', esc_html( sprintf( __( 'Database segment %d in the manifest is malformed.', 'jisento-migration' ), (int) $index + 1 ) ));
 				}
 				$stat = $zip->statName( $entry );
 				if ( false === $stat ) {
 					$zip->close();
-					return new \WP_Error( 'jisento_package_incomplete', sprintf( __( 'Database segment %s is listed in the manifest but missing from the package.', 'jisento-migration' ), $entry ) );
+					/* translators: %s: runtime values. */
+					return new \WP_Error( 'jisento_package_incomplete', esc_html( sprintf( __( 'Database segment %s is listed in the manifest but missing from the package.', 'jisento-migration' ), $entry ) ));
 				}
 				if ( (int) $stat['size'] !== (int) $segment['bytes'] ) {
 					$zip->close();
-					return new \WP_Error( 'jisento_package_incomplete', sprintf( __( 'Database segment %1$s is %2$d bytes in the package but %3$d in the manifest.', 'jisento-migration' ), $entry, (int) $stat['size'], (int) $segment['bytes'] ) );
+					/* translators: %1$s, %2$d, %3$d: runtime values. */
+					return new \WP_Error( 'jisento_package_incomplete', esc_html( sprintf( __( 'Database segment %1$s is %2$d bytes in the package but %3$d in the manifest.', 'jisento-migration' ), $entry, (int) $stat['size'], (int) $segment['bytes'] ) ));
 				}
 				$segments[] = array(
 					'entry'  => $entry,
@@ -246,7 +254,7 @@ class Archive {
 				$stat = $zip->statName( 'database/database.sql' );
 				if ( ! preg_match( '/^[a-f0-9]{64}$/', $hash ) ) {
 					$zip->close();
-					return new \WP_Error( 'jisento_bad_manifest', __( 'This version 1 package has no checksum for database/database.sql, so it cannot be verified.', 'jisento-migration' ) );
+					return new \WP_Error( 'jisento_bad_manifest', esc_html__( 'This version 1 package has no checksum for database/database.sql, so it cannot be verified.', 'jisento-migration' ));
 				}
 				$info['segments'][] = array(
 					'entry'  => 'database/database.sql',
@@ -256,7 +264,8 @@ class Archive {
 			}
 			if ( isset( $info['checksums']['file_count'] ) && (int) $info['checksums']['file_count'] > 0 && (int) $info['checksums']['file_count'] !== $file_entries ) {
 				$zip->close();
-				return new \WP_Error( 'jisento_package_incomplete', sprintf( __( 'The package lists %1$d files but contains %2$d. It is incomplete; export it again.', 'jisento-migration' ), (int) $info['checksums']['file_count'], $file_entries ) );
+				/* translators: %1$d, %2$d: runtime values. */
+				return new \WP_Error( 'jisento_package_incomplete', esc_html( sprintf( __( 'The package lists %1$d files but contains %2$d. It is incomplete; export it again.', 'jisento-migration' ), (int) $info['checksums']['file_count'], $file_entries ) ));
 			}
 		}
 		$zip->close();
@@ -272,11 +281,11 @@ class Archive {
 			if ( $digests ) {
 				$recomputed = Streaming_Zip_Writer::content_sha256_of( array_values( $digests['entries'] ) );
 				if ( $recomputed !== $digests['content_sha256'] ) {
-					return new \WP_Error( 'jisento_content_sha', __( 'The package content checksum does not match checksums/entries.jsonl. The package is damaged or was modified; export it again.', 'jisento-migration' ) );
+					return new \WP_Error( 'jisento_content_sha', esc_html__( 'The package content checksum does not match checksums/entries.jsonl. The package is damaged or was modified; export it again.', 'jisento-migration' ));
 				}
 				$recorded = self::recorded_content_sha256( $zip_path, $manifest );
 				if ( is_string( $recorded ) && $recorded !== $digests['content_sha256'] ) {
-					return new \WP_Error( 'jisento_content_sha', __( 'The package content checksum does not match its integrity record. The package is damaged or was modified; export it again.', 'jisento-migration' ) );
+					return new \WP_Error( 'jisento_content_sha', esc_html__( 'The package content checksum does not match its integrity record. The package is damaged or was modified; export it again.', 'jisento-migration' ));
 				}
 				foreach ( array_keys( $digests['entries'] ) as $ename ) {
 					if ( 0 !== strpos( $ename, 'files/' ) || '/' === substr( $ename, -1 ) ) {
@@ -325,7 +334,7 @@ class Archive {
 	public static function read_entry_digests( $zip_path ) {
 		$zip = new \ZipArchive();
 		if ( true !== $zip->open( $zip_path ) ) {
-			return new \WP_Error( 'jisento_zip_open', __( 'Unable to open the package.', 'jisento-migration' ) );
+			return new \WP_Error( 'jisento_zip_open', esc_html__( 'Unable to open the package.', 'jisento-migration' ));
 		}
 		$raw = $zip->getFromName( Streaming_Zip_Writer::ENTRY_DIGESTS );
 		$zip->close();
@@ -334,11 +343,11 @@ class Archive {
 		}
 		$lines = preg_split( '/\r?\n/', (string) $raw );
 		if ( ! $lines ) {
-			return new \WP_Error( 'jisento_entry_digests', __( 'checksums/entries.jsonl is empty. The package is damaged; export it again.', 'jisento-migration' ) );
+			return new \WP_Error( 'jisento_entry_digests', esc_html__( 'checksums/entries.jsonl is empty. The package is damaged; export it again.', 'jisento-migration' ));
 		}
 		$header = json_decode( array_shift( $lines ), true );
 		if ( ! is_array( $header ) || empty( $header['content_sha256'] ) || ! preg_match( '/^[a-f0-9]{64}$/', (string) $header['content_sha256'] ) || empty( $header['hash_chunk'] ) || (int) $header['hash_chunk'] < 4096 ) {
-			return new \WP_Error( 'jisento_entry_digests', __( 'checksums/entries.jsonl has a damaged header. The package is damaged; export it again.', 'jisento-migration' ) );
+			return new \WP_Error( 'jisento_entry_digests', esc_html__( 'checksums/entries.jsonl has a damaged header. The package is damaged; export it again.', 'jisento-migration' ));
 		}
 		$entries = array();
 		foreach ( $lines as $line ) {
@@ -348,7 +357,7 @@ class Archive {
 			}
 			$row = json_decode( $line, true );
 			if ( ! is_array( $row ) || empty( $row['n'] ) || ! isset( $row['us'], $row['crc'], $row['sha'] ) || ! preg_match( '/^[a-f0-9]{64}$/', (string) $row['sha'] ) ) {
-				return new \WP_Error( 'jisento_entry_digests', __( 'checksums/entries.jsonl has a damaged entry line. The package is damaged; export it again.', 'jisento-migration' ) );
+				return new \WP_Error( 'jisento_entry_digests', esc_html__( 'checksums/entries.jsonl has a damaged entry line. The package is damaged; export it again.', 'jisento-migration' ));
 			}
 			$entries[ (string) $row['n'] ] = array(
 				'n'   => (string) $row['n'],
@@ -377,12 +386,13 @@ class Archive {
 	public function extract_verified( $zip_path, $entry, $dest, $bytes, $sha256 ) {
 		$zip = new \ZipArchive();
 		if ( true !== $zip->open( $zip_path ) ) {
-			return new \WP_Error( 'jisento_zip_open', __( 'Unable to open the package.', 'jisento-migration' ) );
+			return new \WP_Error( 'jisento_zip_open', esc_html__( 'Unable to open the package.', 'jisento-migration' ));
 		}
 		$stat = $zip->statName( $entry );
 		if ( false === $stat ) {
 			$zip->close();
-			return new \WP_Error( 'jisento_missing_entry', sprintf( __( 'Package entry %s not found.', 'jisento-migration' ), self::printable( $entry ) ) );
+			/* translators: %s: runtime values. */
+			return new \WP_Error( 'jisento_missing_entry', esc_html( sprintf( __( 'Package entry %s not found.', 'jisento-migration' ), self::printable( $entry ) ) ));
 		}
 		$hash   = hash_init( 'sha256' );
 		$result = $this->stream_entry( $zip, $entry, $stat, $dest, $hash );
@@ -393,12 +403,14 @@ class Archive {
 		$tmp = $dest . '.jisento-tmp';
 		if ( (int) $bytes !== (int) $result['bytes'] ) {
 			@unlink( $tmp );
-			return new \WP_Error( 'jisento_entry_size', sprintf( __( '%1$s extracted to %2$d bytes, but the manifest records %3$d. The package is damaged; export it again.', 'jisento-migration' ), self::printable( $entry ), (int) $result['bytes'], (int) $bytes ) );
+			/* translators: %1$s, %2$d, %3$d: runtime values. */
+			return new \WP_Error( 'jisento_entry_size', esc_html( sprintf( __( '%1$s extracted to %2$d bytes, but the manifest records %3$d. The package is damaged; export it again.', 'jisento-migration' ), self::printable( $entry ), (int) $result['bytes'], (int) $bytes ) ));
 		}
 		$actual = hash_final( $hash );
 		if ( ! hash_equals( (string) $sha256, $actual ) ) {
 			@unlink( $tmp );
-			return new \WP_Error( 'jisento_entry_hash', sprintf( __( '%s does not match the SHA-256 recorded in the manifest. The package is damaged or was modified; export it again.', 'jisento-migration' ), self::printable( $entry ) ) );
+			/* translators: %s: runtime values. */
+			return new \WP_Error( 'jisento_entry_hash', esc_html( sprintf( __( '%s does not match the SHA-256 recorded in the manifest. The package is damaged or was modified; export it again.', 'jisento-migration' ), self::printable( $entry ) ) ));
 		}
 		return self::commit_tmp( $tmp, $dest );
 	}
@@ -412,16 +424,19 @@ class Archive {
 	private function stream_entry( \ZipArchive $zip, $name, array $stat, $dest, $hash = null, $expected_sha = null, $hash_chunk = 0 ) {
 		$tmp = $dest . '.jisento-tmp';
 		if ( ! is_dir( dirname( $dest ) ) && ! wp_mkdir_p( dirname( $dest ) ) ) {
-			return new \WP_Error( 'jisento_write', sprintf( __( 'Unable to create folder %s.', 'jisento-migration' ), self::printable( dirname( $dest ) ) ) );
+			/* translators: %s: runtime values. */
+			return new \WP_Error( 'jisento_write', esc_html( sprintf( __( 'Unable to create folder %s.', 'jisento-migration' ), self::printable( dirname( $dest ) ) ) ));
 		}
 		$stream = $zip->getStream( $name );
 		if ( ! $stream ) {
-			return new \WP_Error( 'jisento_stream', sprintf( __( 'Unable to read %s from the package.', 'jisento-migration' ), self::printable( $name ) ) );
+			/* translators: %s: runtime values. */
+			return new \WP_Error( 'jisento_stream', esc_html( sprintf( __( 'Unable to read %s from the package.', 'jisento-migration' ), self::printable( $name ) ) ));
 		}
 		$out = @fopen( $tmp, 'wb' );
 		if ( ! $out ) {
 			fclose( $stream );
-			return new \WP_Error( 'jisento_write', sprintf( __( 'Unable to write %s (permission denied or disk full).', 'jisento-migration' ), self::printable( $tmp ) ) );
+			/* translators: %s: runtime values. */
+			return new \WP_Error( 'jisento_write', esc_html( sprintf( __( 'Unable to write %s (permission denied or disk full).', 'jisento-migration' ), self::printable( $tmp ) ) ));
 		}
 		$crc       = hash_init( 'crc32b' );
 		$written   = 0;
@@ -433,7 +448,8 @@ class Archive {
 		while ( ! feof( $stream ) ) {
 			$buffer = fread( $stream, 1048576 );
 			if ( false === $buffer ) {
-				$error = new \WP_Error( 'jisento_stream', sprintf( __( 'Reading %s from the package failed (damaged ZIP data).', 'jisento-migration' ), self::printable( $name ) ) );
+				/* translators: %s: runtime values. */
+				$error = new \WP_Error( 'jisento_stream', esc_html( sprintf( __( 'Reading %s from the package failed (damaged ZIP data).', 'jisento-migration' ), self::printable( $name ) ) ));
 				break;
 			}
 			if ( '' === $buffer ) {
@@ -441,7 +457,8 @@ class Archive {
 			}
 			$wrote = fwrite( $out, $buffer );
 			if ( false === $wrote || $wrote !== strlen( $buffer ) ) {
-				$error = new \WP_Error( 'jisento_write', sprintf( __( 'Writing %s failed after %d bytes (disk full or quota reached).', 'jisento-migration' ), self::printable( $dest ), $written ) );
+				/* translators: 1: destination path, 2: bytes written. */
+				$error = new \WP_Error( 'jisento_write', esc_html( sprintf( __( 'Writing %1$s failed after %2$d bytes (disk full or quota reached).', 'jisento-migration' ), self::printable( $dest ), $written ) ));
 				break;
 			}
 			$written += $wrote;
@@ -468,13 +485,16 @@ class Archive {
 		}
 		fclose( $stream );
 		if ( ! fclose( $out ) && ! $error ) {
-			$error = new \WP_Error( 'jisento_write', sprintf( __( 'Closing %s failed (disk full).', 'jisento-migration' ), self::printable( $tmp ) ) );
+			/* translators: %s: runtime values. */
+			$error = new \WP_Error( 'jisento_write', esc_html( sprintf( __( 'Closing %s failed (disk full).', 'jisento-migration' ), self::printable( $tmp ) ) ));
 		}
 		if ( ! $error && $written !== (int) $stat['size'] ) {
-			$error = new \WP_Error( 'jisento_entry_size', sprintf( __( '%1$s extracted to %2$d bytes but the package says %3$d.', 'jisento-migration' ), self::printable( $name ), $written, (int) $stat['size'] ) );
+			/* translators: %1$s, %2$d, %3$d: runtime values. */
+			$error = new \WP_Error( 'jisento_entry_size', esc_html( sprintf( __( '%1$s extracted to %2$d bytes but the package says %3$d.', 'jisento-migration' ), self::printable( $name ), $written, (int) $stat['size'] ) ));
 		}
 		if ( ! $error && isset( $stat['crc'] ) && sprintf( '%08x', (int) $stat['crc'] & 0xFFFFFFFF ) !== hash_final( $crc ) ) {
-			$error = new \WP_Error( 'jisento_entry_crc', sprintf( __( '%s failed its ZIP CRC check. The package is damaged; export or upload it again.', 'jisento-migration' ), self::printable( $name ) ) );
+			/* translators: %s: runtime values. */
+			$error = new \WP_Error( 'jisento_entry_crc', esc_html( sprintf( __( '%s failed its ZIP CRC check. The package is damaged; export or upload it again.', 'jisento-migration' ), self::printable( $name ) ) ));
 		}
 		$digest = null;
 		if ( ! $error && $chunk_sha ) {
@@ -483,7 +503,8 @@ class Archive {
 			}
 			$digest = ( 0 === $written ) ? hash( 'sha256', '' ) : hash( 'sha256', $hashes );
 			if ( is_string( $expected_sha ) && $digest !== $expected_sha ) {
-				$error = new \WP_Error( 'jisento_entry_sha', sprintf( __( '%s failed its SHA-256 check. The package is damaged or was modified; export or upload it again.', 'jisento-migration' ), self::printable( $name ) ) );
+				/* translators: %s: runtime values. */
+				$error = new \WP_Error( 'jisento_entry_sha', esc_html( sprintf( __( '%s failed its SHA-256 check. The package is damaged or was modified; export or upload it again.', 'jisento-migration' ), self::printable( $name ) ) ));
 			}
 		}
 		if ( $error ) {
@@ -502,7 +523,8 @@ class Archive {
 	private static function commit_tmp( $tmp, $dest ) {
 		if ( ! @rename( $tmp, $dest ) ) {
 			@unlink( $tmp );
-			return new \WP_Error( 'jisento_write', sprintf( __( 'Unable to move the restored file into place at %s.', 'jisento-migration' ), self::printable( $dest ) ) );
+			/* translators: %s: runtime values. */
+			return new \WP_Error( 'jisento_write', esc_html( sprintf( __( 'Unable to move the restored file into place at %s.', 'jisento-migration' ), self::printable( $dest ) ) ));
 		}
 		return true;
 	}
@@ -523,7 +545,7 @@ class Archive {
 	public function extract_files_batch( $zip_path, $start_index, $max_files, $time_budget, $mapper, $resume = null, $max_bytes = 33554432 ) {
 		$zip = new \ZipArchive();
 		if ( true !== $zip->open( $zip_path ) ) {
-			return new \WP_Error( 'jisento_zip_open', __( 'Unable to open the package.', 'jisento-migration' ) );
+			return new \WP_Error( 'jisento_zip_open', esc_html__( 'Unable to open the package.', 'jisento-migration' ));
 		}
 
 		$digests = self::read_entry_digests( $zip_path );
@@ -579,7 +601,8 @@ class Archive {
 			if ( is_array( $digest_map ) ) {
 				if ( empty( $digest_map[ $name ]['sha'] ) ) {
 					$zip->close();
-					return new \WP_Error( 'jisento_entry_sha', sprintf( __( '%s has no SHA-256 in checksums/entries.jsonl. The package is incomplete; export it again.', 'jisento-migration' ), self::printable( $name ) ) );
+					/* translators: %s: runtime values. */
+					return new \WP_Error( 'jisento_entry_sha', esc_html( sprintf( __( '%s has no SHA-256 in checksums/entries.jsonl. The package is incomplete; export it again.', 'jisento-migration' ), self::printable( $name ) ) ));
 				}
 				$expected_sha = (string) $digest_map[ $name ]['sha'];
 			}
@@ -679,11 +702,13 @@ class Archive {
 			$chunks = array();
 		}
 		if ( ! is_dir( dirname( $dest ) ) && ! wp_mkdir_p( dirname( $dest ) ) ) {
-			return new \WP_Error( 'jisento_write', sprintf( __( 'Unable to create folder %s.', 'jisento-migration' ), self::printable( dirname( $dest ) ) ) );
+			/* translators: %s: runtime values. */
+			return new \WP_Error( 'jisento_write', esc_html( sprintf( __( 'Unable to create folder %s.', 'jisento-migration' ), self::printable( dirname( $dest ) ) ) ));
 		}
 		$out = @fopen( $tmp, $offset > 0 ? 'r+b' : 'wb' );
 		if ( ! $out ) {
-			return new \WP_Error( 'jisento_write', sprintf( __( 'Unable to write %s (permission denied or disk full).', 'jisento-migration' ), self::printable( $tmp ) ) );
+			/* translators: %s: runtime values. */
+			return new \WP_Error( 'jisento_write', esc_html( sprintf( __( 'Unable to write %s (permission denied or disk full).', 'jisento-migration' ), self::printable( $tmp ) ) ));
 		}
 		ftruncate( $out, $offset );
 		fseek( $out, $offset );
@@ -702,13 +727,15 @@ class Archive {
 					fclose( $in );
 				}
 				fclose( $out );
-				return new \WP_Error( 'jisento_stream', sprintf( __( 'Unable to read %s from the package.', 'jisento-migration' ), self::printable( $name ) ) );
+				/* translators: %s: runtime values. */
+				return new \WP_Error( 'jisento_stream', esc_html( sprintf( __( 'Unable to read %s from the package.', 'jisento-migration' ), self::printable( $name ) ) ));
 			}
 		} else {
 			$in = $zip->getStream( $name );
 			if ( ! $in ) {
 				fclose( $out );
-				return new \WP_Error( 'jisento_stream', sprintf( __( 'Unable to read %s from the package.', 'jisento-migration' ), self::printable( $name ) ) );
+				/* translators: %s: runtime values. */
+				return new \WP_Error( 'jisento_stream', esc_html( sprintf( __( 'Unable to read %s from the package.', 'jisento-migration' ), self::printable( $name ) ) ));
 			}
 			$skip = $offset;
 			while ( $skip > 0 ) {
@@ -716,7 +743,8 @@ class Archive {
 				if ( false === $buffer || '' === $buffer ) {
 					fclose( $in );
 					fclose( $out );
-					return new \WP_Error( 'jisento_stream', sprintf( __( 'Reading %s from the package failed (damaged ZIP data).', 'jisento-migration' ), self::printable( $name ) ) );
+					/* translators: %s: runtime values. */
+					return new \WP_Error( 'jisento_stream', esc_html( sprintf( __( 'Reading %s from the package failed (damaged ZIP data).', 'jisento-migration' ), self::printable( $name ) ) ));
 				}
 				$skip -= strlen( $buffer );
 			}
@@ -749,12 +777,14 @@ class Archive {
 			}
 			$buffer = fread( $in, $take );
 			if ( false === $buffer || '' === $buffer ) {
-				$error = new \WP_Error( 'jisento_stream', sprintf( __( 'Reading %s from the package failed (damaged ZIP data).', 'jisento-migration' ), self::printable( $name ) ) );
+				/* translators: %s: runtime values. */
+				$error = new \WP_Error( 'jisento_stream', esc_html( sprintf( __( 'Reading %s from the package failed (damaged ZIP data).', 'jisento-migration' ), self::printable( $name ) ) ));
 				break;
 			}
 			$wrote = fwrite( $out, $buffer );
 			if ( false === $wrote || $wrote !== strlen( $buffer ) ) {
-				$error = new \WP_Error( 'jisento_write', sprintf( __( 'Writing %s failed after %d bytes (disk full or quota reached).', 'jisento-migration' ), self::printable( $dest ), $offset + $written ) );
+				/* translators: 1: destination path, 2: bytes written. */
+				$error = new \WP_Error( 'jisento_write', esc_html( sprintf( __( 'Writing %1$s failed after %2$d bytes (disk full or quota reached).', 'jisento-migration' ), self::printable( $dest ), $offset + $written ) ));
 				break;
 			}
 			hash_update( $piece, $buffer );
@@ -771,7 +801,8 @@ class Archive {
 		}
 		fclose( $in );
 		if ( ! fclose( $out ) && ! $error ) {
-			$error = new \WP_Error( 'jisento_write', sprintf( __( 'Closing %s failed (disk full).', 'jisento-migration' ), self::printable( $tmp ) ) );
+			/* translators: %s: runtime values. */
+			$error = new \WP_Error( 'jisento_write', esc_html( sprintf( __( 'Closing %s failed (disk full).', 'jisento-migration' ), self::printable( $tmp ) ) ));
 		}
 		if ( $error ) {
 			@unlink( $tmp );
@@ -790,7 +821,8 @@ class Archive {
 		}
 		if ( isset( $stat['crc'] ) && ( (int) $stat['crc'] & 0xFFFFFFFF ) !== $crc ) {
 			@unlink( $tmp );
-			return new \WP_Error( 'jisento_entry_crc', sprintf( __( '%s failed its ZIP CRC check. The package is damaged; export or upload it again.', 'jisento-migration' ), self::printable( $name ) ) );
+			/* translators: %s: runtime values. */
+			return new \WP_Error( 'jisento_entry_crc', esc_html( sprintf( __( '%s failed its ZIP CRC check. The package is damaged; export or upload it again.', 'jisento-migration' ), self::printable( $name ) ) ));
 		}
 		if ( is_string( $expected_sha ) ) {
 			if ( $chunk_sha && $in_chunk > 0 ) {
@@ -799,7 +831,8 @@ class Archive {
 			$digest = ( 0 === $size ) ? hash( 'sha256', '' ) : hash( 'sha256', implode( '', array_map( 'hex2bin', $chunks ) ) );
 			if ( $digest !== $expected_sha ) {
 				@unlink( $tmp );
-				return new \WP_Error( 'jisento_entry_sha', sprintf( __( '%s failed its SHA-256 check. The package is damaged or was modified; export or upload it again.', 'jisento-migration' ), self::printable( $name ) ) );
+				/* translators: %s: runtime values. */
+				return new \WP_Error( 'jisento_entry_sha', esc_html( sprintf( __( '%s failed its SHA-256 check. The package is damaged or was modified; export or upload it again.', 'jisento-migration' ), self::printable( $name ) ) ));
 			}
 		}
 		$committed = self::commit_tmp( $tmp, $dest );
@@ -823,7 +856,8 @@ class Archive {
 	 * @return int|\WP_Error
 	 */
 	public static function data_offset( $zip_path, $name ) {
-		$bad = new \WP_Error( 'jisento_zip_directory', sprintf( __( 'The package directory could not be read to locate %s. The package is damaged; export or upload it again.', 'jisento-migration' ), self::printable( $name ) ) );
+		/* translators: %s: runtime values. */
+		$bad = new \WP_Error( 'jisento_zip_directory', esc_html( sprintf( __( 'The package directory could not be read to locate %s. The package is damaged; export or upload it again.', 'jisento-migration' ), self::printable( $name ) ) ));
 		$fh  = @fopen( $zip_path, 'rb' );
 		if ( ! $fh ) {
 			return $bad;
@@ -954,3 +988,4 @@ class Archive {
 		return 1 === preg_match( '//u', $text ) ? $text : 'hex:' . bin2hex( $text );
 	}
 }
+

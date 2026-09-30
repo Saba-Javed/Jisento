@@ -15,7 +15,7 @@ class Guard {
 
 	public static function require_admin_rest() {
 		if ( ! Capabilities::current_user_can() ) {
-			return new \WP_Error( 'jisento_forbidden', __( 'You are not allowed to run migrations.', 'jisento-migration' ), array( 'status' => 403 ) );
+			return new \WP_Error( 'jisento_forbidden', esc_html__( 'You are not allowed to run migrations.', 'jisento-migration' ), array( 'status' => 403 ) );
 		}
 		return true;
 	}
@@ -24,7 +24,7 @@ class Guard {
 		$key   = 'jisento_rl_' . md5( $bucket . self::client_ip() );
 		$count = (int) get_transient( $key );
 		if ( $count >= $max ) {
-			return new \WP_Error( 'jisento_rate_limited', __( 'Too many requests. Please wait and try again.', 'jisento-migration' ), array( 'status' => 429 ) );
+			return new \WP_Error( 'jisento_rate_limited', esc_html__( 'Too many requests. Please wait and try again.', 'jisento-migration' ), array( 'status' => 429 ) );
 		}
 		set_transient( $key, $count + 1, $window );
 		return true;
@@ -43,8 +43,7 @@ class Guard {
 		$settings = \Jisento\Migration\Plugin::instance()->settings;
 		if ( $settings->get( 'https_required', true ) && ! self::is_https_request() && ! self::is_local_dev() ) {
 			return new \WP_Error(
-				'jisento_https_required',
-				__( 'Remote migration requires HTTPS.', 'jisento-migration' ),
+				'jisento_https_required', esc_html__( 'Remote migration requires HTTPS.', 'jisento-migration' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -70,22 +69,22 @@ class Guard {
 		$relative = ltrim( $relative, '/' );
 
 		if ( '' === $relative ) {
-			return new \WP_Error( 'jisento_bad_path', __( 'Empty archive path.', 'jisento-migration' ) );
+			return new \WP_Error( 'jisento_bad_path', esc_html__( 'Empty archive path.', 'jisento-migration' ));
 		}
 
 		if ( false !== strpos( $relative, "\0" ) ) {
-			return new \WP_Error( 'jisento_bad_path', __( 'Invalid archive path.', 'jisento-migration' ) );
+			return new \WP_Error( 'jisento_bad_path', esc_html__( 'Invalid archive path.', 'jisento-migration' ));
 		}
 
 		$parts = explode( '/', $relative );
 		foreach ( $parts as $part ) {
 			if ( '.' === $part || '..' === $part || '' === $part ) {
-				return new \WP_Error( 'jisento_bad_path', __( 'Archive path traversal is not allowed.', 'jisento-migration' ) );
+				return new \WP_Error( 'jisento_bad_path', esc_html__( 'Archive path traversal is not allowed.', 'jisento-migration' ));
 			}
 		}
 
 		if ( preg_match( '#^[a-zA-Z]:/#', $relative ) || 0 === strpos( $relative, '//' ) ) {
-			return new \WP_Error( 'jisento_bad_path', __( 'Absolute archive paths are not allowed.', 'jisento-migration' ) );
+			return new \WP_Error( 'jisento_bad_path', esc_html__( 'Absolute archive paths are not allowed.', 'jisento-migration' ));
 		}
 
 		return $relative;
