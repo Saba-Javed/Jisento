@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<p><?php esc_html_e( 'Package this website into a .jisento backup or generate a key for direct server-to-server transfer.', 'jisento' ); ?></p>
 		<div class="jisento-actions">
 			<button type="button" class="button button-primary button-hero" id="jisento-open-export"><?php esc_html_e( 'Create .jisento Backup', 'jisento' ); ?></button>
-			<button type="button" class="button button-hero" id="jisento-open-key-send"><?php esc_html_e( 'Migrate Using Migration Key', 'jisento' ); ?></button>
+			<a class="button button-hero" id="jisento-open-key-send" href="<?php echo esc_url( admin_url( 'admin.php?page=jisento-key-send' ) ); ?>"><?php esc_html_e( 'Migrate using migration key', 'jisento' ); ?></a>
 		</div>
 	</section>
 	<section class="jisento-card">
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<p><?php esc_html_e( 'Restore from a .jisento file or receive a migration from another site.', 'jisento' ); ?></p>
 		<div class="jisento-actions">
 			<a class="button button-primary button-hero" href="<?php echo esc_url( admin_url( 'admin.php?page=jisento-import' ) ); ?>"><?php esc_html_e( 'Import .jisento File', 'jisento' ); ?></a>
-			<button type="button" class="button button-hero" id="jisento-open-key-receive"><?php esc_html_e( 'Receive Migration From Key', 'jisento' ); ?></button>
+			<a class="button button-hero" id="jisento-open-key-receive" href="<?php echo esc_url( admin_url( 'admin.php?page=jisento-key-receive' ) ); ?>"><?php esc_html_e( 'Receive migration from key', 'jisento' ); ?></a>
 		</div>
 	</section>
 </div>

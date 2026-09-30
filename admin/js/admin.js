@@ -1351,7 +1351,7 @@
 					alert('Confirm that you have a backup of this site.');
 					return;
 				}
-				if (!uploadedPackage) {
+				if (!uploadedPackage && !remoteSession) {
 					alert('Select or upload a package first.');
 					return;
 				}
@@ -1367,7 +1367,6 @@
 				const sourceUrl = $('#jisento-source-url');
 				const destUrl = $('#jisento-dest-url');
 				const options = {
-					package: uploadedPackage,
 					destination_mode: mode,
 					confirm_replace: mode === 'replace' && !!(confirmReplaceEl && confirmReplaceEl.checked),
 					confirm_preserve: mode === 'preserve' && !!confirmPreserve,
@@ -1393,6 +1392,16 @@
 				document.querySelectorAll('.jisento-preserve').forEach(function (cb) {
 					options[cb.getAttribute('data-key')] = cb.checked;
 				});
+				if (remoteSession && remoteSession.session_id) {
+					options.session_id = remoteSession.session_id;
+					options.token = remoteSession.token;
+					if (!options.source_url && remoteSession.source) {
+						options.source_url = remoteSession.source.home_url || remoteSession.source.domain || '';
+					}
+					createJob({ type: 'receive', options: options }, start);
+					return;
+				}
+				options.package = uploadedPackage;
 				createJob({ type: 'import', options: options }, start);
 			});
 		}
@@ -1591,12 +1600,29 @@
 				} finally {
 					gen.disabled = false;
 				}
+				const keyText = created.connect || created.key || '';
+				const copyBtn = el('button', { type: 'button', className: 'button', id: 'jisento-copy-key' }, 'Copy');
+				copyBtn.addEventListener('click', function () {
+					const text = keyText;
+					if (navigator.clipboard && navigator.clipboard.writeText) {
+						navigator.clipboard.writeText(text).then(function () {
+							copyBtn.textContent = 'Copied';
+							setTimeout(function () {
+								copyBtn.textContent = 'Copy';
+							}, 1500);
+						}).catch(function () {
+							window.prompt('Copy migration key:', text);
+						});
+					} else {
+						window.prompt('Copy migration key:', text);
+					}
+				});
 				show(box);
 				fill(box, [
-					el('div', null, 'Key:'),
-					el('div', null, created.key || ''),
+					el('p', { className: 'jisento-key-value' }, keyText),
+					el('p', null, copyBtn),
 					el('p', null, 'Expires: ' + (created.expires_at || '')),
-					el('p', null, ['Connection: ', el('code', null, created.connect || '')]),
+					el('p', null, 'Paste this key on the destination site under Import → Receive migration from key'),
 					el('button', {
 						type: 'button',
 						className: 'button',
@@ -1610,113 +1636,79 @@
 							}
 							loadKeys().catch(function () {});
 						}
-					}, 'Revoke Key')
+					}, 'Revoke')
 				]);
 				loadKeys().catch(function () {});
-			});
-		}
-		const test = $('#jisento-test-connection');
-		if (test) {
-			test.addEventListener('click', async function () {
-				const box = $('#jisento-test-results');
-				show(box);
-				box.textContent = 'Testing connection…';
-				try {
-					const data = await api.req('test-connection', {
-						method: 'POST',
-						body: { source_url: $('#jisento-connect-url').value, key: $('#jisento-connect-key').value }
-					});
-					const lines = (data.checks || []).map(function (c) {
-						return el('p', null, (c.ok ? '✓' : '✗') + ' ' + (c.label || '') + (c.detail ? ' — ' + c.detail : ''));
-					});
-					if (data.ok) {
-						lines.push(el('p', null, el('strong', null, 'Connection OK. You can continue to migration.')));
-					}
-					fill(box, lines);
-				} catch (err) {
-					box.textContent = plainError(err, 'The connection test failed.');
-				}
 			});
 		}
 		const connect = $('#jisento-connect');
 		if (connect) {
 			connect.addEventListener('click', async function () {
+				const keyField = $('#jisento-connect-key');
+				const urlField = $('#jisento-connect-url');
+				const raw = keyField ? keyField.value.trim() : '';
+				const body = {};
+				if (raw.indexOf('#') !== -1) {
+					body.connection = raw;
+				} else {
+					body.key = raw;
+					body.source_url = urlField ? urlField.value.trim() : '';
+				}
 				let data;
 				try {
-					data = await api.req('connect', {
-						method: 'POST',
-						body: { source_url: $('#jisento-connect-url').value, key: $('#jisento-connect-key').value }
-					});
+					data = await api.req('connect', { method: 'POST', body: body });
 				} catch (err) {
 					alert(plainError(err, 'The connection failed.'));
 					return;
 				}
 				remoteSession = data;
 				const info = data.source || {};
-				const box = $('#jisento-source-info');
-				show(box);
-				const continueRemote = el('button', { type: 'button', className: 'button button-primary', id: 'jisento-continue-remote' }, 'Continue to Migration');
-				continueRemote.addEventListener('click', async function () {
-					const mode = destMode();
-					if (mode === 'replace' && !confirm('This will replace the destination site. Continue?')) {
-						return;
-					}
-					let confirmPreserve = false;
-					if (mode === 'preserve') {
-						confirmPreserve = await confirmPreserveModal();
-						if (!confirmPreserve) {
-							return;
-						}
-					}
-					createJob({
-						type: 'receive',
-						options: {
-							destination_mode: mode,
-							confirm_replace: mode === 'replace',
-							confirm_preserve: mode === 'preserve' && !!confirmPreserve,
-							safety_backup: false,
-							replace_urls: true,
-							source_url: info.home_url || $('#jisento-connect-url').value,
-							dest_url: jisentoAdmin.home,
-							session_id: data.session_id,
-							token: data.token
-						}
-					}, continueRemote);
+				packageManifest = {
+					home_url: info.home_url || info.domain || (urlField ? urlField.value : ''),
+					site_url: info.site_url || '',
+					database_size: info.database_bytes || 0,
+					files_size: info.files_bytes || 0,
+					package_size: info.total_bytes || 0
+				};
+				uploadedPackage = 'remote';
+				preserveConfirmed = false;
+				document.querySelectorAll('input[name="jisento_dest_mode"]').forEach(function (input) {
+					input.checked = false;
 				});
-				fill(box, [
-					el('h3', null, 'Source Site'),
-					el('p', null, 'Domain: ' + (info.domain || '')),
-					el('p', null, 'WordPress: ' + (info.wordpress_version || '')),
-					el('p', null, 'PHP: ' + (info.php_version || '')),
-					el('p', null, 'Database: ' + (info.database || '')),
-					el('p', null, 'Files: ' + (info.files || '')),
-					el('p', null, 'Total: ' + (info.total || '')),
-					el('div', { className: 'jisento-grid' }, [
-						el('label', { className: 'jisento-mode-card' }, [
-							el('input', { type: 'radio', name: 'jisento_dest_mode', value: 'replace' }),
-							' ',
-							el('strong', null, 'Completely Replace Destination')
-						]),
-						el('label', { className: 'jisento-mode-card' }, [
-							el('input', { type: 'radio', name: 'jisento_dest_mode', value: 'preserve', checked: true }),
-							' ',
-							el('strong', null, 'Preserve Existing Destination')
-						])
-					]),
-					el('p', null, continueRemote)
-				]);
+				const confirmReplace = $('#jisento-confirm-replace');
+				if (confirmReplace) {
+					confirmReplace.checked = false;
+				}
+				if ($('#jisento-source-url') && packageManifest.home_url) {
+					$('#jisento-source-url').value = packageManifest.home_url.indexOf('http') === 0
+						? packageManifest.home_url
+						: ('https://' + packageManifest.home_url);
+				}
+				const box = $('#jisento-source-info');
+				if (box) {
+					show(box);
+					fill(box, [
+						el('h3', null, 'Connection result'),
+						el('p', null, 'Source URL: ' + (info.home_url || info.domain || '')),
+						el('p', null, 'WordPress version: ' + (info.wordpress_version || '')),
+						el('p', null, 'Estimated size: ' + (info.total || bytes(packageManifest.package_size) || '—'))
+					]);
+				}
+				unlockWizardStep(2);
+				updateReviewPanel();
+				setWizardStep(2, { scroll: true });
 			});
 		}
 		const send = $('#jisento-open-key-send');
-		if (send) {
+		if (send && send.tagName === 'BUTTON') {
 			send.addEventListener('click', function () {
-				window.location = 'admin.php?page=jisento-keys';
+				window.location = 'admin.php?page=jisento-key-send';
 			});
 		}
 		const recv = $('#jisento-open-key-receive');
-		if (recv) {
+		if (recv && recv.tagName === 'BUTTON') {
 			recv.addEventListener('click', function () {
-				window.location = 'admin.php?page=jisento-keys';
+				window.location = 'admin.php?page=jisento-key-receive';
 			});
 		}
 	}

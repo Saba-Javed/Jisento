@@ -41,7 +41,10 @@ class Admin {
 		add_submenu_page( 'jisento', __( 'Migration', 'jisento' ), __( 'Migration', 'jisento' ), $cap, 'jisento', array( $this, 'page_migration' ) );
 		add_submenu_page( 'jisento', __( 'Backups', 'jisento' ), __( 'Backups', 'jisento' ), $cap, 'jisento-backups', array( $this, 'page_backups' ) );
 		add_submenu_page( 'jisento', __( 'Import', 'jisento' ), __( 'Import', 'jisento' ), $cap, 'jisento-import', array( $this, 'page_import' ) );
+		add_submenu_page( 'jisento', __( 'Migrate using key', 'jisento' ), __( 'Migrate using key', 'jisento' ), $cap, 'jisento-key-send', array( $this, 'page_key_send' ) );
+		add_submenu_page( 'jisento', __( 'Receive from key', 'jisento' ), __( 'Receive from key', 'jisento' ), $cap, 'jisento-key-receive', array( $this, 'page_key_receive' ) );
 		add_submenu_page( 'jisento', __( 'Migration Keys', 'jisento' ), __( 'Migration Keys', 'jisento' ), $cap, 'jisento-keys', array( $this, 'page_keys' ) );
+		remove_submenu_page( 'jisento', 'jisento-keys' );
 		add_submenu_page( 'jisento', __( 'Settings', 'jisento' ), __( 'Settings', 'jisento' ), $cap, 'jisento-settings', array( $this, 'page_settings' ) );
 		add_submenu_page( 'jisento', __( 'Logs', 'jisento' ), __( 'Logs', 'jisento' ), $cap, 'jisento-logs', array( $this, 'page_logs' ) );
 	}
@@ -89,6 +92,14 @@ class Admin {
 
 	public function page_import() {
 		$this->render( 'import' );
+	}
+
+	public function page_key_send() {
+		$this->render( 'key-send' );
+	}
+
+	public function page_key_receive() {
+		$this->render( 'key-receive' );
 	}
 
 	public function page_keys() {
