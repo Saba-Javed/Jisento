@@ -183,9 +183,10 @@ function Receive-ErrorText {
     }
 }
 
-function Invoke-RoundtripRun {
+function Invoke-PhpTestRun {
     param(
         [string]$Title,
+        [string]$Script,
         [hashtable]$Variables
     )
 
@@ -195,12 +196,18 @@ function Invoke-RoundtripRun {
         exit 1
     }
 
+    $scriptPath = Join-Path $Root $Script
+    if (-not (Test-Path -LiteralPath $scriptPath)) {
+        Write-Line "Cannot find $Script."
+        exit 1
+    }
+
     Write-Line ""
     Write-Line "========== $Title =========="
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $phpExe
-    $psi.Arguments = 'tests/roundtrip-test.php'
+    $psi.Arguments = $Script
     $psi.WorkingDirectory = $Root
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
@@ -264,6 +271,15 @@ function Invoke-RoundtripRun {
         ExitCode = $exitCode
         Seconds  = $clock.Elapsed.TotalSeconds
     }
+}
+
+function Invoke-RoundtripRun {
+    param(
+        [string]$Title,
+        [hashtable]$Variables
+    )
+
+    return Invoke-PhpTestRun -Title $Title -Script 'tests/roundtrip-test.php' -Variables $Variables
 }
 
 if (-not (Test-Path -LiteralPath $TestScript)) {
@@ -347,6 +363,16 @@ if (-not $Quick) {
 $results = @()
 foreach ($run in $runs) {
     $results += Invoke-RoundtripRun -Title $run.Title -Variables $run.Vars
+}
+
+# Full mode: preserve-mode orphan-author checks need a real DB (not the default SKIP path).
+if (-not $Quick) {
+    $results += Invoke-PhpTestRun -Title 'Preserve mode (MariaDB)' -Script 'tests/preserve-mode-test.php' -Variables @{
+        JISENTO_TEST_DB_HOST = '127.0.0.1'
+        JISENTO_TEST_DB_PORT = '3307'
+        JISENTO_TEST_DB_USER = 'root'
+        JISENTO_TEST_DB_PASS = 'root'
+    }
 }
 
 Write-Line ""
