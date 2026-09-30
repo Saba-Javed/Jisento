@@ -169,6 +169,7 @@ class Jisento_Test_Wpdb {
 	public $options;
 	public $users;
 	public $usermeta;
+	public $posts;
 	public $queries    = array();
 
 	public function __construct( mysqli $dbh, $dbname, $prefix = 'wp_' ) {

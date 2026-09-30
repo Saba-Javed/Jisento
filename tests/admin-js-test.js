@@ -36,7 +36,10 @@ check('non-JSON bodies report a PHP error', source.indexOf("'The server returned
 check('retry uses the retry route', /'jobs\/'\s*\+[^;\n]*\+\s*'\/retry'/.test(source));
 check('placeholder repair route is present', /'jobs\/'\s*\+[^;\n]*\+\s*'\/repair-placeholders'/.test(source));
 check('debug log route is present', /jobRoute\(id, 'log'\)|'\/log'/.test(source));
-check('users_replaced shows the source login hint', source.indexOf("Log in with the SOURCE site's username and password.") !== -1);
+check('users_replaced shows the source login hint', /Migration complete\. Log in with the source site/.test(source));
+check('login button uses jisentoAdmin.loginUrl', /jisentoAdmin\.loginUrl/.test(source));
+check('auth-check suppressed while job runs', /suppressAuthCheck/.test(source) && /wp-auth-check-wrap/.test(source));
+check('completed import restored after re-login', /jisento-completed-import/.test(source) && /showStoredCompletedImport/.test(source));
 check('validation card says format marker, not signature', /Format marker/.test(source) && !/' signature</.test(source));
 check('import sends replace_guids and confirm_preserve', /replace_guids/.test(source) && /confirm_preserve/.test(source));
 check('preserve modal text is present', /Keep this site\\?'s logins, themes and plugins/.test(source) || /confirmPreserveModal/.test(source));

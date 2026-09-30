@@ -450,7 +450,13 @@ if ( is_wp_error( $run ) ) {
 	check( 'preserve: source options content imported', '100%' === $pw->get_var( "SELECT option_value FROM wp_options WHERE option_name = 'pct_plain'" ) );
 	check( 'preserve: existing wp_users kept', 'destination_admin' === $pw->get_var( 'SELECT user_login FROM wp_users' ) && 1 === (int) $pw->get_var( 'SELECT COUNT(*) FROM wp_users' ) );
 	check( 'preserve: postmeta equals source', (int) $pw->get_var( 'SELECT COUNT(*) FROM wp_postmeta' ) === $rows_target + 1 );
-	rt_compare( $src, $pw, array_values( array_diff( $tables, array( 'wp_options', 'wp_users', 'wp_usermeta' ) ) ), 'preserve other tables match source' );
+	$bad = array();
+	foreach ( array_values( array_diff( $tables, array( 'wp_options', 'wp_users', 'wp_usermeta' ) ) ) as $table ) {
+		if ( rt_fingerprint( $src, $table ) !== rt_fingerprint( $pw, $table ) ) {
+			$bad[] = $table;
+		}
+	}
+	check( 'preserve: other tables match source', ! $bad, implode( ', ', $bad ) );
 }
 $probe = new Database_Importer( 'wp_', 'wp_', array( 'restore' => array( 'wp_postmeta', 'wp_options' ), 'keep' => array( 'wp_users', 'wp_usermeta' ) ) );
 $drop  = $probe->classify( 'DROP TABLE IF EXISTS `wp_users`;' );

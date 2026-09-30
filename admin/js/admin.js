@@ -590,10 +590,14 @@
 		const report = (job.state && job.state.report) || {};
 		const done = headlines(job);
 		const isImport = job.type === 'import' || job.type === 'receive';
-		fill(box, el('div', { className: 'jisento-card' }, [
+		const needsSourceLogin = isImport && report.users_replaced === true;
+		if (needsSourceLogin) {
+			rememberCompletedImport(job);
+		}
+		const children = [
 			el('h2', null, done.complete),
-			isImport && report.users_replaced === true
-				? el('p', { className: 'jisento-login-hint' }, el('strong', null, "Log in with the SOURCE site's username and password."))
+			needsSourceLogin
+				? el('p', { className: 'jisento-login-hint' }, el('strong', null, 'Migration complete. Log in with the source site\'s username and password.'))
 				: null,
 			isImport && report.kept_versions
 				? el('p', { className: 'jisento-kept-versions' }, report.kept_versions)
@@ -604,13 +608,75 @@
 			el('p', null, 'Source: ' + (report.source || '')),
 			el('p', null, 'Destination: ' + (report.destination || jisentoAdmin.home)),
 			report.package ? el('p', null, ['Package: ', el('code', null, report.package)]) : null,
-			timingLines(report.timings),
-			el('p', null, [
+			timingLines(report.timings)
+		];
+		if (needsSourceLogin) {
+			children.push(el('p', null, [
+				el('a', {
+					className: 'button button-primary',
+					href: jisentoAdmin.loginUrl || (jisentoAdmin.site + '/wp-login.php')
+				}, 'Log in')
+			]));
+		} else {
+			children.push(el('p', null, [
 				el('a', { className: 'button button-primary', href: jisentoAdmin.home, target: '_blank', rel: 'noopener' }, 'Open Website'),
 				' ',
 				el('a', { className: 'button', href: 'admin.php?page=jisento-logs' }, done.report)
-			])
-		]));
+			]));
+		}
+		fill(box, el('div', { className: 'jisento-card' }, children));
+	}
+
+	function rememberCompletedImport(job) {
+		try {
+			localStorage.setItem('jisento-completed-import', JSON.stringify({
+				job_id: job.job_id,
+				type: job.type,
+				status: 'completed',
+				state: { report: (job.state && job.state.report) || {} }
+			}));
+		} catch (err) {
+			// Ignore quota errors.
+		}
+	}
+
+	function showStoredCompletedImport() {
+		let raw = '';
+		try {
+			raw = localStorage.getItem('jisento-completed-import') || '';
+		} catch (err) {
+			return;
+		}
+		if (!raw) {
+			return;
+		}
+		try {
+			localStorage.removeItem('jisento-completed-import');
+			const job = JSON.parse(raw);
+			if (job && job.state && job.state.report) {
+				renderComplete(job);
+			}
+		} catch (err) {
+			// Ignore bad JSON.
+		}
+	}
+
+	function suppressAuthCheck() {
+		const wrap = document.getElementById('wp-auth-check-wrap');
+		if (wrap) {
+			wrap.setAttribute('hidden', '');
+			wrap.style.display = 'none';
+		}
+		if (!document.getElementById('jisento-no-auth-check')) {
+			const style = document.createElement('style');
+			style.id = 'jisento-no-auth-check';
+			style.textContent = '#wp-auth-check-wrap{display:none!important;}';
+			document.head.appendChild(style);
+		}
+		if (window.jQuery) {
+			window.jQuery(document).off('heartbeat-tick.wp-auth-check');
+			window.jQuery(document).off('heartbeat-send.wp-auth-check');
+		}
 	}
 
 	async function downloadDebugLog(id, fallbackHref) {
@@ -817,6 +883,7 @@
 	}
 
 	async function runJob(id, runOptions) {
+		suppressAuthCheck();
 		const settings = runOptions || {};
 		const generation = ++runGeneration;
 		paused = false;
@@ -1648,6 +1715,7 @@
 		});
 		loadKeys().catch(function () {});
 		loadExistingBackups().catch(function () {});
+		showStoredCompletedImport();
 		resumeActiveJob();
 		const params = new URLSearchParams(window.location.search);
 		if (params.get('package') && $('#jisento-dest-mode')) {

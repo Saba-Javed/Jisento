@@ -57,11 +57,12 @@ class Admin {
 			'jisento-admin',
 			'jisentoAdmin',
 			array(
-				'root'  => esc_url_raw( rest_url( 'jisento/v1/' ) ),
-				'nonce' => wp_create_nonce( 'wp_rest' ),
-				'home'  => home_url(),
-				'site'  => site_url(),
-				'i18n'  => array(
+				'root'     => esc_url_raw( rest_url( 'jisento/v1/' ) ),
+				'nonce'    => wp_create_nonce( 'wp_rest' ),
+				'home'     => home_url(),
+				'site'     => site_url(),
+				'loginUrl' => wp_login_url( admin_url( 'admin.php?page=jisento-import' ) ),
+				'i18n'     => array(
 					'running'   => __( 'Migration in Progress', 'jisento' ),
 					'failed'    => __( 'Migration Failed', 'jisento' ),
 					'complete'  => __( 'Migration Completed Successfully', 'jisento' ),
@@ -69,6 +70,13 @@ class Admin {
 				),
 			)
 		);
+		// Progress polling uses the job token after Replace swaps users; hide the session-expired modal.
+		wp_add_inline_script(
+			'jisento-admin',
+			'document.addEventListener("DOMContentLoaded",function(){if(window.jQuery){jQuery(document).off("heartbeat-tick.wp-auth-check");jQuery(document).off("heartbeat-send.wp-auth-check");}});',
+			'before'
+		);
+		wp_dequeue_style( 'wp-auth-check' );
 	}
 
 	public function page_migration() {
