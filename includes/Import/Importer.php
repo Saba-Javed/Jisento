@@ -42,7 +42,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // phpcs:disable WordPress.WP.AlternativeFunctions -- Large migration package streams cannot use WP_Filesystem.
-// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- throw self::error() escapes the message with esc_html() inside error().
+// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- throw self::error() escapes the message with \esc_html() inside error().
 
 
 class Importer {
@@ -181,7 +181,7 @@ class Importer {
 	public static function retry_fields( $job ) {
 		$state = is_array( $job->state ) ? $job->state : array();
 		if ( empty( $state['options'] ) ) {
-			throw new \RuntimeException(esc_html__( 'Operation: retry. Reason: the job has no saved options. Recovery: start a new import.', 'jisento-migration' ));
+			throw new \RuntimeException(\esc_html__( 'Operation: retry. Reason: the job has no saved options. Recovery: start a new import.', 'jisento-migration' ));
 		}
 		if ( empty( $state['db_swapped'] ) ) {
 			return array(
@@ -192,11 +192,11 @@ class Importer {
 		}
 		$path = isset( $state['package_path'] ) ? (string) $state['package_path'] : '';
 		if ( '' === $path || ! is_file( $path ) ) {
-			throw new \RuntimeException(esc_html__( 'Operation: retry. Reason: the package file is gone, and the database was already restored. Recovery: upload the same package again and start a new import.', 'jisento-migration' ));
+			throw new \RuntimeException(\esc_html__( 'Operation: retry. Reason: the package file is gone, and the database was already restored. Recovery: upload the same package again and start a new import.', 'jisento-migration' ));
 		}
 		$info = ( new Archive() )->verify_structure( $path );
 		if ( is_wp_error( $info ) ) {
-			throw new \RuntimeException(esc_html( $info->get_error_message() ));
+			throw new \RuntimeException(\esc_html( $info->get_error_message() ));
 		}
 		if ( 'importing_database' === $job->stage ) {
 			// Failed after the swap (foreign keys or engines): the swap step is safe to repeat.
@@ -293,11 +293,11 @@ class Importer {
 		$relative = ltrim( str_replace( '\\', '/', $options['package'] ), '/' );
 		$relative = Guard::sanitize_archive_path( $relative );
 		if ( is_wp_error( $relative ) ) {
-			throw new \RuntimeException(esc_html( $relative->get_error_message() ));
+			throw new \RuntimeException(\esc_html( $relative->get_error_message() ));
 		}
 		$path = $plugin->storage->resolve( $relative );
 		if ( ! $path ) {
-			throw new \RuntimeException(esc_html__( 'Operation: open the package. Reason: the selected .jisento package could not be found. Recovery: upload it again, then start the import.', 'jisento-migration' ));
+			throw new \RuntimeException(\esc_html__( 'Operation: open the package. Reason: the selected .jisento package could not be found. Recovery: upload it again, then start the import.', 'jisento-migration' ));
 		}
 		return $path['path'];
 	}
@@ -377,7 +377,7 @@ class Importer {
 
 	private static function error( $job, $operation, $reason, $recovery ) {
 		return new \RuntimeException(
-			esc_html( sprintf( 'Stage: %1$s. Operation: %2$s. Reason: %3$s Recovery: %4$s Job: %5$s', $job->stage, $operation, rtrim( (string) $reason ), $recovery, $job->job_id ) )
+			\esc_html( sprintf( 'Stage: %1$s. Operation: %2$s. Reason: %3$s Recovery: %4$s Job: %5$s', $job->stage, $operation, rtrim( (string) $reason ), $recovery, $job->job_id ) )
 		);
 	}
 
@@ -1075,7 +1075,7 @@ class Importer {
 					return '';
 				}
 				/* translators: %s: runtime values. */
-				return new \WP_Error( 'jisento_path', esc_html( sprintf( __( 'The package contains WordPress core file %s but was not exported with core files. It was rejected.', 'jisento-migration' ), $relative ) ));
+				return new \WP_Error( 'jisento_path', \esc_html( sprintf( __( 'The package contains WordPress core file %s but was not exported with core files. It was rejected.', 'jisento-migration' ), $relative ) ));
 			}
 		}
 		$content_rel = 0 === strpos( $relative, 'wp-content/' ) ? substr( $relative, strlen( 'wp-content/' ) ) : ( $core ? '' : $relative );
@@ -1206,7 +1206,7 @@ class Importer {
 				$list .= ', ...';
 			}
 			return new \WP_Error(
-				'jisento_incomplete_restore', esc_html( sprintf(
+				'jisento_incomplete_restore', \esc_html( sprintf(
 					/* translators: %s: comma-separated file paths with reason */
 					__( 'Restored plugins/themes are incomplete. Missing or wrong-sized files: %s', 'jisento-migration' ),
 					$list
@@ -1225,7 +1225,7 @@ class Importer {
 	public function package_extension_entries( $package_path, array $copies = array() ) {
 		$zip = new \ZipArchive();
 		if ( true !== $zip->open( $package_path ) ) {
-			return new \WP_Error( 'jisento_zip_open', esc_html__( 'Unable to open the package.', 'jisento-migration' ));
+			return new \WP_Error( 'jisento_zip_open', \esc_html__( 'Unable to open the package.', 'jisento-migration' ));
 		}
 		$out = array(
 			'plugins' => array(),
@@ -1485,7 +1485,7 @@ class Importer {
 		$root_real = realpath( $root );
 		if ( false === $root_real ) {
 			/* translators: %s: runtime values. */
-			return new \WP_Error( 'jisento_path', esc_html( sprintf( __( 'The restore root %s does not exist.', 'jisento-migration' ), $root ) ));
+			return new \WP_Error( 'jisento_path', \esc_html( sprintf( __( 'The restore root %s does not exist.', 'jisento-migration' ), $root ) ));
 		}
 		$root_real = rtrim( str_replace( '\\', '/', $root_real ), '/' );
 		$parent    = dirname( $dest );
@@ -1500,11 +1500,11 @@ class Importer {
 		$real = false === $real ? '' : rtrim( str_replace( '\\', '/', $real ), '/' );
 		if ( '' === $real || ( $real !== $root_real && 0 !== strpos( $real . '/', $root_real . '/' ) ) ) {
 			/* translators: %1$s, %2$s: runtime values. */
-			return new \WP_Error( 'jisento_path', esc_html( sprintf( __( 'Restoring %1$s would write outside %2$s (through a symlink or unusual path), so the restore stopped.', 'jisento-migration' ), $dest, $root_real ) ));
+			return new \WP_Error( 'jisento_path', \esc_html( sprintf( __( 'Restoring %1$s would write outside %2$s (through a symlink or unusual path), so the restore stopped.', 'jisento-migration' ), $dest, $root_real ) ));
 		}
 		if ( is_link( $dest ) ) {
 			/* translators: %s: runtime values. */
-			return new \WP_Error( 'jisento_path', esc_html( sprintf( __( '%s is a symlink; restoring over it could write outside the site, so the restore stopped.', 'jisento-migration' ), $dest ) ));
+			return new \WP_Error( 'jisento_path', \esc_html( sprintf( __( '%s is a symlink; restoring over it could write outside the site, so the restore stopped.', 'jisento-migration' ), $dest ) ));
 		}
 		return true;
 	}

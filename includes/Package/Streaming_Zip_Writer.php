@@ -71,11 +71,11 @@ class Streaming_Zip_Writer {
 		$writer = new self( $path, $state_path );
 		$dir    = dirname( $writer->path );
 		if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
-			throw new \RuntimeException(esc_html( sprintf( 'Operation: create the package. Reason: folder %s could not be created. Recovery: make the Jisento storage folder writable by PHP, then start a new export.', $dir ) ));
+			throw new \RuntimeException(\esc_html( sprintf( 'Operation: create the package. Reason: folder %s could not be created. Recovery: make the Jisento storage folder writable by PHP, then start a new export.', $dir ) ));
 		}
 		$chunk = isset( $options['hash_chunk'] ) ? (int) $options['hash_chunk'] : self::HASH_CHUNK;
 		if ( $chunk < 4096 || 0 !== $chunk % 4096 ) {
-			throw new \InvalidArgumentException(esc_html( 'hash_chunk must be a positive multiple of 4096.' ));
+			throw new \InvalidArgumentException(\esc_html( 'hash_chunk must be a positive multiple of 4096.' ));
 		}
 		$writer->state = array(
 			'version'     => 1,
@@ -106,14 +106,14 @@ class Streaming_Zip_Writer {
 		$raw    = is_readable( $writer->state_path ) ? file_get_contents( $writer->state_path ) : false;
 		$state  = is_string( $raw ) ? json_decode( $raw, true ) : null;
 		if ( ! is_array( $state ) || ! isset( $state['offset'], $state['index_bytes'], $state['hash_chunk'] ) ) {
-			throw new \RuntimeException(esc_html( 'Operation: resume building the package. Reason: the package progress file is missing or damaged. Recovery: start a new export.' ));
+			throw new \RuntimeException(\esc_html( 'Operation: resume building the package. Reason: the package progress file is missing or damaged. Recovery: start a new export.' ));
 		}
 		if ( ! empty( $state['finished'] ) ) {
-			throw new \RuntimeException(esc_html( 'Operation: resume building the package. Reason: the package was already finished. Recovery: none needed; reload the job status.' ));
+			throw new \RuntimeException(\esc_html( 'Operation: resume building the package. Reason: the package was already finished. Recovery: none needed; reload the job status.' ));
 		}
 		clearstatcache( true, $writer->path );
 		if ( ! is_file( $writer->path ) || (int) filesize( $writer->path ) < (int) $state['offset'] ) {
-			throw new \RuntimeException(esc_html( 'Operation: resume building the package. Reason: the partial package is missing or shorter than its committed length. Recovery: start a new export.' ));
+			throw new \RuntimeException(\esc_html( 'Operation: resume building the package. Reason: the partial package is missing or shorter than its committed length. Recovery: start a new export.' ));
 		}
 		$writer->state = $state;
 		$writer->open_handles( false );
@@ -131,13 +131,13 @@ class Streaming_Zip_Writer {
 			if ( $ix ) {
 				fclose( $ix );
 			}
-			throw new \RuntimeException(esc_html( sprintf( 'Operation: open the package for writing. Reason: %s could not be opened (permission denied or disk full). Recovery: make the Jisento storage folder writable by PHP, then start a new export.', basename( $this->path ) ) ));
+			throw new \RuntimeException(\esc_html( sprintf( 'Operation: open the package for writing. Reason: %s could not be opened (permission denied or disk full). Recovery: make the Jisento storage folder writable by PHP, then start a new export.', basename( $this->path ) ) ));
 		}
 		// Anything past the committed length was written by a request that did not finish.
 		if ( ! ftruncate( $fh, (int) $this->state['offset'] ) || ! ftruncate( $ix, (int) $this->state['index_bytes'] ) ) {
 			fclose( $fh );
 			fclose( $ix );
-			throw new \RuntimeException(esc_html( 'Operation: resume building the package. Reason: the partial package could not be truncated to its committed length. Recovery: start a new export.' ));
+			throw new \RuntimeException(\esc_html( 'Operation: resume building the package. Reason: the partial package could not be truncated to its committed length. Recovery: start a new export.' ));
 		}
 		fseek( $fh, (int) $this->state['offset'] );
 		fseek( $ix, (int) $this->state['index_bytes'] );
@@ -166,18 +166,18 @@ class Streaming_Zip_Writer {
 		$this->state['index_bytes'] = $this->tell_end( $this->index_fh );
 		$json = wp_json_encode( $this->state );
 		if ( ! is_string( $json ) ) {
-			throw new \RuntimeException(esc_html( 'Operation: save package progress. Reason: the progress could not be encoded as JSON. Recovery: start a new export.' ));
+			throw new \RuntimeException(\esc_html( 'Operation: save package progress. Reason: the progress could not be encoded as JSON. Recovery: start a new export.' ));
 		}
 		$tmp = $this->state_path . '.tmp';
 		if ( false === file_put_contents( $tmp, $json, LOCK_EX ) || ! @rename( $tmp, $this->state_path ) ) {
 			@unlink( $tmp );
-			throw new \RuntimeException(esc_html( sprintf( 'Operation: save package progress. Reason: %s could not be written (disk full or permission denied). Recovery: free disk space, then start a new export.', basename( $this->state_path ) ) ));
+			throw new \RuntimeException(\esc_html( sprintf( 'Operation: save package progress. Reason: %s could not be written (disk full or permission denied). Recovery: free disk space, then start a new export.', basename( $this->state_path ) ) ));
 		}
 	}
 
 	private function flush_handle( $handle ) {
 		if ( ! fflush( $handle ) ) {
-			throw new \RuntimeException(esc_html( 'Operation: write the package. Reason: flushing to disk failed (disk full or quota reached). Recovery: free disk space, then start a new export.' ));
+			throw new \RuntimeException(\esc_html( 'Operation: write the package. Reason: flushing to disk failed (disk full or quota reached). Recovery: free disk space, then start a new export.' ));
 		}
 		if ( function_exists( 'fsync' ) ) {
 			fsync( $handle );
@@ -271,7 +271,7 @@ class Streaming_Zip_Writer {
 		if ( 8 === $method ) {
 			$out = gzdeflate( $data, 6 );
 			if ( false === $out ) {
-				throw new \RuntimeException(esc_html( sprintf( 'Operation: compress %s. Reason: zlib failed. Recovery: start a new export.', self::printable( $name ) ) ));
+				throw new \RuntimeException(\esc_html( sprintf( 'Operation: compress %s. Reason: zlib failed. Recovery: start a new export.', self::printable( $name ) ) ));
 			}
 		} else {
 			$out = $data;
@@ -298,7 +298,7 @@ class Streaming_Zip_Writer {
 		$this->assert_can_add( $name );
 		clearstatcache( true, $source );
 		if ( ! is_file( $source ) || ! is_readable( $source ) ) {
-			throw new \RuntimeException(esc_html( sprintf( 'Operation: add %s to the package. Reason: the source file is missing or unreadable. Recovery: make sure the file exists and is readable, then start a new export.', self::printable( $name ) ) ));
+			throw new \RuntimeException(\esc_html( sprintf( 'Operation: add %s to the package. Reason: the source file is missing or unreadable. Recovery: make sure the file exists and is readable, then start a new export.', self::printable( $name ) ) ));
 		}
 		$size  = (int) filesize( $source );
 		$mtime = (int) filemtime( $source );
@@ -331,18 +331,18 @@ class Streaming_Zip_Writer {
 		$source = (string) $entry['source'];
 		clearstatcache( true, $source );
 		if ( ! is_file( $source ) || (int) filesize( $source ) !== (int) $entry['usize'] || (int) filemtime( $source ) !== (int) $entry['mtime'] ) {
-			throw new \RuntimeException(esc_html( sprintf( 'Operation: add %s to the package. Reason: the file changed or disappeared while it was being added. Recovery: start a new export when the site is not being edited.', self::printable( $entry['name'] ) ) ));
+			throw new \RuntimeException(\esc_html( sprintf( 'Operation: add %s to the package. Reason: the file changed or disappeared while it was being added. Recovery: start a new export when the site is not being edited.', self::printable( $entry['name'] ) ) ));
 		}
 		$in = @fopen( $source, 'rb' );
 		if ( ! $in ) {
-			throw new \RuntimeException(esc_html( sprintf( 'Operation: add %s to the package. Reason: the source file could not be opened. Recovery: make sure the file is readable, then start a new export.', self::printable( $entry['name'] ) ) ));
+			throw new \RuntimeException(\esc_html( sprintf( 'Operation: add %s to the package. Reason: the source file could not be opened. Recovery: make sure the file is readable, then start a new export.', self::printable( $entry['name'] ) ) ));
 		}
 		$done  = (int) $entry['done'];
 		$size  = (int) $entry['usize'];
 		$chunk = (int) $this->state['hash_chunk'];
 		if ( $done > 0 && 0 !== fseek( $in, $done ) ) {
 			fclose( $in );
-			throw new \RuntimeException(esc_html( sprintf( 'Operation: add %s to the package. Reason: seeking in the source file failed. Recovery: start a new export.', self::printable( $entry['name'] ) ) ));
+			throw new \RuntimeException(\esc_html( sprintf( 'Operation: add %s to the package. Reason: seeking in the source file failed. Recovery: start a new export.', self::printable( $entry['name'] ) ) ));
 		}
 		$piece_crc = hash_init( 'crc32b' );
 		$piece_len = 0;
@@ -357,7 +357,7 @@ class Streaming_Zip_Writer {
 				$buffer = fread( $in, min( self::READ_BYTES, $left ) );
 				if ( false === $buffer || '' === $buffer ) {
 					fclose( $in );
-					throw new \RuntimeException(esc_html( sprintf( 'Operation: add %s to the package. Reason: reading the source file stopped early. Recovery: start a new export.', self::printable( $entry['name'] ) ) ));
+					throw new \RuntimeException(\esc_html( sprintf( 'Operation: add %s to the package. Reason: reading the source file stopped early. Recovery: start a new export.', self::printable( $entry['name'] ) ) ));
 				}
 				$this->write( $buffer );
 				hash_update( $piece_crc, $buffer );
@@ -402,7 +402,7 @@ class Streaming_Zip_Writer {
 	 */
 	public function finish() {
 		if ( $this->has_open_entry() ) {
-			throw new \RuntimeException(esc_html( 'Operation: finish the package. Reason: an entry is still being written. Recovery: start a new export.' ));
+			throw new \RuntimeException(\esc_html( 'Operation: finish the package. Reason: an entry is still being written. Recovery: start a new export.' ));
 		}
 		$this->commit();
 		$content_sha = $this->embed_entry_checksums();
@@ -421,14 +421,14 @@ class Streaming_Zip_Writer {
 			$read += strlen( $line );
 			$e     = json_decode( $line, true );
 			if ( ! is_array( $e ) || ! isset( $e['n'] ) ) {
-				throw new \RuntimeException(esc_html( 'Operation: finish the package. Reason: the entry index is damaged. Recovery: start a new export.' ));
+				throw new \RuntimeException(\esc_html( 'Operation: finish the package. Reason: the entry index is damaged. Recovery: start a new export.' ));
 			}
 			$name = hex2bin( $e['n'] );
 			$this->write( $this->central_record( $e, $name, $force ) );
 			$count++;
 		}
 		if ( $count !== (int) $this->state['count'] ) {
-			throw new \RuntimeException(esc_html( sprintf( 'Operation: finish the package. Reason: the entry index lists %1$d entries but %2$d were written. Recovery: start a new export.', $count, (int) $this->state['count'] ) ));
+			throw new \RuntimeException(\esc_html( sprintf( 'Operation: finish the package. Reason: the entry index lists %1$d entries but %2$d were written. Recovery: start a new export.', $count, (int) $this->state['count'] ) ));
 		}
 		$cd_end  = (int) ftell( $this->fh );
 		$cd_size = $cd_end - $cd_start;
@@ -480,11 +480,11 @@ class Streaming_Zip_Writer {
 			$read += strlen( $line );
 			$e     = json_decode( $line, true );
 			if ( ! is_array( $e ) || ! isset( $e['n'], $e['sha'] ) ) {
-				throw new \RuntimeException(esc_html( 'Operation: finish the package. Reason: the entry index is damaged. Recovery: start a new export.' ));
+				throw new \RuntimeException(\esc_html( 'Operation: finish the package. Reason: the entry index is damaged. Recovery: start a new export.' ));
 			}
 			$name = hex2bin( $e['n'] );
 			if ( self::ENTRY_DIGESTS === $name ) {
-				throw new \RuntimeException(esc_html( 'Operation: finish the package. Reason: entry digests were already written. Recovery: start a new export.' ));
+				throw new \RuntimeException(\esc_html( 'Operation: finish the package. Reason: entry digests were already written. Recovery: start a new export.' ));
 			}
 			$crc = sprintf( '%08x', (int) $e['crc'] & 0xFFFFFFFF );
 			hash_update( $content, $name . "\0" . (int) $e['us'] . "\0" . $crc . "\0" . $e['sha'] . "\n" );
@@ -506,7 +506,7 @@ class Streaming_Zip_Writer {
 		foreach ( $lines as $row ) {
 			$json = wp_json_encode( $row );
 			if ( ! is_string( $json ) ) {
-				throw new \RuntimeException(esc_html( 'Operation: finish the package. Reason: an entry digest could not be encoded. Recovery: start a new export.' ));
+				throw new \RuntimeException(\esc_html( 'Operation: finish the package. Reason: an entry digest could not be encoded. Recovery: start a new export.' ));
 			}
 			$body .= $json . "\n";
 		}
@@ -551,13 +551,13 @@ class Streaming_Zip_Writer {
 
 	private function assert_can_add( $name ) {
 		if ( ! empty( $this->state['finished'] ) ) {
-			throw new \RuntimeException(esc_html( 'Operation: add to the package. Reason: the package is already finished. Recovery: start a new export.' ));
+			throw new \RuntimeException(\esc_html( 'Operation: add to the package. Reason: the package is already finished. Recovery: start a new export.' ));
 		}
 		if ( $this->has_open_entry() ) {
-			throw new \RuntimeException(esc_html( sprintf( 'Operation: add %s to the package. Reason: the previous entry is not finished. Recovery: start a new export.', self::printable( $name ) ) ));
+			throw new \RuntimeException(\esc_html( sprintf( 'Operation: add %s to the package. Reason: the previous entry is not finished. Recovery: start a new export.', self::printable( $name ) ) ));
 		}
 		if ( '' === (string) $name || strlen( (string) $name ) > 0xFFFF ) {
-			throw new \RuntimeException(esc_html( 'Operation: add to the package. Reason: an entry name is empty or too long. Recovery: start a new export.' ));
+			throw new \RuntimeException(\esc_html( 'Operation: add to the package. Reason: an entry name is empty or too long. Recovery: start a new export.' ));
 		}
 	}
 
@@ -580,7 +580,7 @@ class Streaming_Zip_Writer {
 			if ( $in ) {
 				fclose( $in );
 			}
-			throw new \RuntimeException(esc_html( sprintf( 'Operation: add %s to the package. Reason: the file or the compressor could not be opened. Recovery: make sure the file is readable, then start a new export.', self::printable( $name ) ) ));
+			throw new \RuntimeException(\esc_html( sprintf( 'Operation: add %s to the package. Reason: the file or the compressor could not be opened. Recovery: make sure the file is readable, then start a new export.', self::printable( $name ) ) ));
 		}
 		$crc    = hash_init( 'crc32b' );
 		$chunk  = (int) $this->state['hash_chunk'];
@@ -593,7 +593,7 @@ class Streaming_Zip_Writer {
 			$buffer = fread( $in, (int) min( self::READ_BYTES, $size - $read, $chunk - $in_sha ) );
 			if ( false === $buffer || '' === $buffer ) {
 				fclose( $in );
-				throw new \RuntimeException(esc_html( sprintf( 'Operation: add %s to the package. Reason: the file became shorter while it was read. Recovery: start a new export when the site is not being edited.', self::printable( $name ) ) ));
+				throw new \RuntimeException(\esc_html( sprintf( 'Operation: add %s to the package. Reason: the file became shorter while it was read. Recovery: start a new export when the site is not being edited.', self::printable( $name ) ) ));
 			}
 			$len     = strlen( $buffer );
 			$read   += $len;
@@ -608,7 +608,7 @@ class Streaming_Zip_Writer {
 			$out = deflate_add( $ctx, $buffer, ZLIB_NO_FLUSH );
 			if ( false === $out ) {
 				fclose( $in );
-				throw new \RuntimeException(esc_html( sprintf( 'Operation: compress %s. Reason: zlib failed. Recovery: start a new export.', self::printable( $name ) ) ));
+				throw new \RuntimeException(\esc_html( sprintf( 'Operation: compress %s. Reason: zlib failed. Recovery: start a new export.', self::printable( $name ) ) ));
 			}
 			if ( '' !== $out ) {
 				$this->write( $out );
@@ -621,7 +621,7 @@ class Streaming_Zip_Writer {
 		}
 		$tail = deflate_add( $ctx, '', ZLIB_FINISH );
 		if ( false === $tail ) {
-			throw new \RuntimeException(esc_html( sprintf( 'Operation: compress %s. Reason: zlib failed. Recovery: start a new export.', self::printable( $name ) ) ));
+			throw new \RuntimeException(\esc_html( sprintf( 'Operation: compress %s. Reason: zlib failed. Recovery: start a new export.', self::printable( $name ) ) ));
 		}
 		$this->write( $tail );
 		$csize += strlen( $tail );
@@ -691,7 +691,7 @@ class Streaming_Zip_Writer {
 		) . "\n";
 		fseek( $this->index_fh, 0, SEEK_END );
 		if ( false === fwrite( $this->index_fh, $line ) ) {
-			throw new \RuntimeException(esc_html( 'Operation: write the package index. Reason: disk full or permission denied. Recovery: free disk space, then start a new export.' ));
+			throw new \RuntimeException(\esc_html( 'Operation: write the package index. Reason: disk full or permission denied. Recovery: free disk space, then start a new export.' ));
 		}
 		$this->state['count']++;
 		if ( 0 === strpos( $entry['name'], 'files/' ) && '/' !== substr( $entry['name'], -1 ) ) {
@@ -722,7 +722,7 @@ class Streaming_Zip_Writer {
 		}
 		$wrote = fwrite( $this->fh, $bytes );
 		if ( false === $wrote || $wrote !== strlen( $bytes ) ) {
-			throw new \RuntimeException(esc_html( sprintf( 'Operation: write the package. Reason: only %1$d of %2$d bytes were written (disk full or quota reached). Recovery: free disk space, then start a new export.', (int) $wrote, strlen( $bytes ) ) ));
+			throw new \RuntimeException(\esc_html( sprintf( 'Operation: write the package. Reason: only %1$d of %2$d bytes were written (disk full or quota reached). Recovery: free disk space, then start a new export.', (int) $wrote, strlen( $bytes ) ) ));
 		}
 	}
 

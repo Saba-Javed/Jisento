@@ -365,7 +365,7 @@ class Job_Continuation {
 			try {
 				$fresh = bin2hex( random_bytes( 32 ) );
 			} catch ( \Exception $e ) {
-				throw new \RuntimeException(esc_html( 'Operation: create the job token key. Reason: no secure random source is available. Recovery: enable a CSPRNG for PHP (random_bytes).' ));
+				throw new \RuntimeException(\esc_html( 'Operation: create the job token key. Reason: no secure random source is available. Recovery: enable a CSPRNG for PHP (random_bytes).' ));
 			}
 			$handle = @fopen( $path, 'xb' );
 			if ( $handle ) {
@@ -376,7 +376,7 @@ class Job_Continuation {
 			// Another request may have won the race: always use what is on disk.
 			$raw = is_readable( $path ) ? trim( (string) file_get_contents( $path ) ) : '';
 			if ( ! preg_match( '/^[a-f0-9]{64}$/', $raw ) ) {
-				throw new \RuntimeException(esc_html( sprintf( 'Operation: create the job token key. Reason: %s could not be written. Recovery: make the Jisento jobs folder writable by PHP.', $path ) ));
+				throw new \RuntimeException(\esc_html( sprintf( 'Operation: create the job token key. Reason: %s could not be written. Recovery: make the Jisento jobs folder writable by PHP.', $path ) ));
 			}
 		}
 		$key = $raw;

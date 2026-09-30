@@ -277,7 +277,7 @@ class Admin {
 
 	private function render( $view, array $data = array() ) {
 		if ( ! Capabilities::current_user_can() ) {
-			wp_die( esc_html__( 'You are not allowed to run migrations.', 'jisento-migration' ) );
+			wp_die( \esc_html__( 'You are not allowed to run migrations.', 'jisento-migration' ) );
 		}
 		extract( $data, EXTR_SKIP ); // phpcs:ignore WordPress.PHP.DontExtract.extract_extract
 		include JISENTO_PATH . 'admin/views/layout-start.php';
@@ -287,13 +287,13 @@ class Admin {
 
 	public function action_links( $links ) {
 		$url     = admin_url( 'admin.php?page=jisento' );
-		$links[] = '<a href="' . esc_url( $url ) . '">' . esc_html__( 'Open', 'jisento-migration' ) . '</a>';
+		$links[] = '<a href="' . esc_url( $url ) . '">' . \esc_html__( 'Open', 'jisento-migration' ) . '</a>';
 		return $links;
 	}
 
 	public function download() {
 		if ( ! Capabilities::current_user_can() ) {
-			wp_die( esc_html__( 'Forbidden', 'jisento-migration' ), 403 );
+			wp_die( \esc_html__( 'Forbidden', 'jisento-migration' ), 403 );
 		}
 		check_admin_referer( 'jisento_download' );
 
@@ -340,7 +340,7 @@ class Admin {
 
 		$check = $registry->verify_file( $path );
 		if ( empty( $check['ok'] ) ) {
-			wp_die( esc_html( $check['reason'] ? $check['reason'] : __( 'Backup unavailable', 'jisento-migration' ) ) );
+			wp_die( \esc_html( $check['reason'] ? $check['reason'] : __( 'Backup unavailable', 'jisento-migration' ) ) );
 		}
 
 		$size   = (int) $check['size'];
@@ -380,7 +380,7 @@ class Admin {
 
 		$fp = fopen( $path, 'rb' );
 		if ( ! $fp ) {
-			wp_die( esc_html__( 'Unable to read the package file.', 'jisento-migration' ) );
+			wp_die( \esc_html__( 'Unable to read the package file.', 'jisento-migration' ) );
 		}
 		self::stream_file_range( $fp, $start, $length );
 		fclose( $fp );
@@ -397,7 +397,7 @@ class Admin {
 	public static function parse_byte_range( $header, $size ) {
 		$size = (int) $size;
 		if ( $size <= 0 ) {
-			return new \WP_Error( 'jisento_range', esc_html( 'empty' ));
+			return new \WP_Error( 'jisento_range', \esc_html( 'empty' ));
 		}
 		$header = trim( (string) $header );
 		if ( '' === $header ) {
@@ -409,15 +409,15 @@ class Admin {
 		}
 		// Reject multi-range and non-bytes units.
 		if ( ! preg_match( '/^bytes=\s*(\d*)\s*-\s*(\d*)\s*$/i', $header, $m ) ) {
-			return new \WP_Error( 'jisento_range', esc_html( 'invalid' ));
+			return new \WP_Error( 'jisento_range', \esc_html( 'invalid' ));
 		}
 		if ( '' === $m[1] && '' === $m[2] ) {
-			return new \WP_Error( 'jisento_range', esc_html( 'invalid' ));
+			return new \WP_Error( 'jisento_range', \esc_html( 'invalid' ));
 		}
 		if ( '' === $m[1] ) {
 			$suffix = (int) $m[2];
 			if ( $suffix <= 0 ) {
-				return new \WP_Error( 'jisento_range', esc_html( 'invalid' ));
+				return new \WP_Error( 'jisento_range', \esc_html( 'invalid' ));
 			}
 			$start = max( 0, $size - $suffix );
 			$end   = $size - 1;
@@ -429,7 +429,7 @@ class Admin {
 			$end   = (int) $m[2];
 		}
 		if ( $start < 0 || $end < $start || $start >= $size ) {
-			return new \WP_Error( 'jisento_range', esc_html( 'unsatisfiable' ));
+			return new \WP_Error( 'jisento_range', \esc_html( 'unsatisfiable' ));
 		}
 		if ( $end >= $size ) {
 			$end = $size - 1;
@@ -479,7 +479,7 @@ class Admin {
 
 	public function download_log() {
 		if ( ! Capabilities::current_user_can() ) {
-			wp_die( esc_html__( 'Forbidden', 'jisento-migration' ), 403 );
+			wp_die( \esc_html__( 'Forbidden', 'jisento-migration' ), 403 );
 		}
 		check_admin_referer( 'jisento_log' );
 		$id = isset( $_GET['migration_id'] ) ? sanitize_text_field( wp_unslash( $_GET['migration_id'] ) ) : '';

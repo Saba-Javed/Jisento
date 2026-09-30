@@ -88,7 +88,7 @@ class Transfer {
 			$error   = new \WP_Error(
 				'jisento_remote',
 				/* translators: 1: HTTP status code, 2: error message. */
-				esc_html( sprintf( 'HTTP %d: %s', $code, $message ? $message : __( 'Remote request failed.', 'jisento-migration' ) ) ),
+				\esc_html( sprintf( 'HTTP %d: %s', $code, $message ? $message : __( 'Remote request failed.', 'jisento-migration' ) ) ),
 				array( 'status' => $code )
 			);
 			return $error;
@@ -99,12 +99,12 @@ class Transfer {
 	public function connect( $source_url, $key ) {
 		$source_url = untrailingslashit( esc_url_raw( $source_url ) );
 		if ( ! $source_url ) {
-			return new \WP_Error( 'jisento_url', esc_html__( 'A valid source site URL is required.', 'jisento-migration' ));
+			return new \WP_Error( 'jisento_url', \esc_html__( 'A valid source site URL is required.', 'jisento-migration' ));
 		}
 		$https = 0 === strpos( $source_url, 'https://' );
 		$settings = Plugin::instance()->settings;
 		if ( $settings->get( 'https_required', true ) && ! $https && ! \Jisento\Migration\Security\Guard::is_local_dev() ) {
-			return new \WP_Error( 'jisento_https_required', esc_html__( 'Remote migration requires HTTPS.', 'jisento-migration' ));
+			return new \WP_Error( 'jisento_https_required', \esc_html__( 'Remote migration requires HTTPS.', 'jisento-migration' ));
 		}
 
 		$endpoint = $source_url . '/wp-json/jisento/v1/remote/handshake';
@@ -227,7 +227,7 @@ class Transfer {
 			return new \WP_Error(
 				'jisento_chunk',
 				/* translators: %s: network error message. */
-				esc_html( sprintf( __( 'Chunk download failed (network): %s', 'jisento-migration' ), $response->get_error_message() ) )
+				\esc_html( sprintf( __( 'Chunk download failed (network): %s', 'jisento-migration' ), $response->get_error_message() ) )
 			);
 		}
 
@@ -250,7 +250,7 @@ class Transfer {
 			return new \WP_Error(
 				'jisento_chunk',
 				/* translators: 1: HTTP status code, 2: reason, 3: chunk id. */
-				esc_html( sprintf( __( 'Chunk download failed. HTTP Status: %1$d. Reason: %2$s. Chunk: %3$d.', 'jisento-migration' ), $code, $reason, $chunk_id ) ),
+				\esc_html( sprintf( __( 'Chunk download failed. HTTP Status: %1$d. Reason: %2$s. Chunk: %3$d.', 'jisento-migration' ), $code, $reason, $chunk_id ) ),
 				array( 'status' => $code )
 			);
 		}
@@ -273,13 +273,13 @@ class Transfer {
 
 		if ( $hash && hash( 'sha256', $data ) !== $hash ) {
 			/* translators: %d: runtime values. */
-			return new \WP_Error( 'jisento_checksum', esc_html( sprintf( __( 'Chunk checksum mismatch for chunk %d. The transfer will retry.', 'jisento-migration' ), $chunk_id ) ));
+			return new \WP_Error( 'jisento_checksum', \esc_html( sprintf( __( 'Chunk checksum mismatch for chunk %d. The transfer will retry.', 'jisento-migration' ), $chunk_id ) ));
 		}
 
 		wp_mkdir_p( dirname( $dest_file ) );
 		$fp = fopen( $dest_file, file_exists( $dest_file ) ? 'c+b' : 'wb' );
 		if ( ! $fp ) {
-			return new \WP_Error( 'jisento_write', esc_html__( 'Unable to write transferred chunk.', 'jisento-migration' ));
+			return new \WP_Error( 'jisento_write', \esc_html__( 'Unable to write transferred chunk.', 'jisento-migration' ));
 		}
 		fseek( $fp, (int) $offset );
 		$written = fwrite( $fp, $data );

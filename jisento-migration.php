@@ -1,12 +1,13 @@
 <?php
 /**
  * Plugin Name:       Jisento Migration
- * Plugin URI:        https://jisento.com/migration
+ * Plugin URI:        https://jisento.com/products/jisento-migration/
  * Description:       Full WordPress site migration and backup system. Export and import .jisento packages, migrate with a short-lived key, and restore with replace or preserve modes.
- * Version:           1.3.0
+ * Version:           1.0.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Jisento
+ * Author URI:        https://jisento.com
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       jisento-migration
@@ -19,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JISENTO_VERSION', '1.3.0' );
+define( 'JISENTO_VERSION', '1.0.0' );
 define( 'JISENTO_PACKAGE_VERSION', '2.0' );
 define( 'JISENTO_FILE', __FILE__ );
 define( 'JISENTO_PATH', plugin_dir_path( __FILE__ ) );

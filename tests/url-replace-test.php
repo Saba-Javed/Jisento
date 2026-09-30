@@ -5,6 +5,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! defined( 'ARRAY_A' ) ) {
 	define( 'ARRAY_A', 'ARRAY_A' );
 }
+if ( ! function_exists( 'esc_html' ) ) {
+	function esc_html( $text ) { return htmlspecialchars( (string) $text, ENT_QUOTES ); }
+}
 if ( ! function_exists( 'untrailingslashit' ) ) {
 	function untrailingslashit( $value ) { return rtrim( (string) $value, '/' ); }
 }

@@ -273,7 +273,7 @@ class Database_Importer {
 	 */
 	public function assert_driver() {
 		if ( ! $this->dbh ) {
-			return new \WP_Error( 'jisento_driver', esc_html( __( 'The database restore needs the mysqli driver, but $wpdb is not using a mysqli connection (a db.php drop-in may replace it).', 'jisento-migration' ) . $this->job_suffix() ));
+			return new \WP_Error( 'jisento_driver', \esc_html( __( 'The database restore needs the mysqli driver, but $wpdb is not using a mysqli connection (a db.php drop-in may replace it).', 'jisento-migration' ) . $this->job_suffix() ));
 		}
 		return true;
 	}
@@ -584,20 +584,20 @@ class Database_Importer {
 		$cursor = $this->read_cursor();
 		if ( ! $cursor || (int) $cursor['segment'] !== (int) $segment ) {
 			/* translators: %d: runtime values. */
-			return new \WP_Error( 'jisento_sql_cursor', esc_html( sprintf( __( 'The restore cursor is not on segment %d. The restore stopped instead of guessing where to continue.', 'jisento-migration' ), (int) $segment ) . $this->job_suffix() ));
+			return new \WP_Error( 'jisento_sql_cursor', \esc_html( sprintf( __( 'The restore cursor is not on segment %d. The restore stopped instead of guessing where to continue.', 'jisento-migration' ), (int) $segment ) . $this->job_suffix() ));
 		}
 		$this->statement_no = max( $this->statement_no, (int) $cursor['statement_no'] );
 		$handle = fopen( $path, 'rb' );
 		if ( ! $handle ) {
 			/* translators: %s: runtime values. */
-			return new \WP_Error( 'jisento_sql_open', esc_html( sprintf( __( 'Unable to open database segment %s.', 'jisento-migration' ), basename( $path ) ) . $this->job_suffix() ));
+			return new \WP_Error( 'jisento_sql_open', \esc_html( sprintf( __( 'Unable to open database segment %s.', 'jisento-migration' ), basename( $path ) ) . $this->job_suffix() ));
 		}
 		clearstatcache( true, $path );
 		$size = (int) filesize( $path );
 		if ( (int) $cursor['offset'] > $size || 0 !== fseek( $handle, (int) $cursor['offset'] ) ) {
 			fclose( $handle );
 			/* translators: %1$d, %2$s, %3$d: runtime values. */
-			return new \WP_Error( 'jisento_sql_cursor', esc_html( sprintf( __( 'The restore cursor (byte %1$d) is past the end of segment %2$s (%3$d bytes).', 'jisento-migration' ), (int) $cursor['offset'], basename( $path ), $size ) . $this->job_suffix() ));
+			return new \WP_Error( 'jisento_sql_cursor', \esc_html( sprintf( __( 'The restore cursor (byte %1$d) is past the end of segment %2$s (%3$d bytes).', 'jisento-migration' ), (int) $cursor['offset'], basename( $path ), $size ) . $this->job_suffix() ));
 		}
 		$opened = $this->open_session();
 		if ( is_wp_error( $opened ) ) {
@@ -624,7 +624,7 @@ class Database_Importer {
 		}
 		$packet = (int) $this->scalar( 'SELECT @@max_allowed_packet' );
 		if ( $packet < 1024 ) {
-			return new \WP_Error( 'jisento_sql_packet', esc_html( __( 'Unable to read @@max_allowed_packet on the destination database.', 'jisento-migration' ) . $this->job_suffix() ));
+			return new \WP_Error( 'jisento_sql_packet', \esc_html( __( 'Unable to read @@max_allowed_packet on the destination database.', 'jisento-migration' ) . $this->job_suffix() ));
 		}
 		$this->insert_byte_limit = max( 65536, (int) floor( $packet / 4 ) );
 		return true;
@@ -719,11 +719,11 @@ class Database_Importer {
 					break;
 				}
 				if ( strlen( $pending ) > 33554432 ) {
-					return new \WP_Error( 'jisento_sql_large', esc_html( __( 'A single SQL statement is larger than 32 MB, so it cannot be restored safely. Export the package again with this version of Jisento.', 'jisento-migration' ) . $this->job_suffix() ));
+					return new \WP_Error( 'jisento_sql_large', \esc_html( __( 'A single SQL statement is larger than 32 MB, so it cannot be restored safely. Export the package again with this version of Jisento.', 'jisento-migration' ) . $this->job_suffix() ));
 				}
 				$read = fread( $handle, 1048576 );
 				if ( false === $read ) {
-					return new \WP_Error( 'jisento_sql_read', esc_html( __( 'Reading the database segment failed.', 'jisento-migration' ) . $this->job_suffix() ));
+					return new \WP_Error( 'jisento_sql_read', \esc_html( __( 'Reading the database segment failed.', 'jisento-migration' ) . $this->job_suffix() ));
 				}
 				if ( '' === $read ) {
 					$eof = true;
@@ -767,7 +767,7 @@ class Database_Importer {
 		}
 		if ( '' !== trim( self::strip_leading_comments( $pending ) ) ) {
 			/* translators: %d: runtime values. */
-			return new \WP_Error( 'jisento_sql_truncated', esc_html( sprintf( __( 'Database segment %d ends in the middle of a statement. The package is incomplete; export it again.', 'jisento-migration' ), $segment ) . $this->job_suffix() ));
+			return new \WP_Error( 'jisento_sql_truncated', \esc_html( sprintf( __( 'Database segment %d ends in the middle of a statement. The package is incomplete; export it again.', 'jisento-migration' ), $segment ) . $this->job_suffix() ));
 		}
 		if ( ! $this->write_cursor( $segment, $size, 0 ) ) {
 			return $this->driver_error( 'save resume point', self::cursor_table() );
@@ -1024,7 +1024,7 @@ class Database_Importer {
 			);
 		}
 		return new \WP_Error(
-			'jisento_sql_unsupported', esc_html( sprintf(
+			'jisento_sql_unsupported', \esc_html( sprintf(
 				/* translators: %s: statement start */
 				__( 'The package contains a statement type the restore does not run: %s. Only SET, DROP TABLE IF EXISTS, CREATE TABLE and INSERT are accepted, so nothing can touch a live table directly.', 'jisento-migration' ),
 				self::statement_preview( $sql, 60 )
@@ -1075,7 +1075,7 @@ class Database_Importer {
 			);
 		}
 		/* translators: %s: runtime values. */
-		return new \WP_Error( 'jisento_sql_unsupported', esc_html( sprintf( __( 'The package contains a SET statement the restore does not run: %s', 'jisento-migration' ), self::statement_preview( $sql, 80 ) ) . $this->job_suffix() ));
+		return new \WP_Error( 'jisento_sql_unsupported', \esc_html( sprintf( __( 'The package contains a SET statement the restore does not run: %s', 'jisento-migration' ), self::statement_preview( $sql, 80 ) ) . $this->job_suffix() ));
 	}
 
 	private function apply_set( array $plan ) {
@@ -1112,7 +1112,7 @@ class Database_Importer {
 		$split  = self::split_create( $sql );
 		if ( null === $split ) {
 			/* translators: %s: runtime values. */
-			return new \WP_Error( 'jisento_sql_create', esc_html( sprintf( __( 'The CREATE TABLE statement for %s could not be parsed.', 'jisento-migration' ), $live ) . $this->job_suffix() ));
+			return new \WP_Error( 'jisento_sql_create', \esc_html( sprintf( __( 'The CREATE TABLE statement for %s could not be parsed.', 'jisento-migration' ), $live ) . $this->job_suffix() ));
 		}
 		list( $body, $tail ) = $split;
 
@@ -1145,7 +1145,7 @@ class Database_Importer {
 			$converted = self::convert_engine_options( $tail );
 			if ( null === $converted ) {
 				/* translators: %1$s, %2$s: runtime values. */
-				return new \WP_Error( 'jisento_sql_engine', esc_html( sprintf( __( 'Table %1$s uses the %2$s engine, which this restore cannot convert to InnoDB.', 'jisento-migration' ), $live, $engine[1] ) . $this->job_suffix() ));
+				return new \WP_Error( 'jisento_sql_engine', \esc_html( sprintf( __( 'Table %1$s uses the %2$s engine, which this restore cannot convert to InnoDB.', 'jisento-migration' ), $live, $engine[1] ) . $this->job_suffix() ));
 			}
 			$tail = $converted;
 			$this->notes['engines'][ $live ] = $engine[1];
@@ -1240,7 +1240,7 @@ class Database_Importer {
 		);
 		if ( '' !== $failed ) {
 			/* translators: %1$s, %2$s: runtime values. */
-			return new \WP_Error( 'jisento_sql_collation', esc_html( sprintf( __( 'Table %1$s uses collation %2$s, which this database server does not support and has no safe equivalent.', 'jisento-migration' ), $live, $failed ) . $this->job_suffix() ));
+			return new \WP_Error( 'jisento_sql_collation', \esc_html( sprintf( __( 'Table %1$s uses collation %2$s, which this database server does not support and has no safe equivalent.', 'jisento-migration' ), $live, $failed ) . $this->job_suffix() ));
 		}
 		$charsets = $this->charsets;
 		$sql      = preg_replace_callback(
@@ -1620,7 +1620,7 @@ class Database_Importer {
 			$why = ' ' . __( 'The package contains the same key twice for this table. Rows were not skipped. Check the source table for duplicate keys and export again.', 'jisento-migration' );
 		}
 		return new \WP_Error(
-			'jisento_sql_error', esc_html( sprintf(
+			'jisento_sql_error', \esc_html( sprintf(
 				/* translators: 1: table, 2: errno, 3: error, 4: statement number, 5: segment, 6: offset, 7: piece, 8: preview */
 				__( 'Restoring table %1$s failed. Database error %2$s: %3$s Statement %4$d (segment %5$d, byte %6$d, part %7$d): %8$s', 'jisento-migration' ),
 				$table,
@@ -1636,7 +1636,7 @@ class Database_Importer {
 
 	private function driver_error( $operation, $table ) {
 		return new \WP_Error(
-			'jisento_sql_driver', esc_html( sprintf(
+			'jisento_sql_driver', \esc_html( sprintf(
 				/* translators: 1: operation, 2: table, 3: errno, 4: error */
 				__( 'Database operation "%1$s" failed%2$s. Database error %3$s: %4$s', 'jisento-migration' ),
 				$operation,
@@ -1931,14 +1931,14 @@ class Database_Importer {
 			return new \WP_Error(
 				'jisento_shadow',
 				/* translators: %s: comma-separated table names. */
-				esc_html( sprintf( __( 'The restored copies of these tables are missing, so no live table was replaced: %s', 'jisento-migration' ), implode( ', ', $missing ) ) . $this->job_suffix() )
+				\esc_html( sprintf( __( 'The restored copies of these tables are missing, so no live table was replaced: %s', 'jisento-migration' ), implode( ', ', $missing ) ) . $this->job_suffix() )
 			);
 		}
 		if ( $missing ) {
 			foreach ( $tables as $live ) {
 				if ( ! $this->table_exists( $live ) ) {
 					/* translators: %s: runtime values. */
-					return new \WP_Error( 'jisento_shadow', esc_html( sprintf( __( 'Neither the live table nor its restored copy exists for %s.', 'jisento-migration' ), $live ) . $this->job_suffix() ));
+					return new \WP_Error( 'jisento_shadow', \esc_html( sprintf( __( 'Neither the live table nor its restored copy exists for %s.', 'jisento-migration' ), $live ) . $this->job_suffix() ));
 				}
 			}
 		} elseif ( $pairs && ! $this->exec_sql( 'RENAME TABLE ' . implode( ', ', $pairs ) ) ) {

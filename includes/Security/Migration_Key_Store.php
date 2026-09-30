@@ -62,14 +62,14 @@ class Migration_Key_Store {
 			)
 		);
 		if ( ! $row ) {
-			return new \WP_Error( 'jisento_bad_key', esc_html__( 'Invalid migration key.', 'jisento-migration' ), array( 'status' => 403 ) );
+			return new \WP_Error( 'jisento_bad_key', \esc_html__( 'Invalid migration key.', 'jisento-migration' ), array( 'status' => 403 ) );
 		}
 		if ( 'active' !== $row->status ) {
-			return new \WP_Error( 'jisento_key_used', esc_html__( 'This migration key is no longer valid.', 'jisento-migration' ), array( 'status' => 403 ) );
+			return new \WP_Error( 'jisento_key_used', \esc_html__( 'This migration key is no longer valid.', 'jisento-migration' ), array( 'status' => 403 ) );
 		}
 		if ( strtotime( $row->expires_at ) < time() ) {
 			$this->revoke( (int) $row->id );
-			return new \WP_Error( 'jisento_key_expired', esc_html__( 'This migration key has expired.', 'jisento-migration' ), array( 'status' => 403 ) );
+			return new \WP_Error( 'jisento_key_expired', \esc_html__( 'This migration key has expired.', 'jisento-migration' ), array( 'status' => 403 ) );
 		}
 		return $row;
 	}

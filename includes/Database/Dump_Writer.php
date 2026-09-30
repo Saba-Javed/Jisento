@@ -100,7 +100,7 @@ class Dump_Writer {
 		}
 		if ( ! is_dir( $this->dir ) && ! wp_mkdir_p( $this->dir ) ) {
 			/* translators: %s: runtime values. */
-			return new \WP_Error( 'jisento_export_dir', esc_html( sprintf( __( 'Unable to create the database dump folder %s.', 'jisento-migration' ), $this->dir ) ));
+			return new \WP_Error( 'jisento_export_dir', \esc_html( sprintf( __( 'Unable to create the database dump folder %s.', 'jisento-migration' ), $this->dir ) ));
 		}
 		$this->recover( $state );
 		$name    = self::segment_name( $state['seq'] );
@@ -109,7 +109,7 @@ class Dump_Writer {
 		$handle  = fopen( $partial, 'xb' );
 		if ( ! $handle ) {
 			/* translators: %s: runtime values. */
-			return new \WP_Error( 'jisento_export_write', esc_html( sprintf( __( 'Unable to create database segment %s.', 'jisento-migration' ), $name ) ));
+			return new \WP_Error( 'jisento_export_write', \esc_html( sprintf( __( 'Unable to create database segment %s.', 'jisento-migration' ), $name ) ));
 		}
 		$hash    = hash_init( 'sha256' );
 		$bytes   = strlen( Database_Exporter::header_sql( $GLOBALS['wpdb']->prefix ) );
@@ -132,13 +132,13 @@ class Dump_Writer {
 		if ( ! $flushed ) {
 			@unlink( $partial );
 			/* translators: %s: runtime values. */
-			return new \WP_Error( 'jisento_export_write', esc_html( sprintf( __( 'Database segment %s could not be flushed to disk.', 'jisento-migration' ), $name ) ));
+			return new \WP_Error( 'jisento_export_write', \esc_html( sprintf( __( 'Database segment %s could not be flushed to disk.', 'jisento-migration' ), $name ) ));
 		}
 		clearstatcache( true, $partial );
 		if ( (int) filesize( $partial ) !== $bytes ) {
 			@unlink( $partial );
 			/* translators: %1$s, %2$d, %3$d: runtime values. */
-			return new \WP_Error( 'jisento_export_write', esc_html( sprintf( __( 'Database segment %1$s has %2$d bytes on disk but %3$d were written.', 'jisento-migration' ), $name, (int) filesize( $partial ), $bytes ) ));
+			return new \WP_Error( 'jisento_export_write', \esc_html( sprintf( __( 'Database segment %1$s has %2$d bytes on disk but %3$d were written.', 'jisento-migration' ), $name, (int) filesize( $partial ), $bytes ) ));
 		}
 		if ( is_file( $final ) ) {
 			@unlink( $final );
@@ -146,7 +146,7 @@ class Dump_Writer {
 		if ( ! @rename( $partial, $final ) ) {
 			@unlink( $partial );
 			/* translators: %s: runtime values. */
-			return new \WP_Error( 'jisento_export_write', esc_html( sprintf( __( 'Database segment %s could not be renamed into place.', 'jisento-migration' ), $name ) ));
+			return new \WP_Error( 'jisento_export_write', \esc_html( sprintf( __( 'Database segment %s could not be renamed into place.', 'jisento-migration' ), $name ) ));
 		}
 		$next['segments'][] = array(
 			'entry'  => 'database/' . $name,

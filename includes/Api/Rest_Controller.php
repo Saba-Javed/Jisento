@@ -356,7 +356,7 @@ class Rest_Controller {
 			Job_Continuation::note_once( $id );
 			return true;
 		}
-		return new \WP_Error( 'jisento_forbidden', esc_html__( 'You are not allowed to run migrations.', 'jisento-migration' ), array( 'status' => 403 ) );
+		return new \WP_Error( 'jisento_forbidden', \esc_html__( 'You are not allowed to run migrations.', 'jisento-migration' ), array( 'status' => 403 ) );
 	}
 
 	/**
@@ -377,7 +377,7 @@ class Rest_Controller {
 		if ( Job_Continuation::verify_dispatch( $id, Job_Continuation::presented_dispatch() ) ) {
 			return true;
 		}
-		return new \WP_Error( 'jisento_forbidden', esc_html__( 'You are not allowed to run migrations.', 'jisento-migration' ), array( 'status' => 403 ) );
+		return new \WP_Error( 'jisento_forbidden', \esc_html__( 'You are not allowed to run migrations.', 'jisento-migration' ), array( 'status' => 403 ) );
 	}
 
 	/**
@@ -433,7 +433,7 @@ class Rest_Controller {
 		} elseif ( 'import' === $type ) {
 			$job = ( new Importer() )->start( $options );
 		} else {
-			return new \WP_Error( 'jisento_type', esc_html__( 'Unknown job type.', 'jisento-migration' ), array( 'status' => 400 ) );
+			return new \WP_Error( 'jisento_type', \esc_html__( 'Unknown job type.', 'jisento-migration' ), array( 'status' => 400 ) );
 		}
 		if ( is_wp_error( $job ) ) {
 			return $job;
@@ -447,14 +447,14 @@ class Rest_Controller {
 	 */
 	private function respond_job( $job ) {
 		if ( ! $job || empty( $job->job_id ) ) {
-			return new \WP_Error( 'jisento_job', esc_html__( 'The job could not be created.', 'jisento-migration' ), array( 'status' => 500 ) );
+			return new \WP_Error( 'jisento_job', \esc_html__( 'The job could not be created.', 'jisento-migration' ), array( 'status' => 500 ) );
 		}
 		$secret = Job_Continuation::issue( $job->job_id );
 		if ( '' === $secret ) {
 			/* translators: %s: runtime values. */
 			Job_Runner::fail( $job, sprintf( __( 'Stage: start. Operation: store the job token. Reason: the token file could not be written. Recovery: make the Jisento jobs folder writable by PHP, then start again. Job: %s', 'jisento-migration' ), $job->job_id ) );
 			return new \WP_Error(
-				'jisento_continuation', esc_html__( 'The job could not store a continuation proof, so it was not started.', 'jisento-migration' ),
+				'jisento_continuation', \esc_html__( 'The job could not store a continuation proof, so it was not started.', 'jisento-migration' ),
 				array( 'status' => 500 )
 			);
 		}
@@ -468,12 +468,12 @@ class Rest_Controller {
 	public function get_job( \WP_REST_Request $request ) {
 		$job = Plugin::instance()->jobs->get( $request['id'] );
 		if ( ! $job ) {
-			return new \WP_Error( 'jisento_missing', esc_html__( 'Job not found.', 'jisento-migration' ), array( 'status' => 404 ) );
+			return new \WP_Error( 'jisento_missing', \esc_html__( 'Job not found.', 'jisento-migration' ), array( 'status' => 404 ) );
 		}
 		Job_Scheduler::kick_if_stale( $job );
 		$job = Plugin::instance()->jobs->get( $request['id'] );
 		if ( ! $job ) {
-			return new \WP_Error( 'jisento_missing', esc_html__( 'Job not found.', 'jisento-migration' ), array( 'status' => 404 ) );
+			return new \WP_Error( 'jisento_missing', \esc_html__( 'Job not found.', 'jisento-migration' ), array( 'status' => 404 ) );
 		}
 		$payload                 = Plugin::instance()->jobs->to_response( $job );
 		$payload['lease_holder'] = Lease::holder();
@@ -534,10 +534,10 @@ class Rest_Controller {
 		if ( empty( $remote['export_job'] ) ) {
 			$started = $xfer->request( untrailingslashit( $remote['source_url'] ) . '/wp-json/jisento/v1/remote/export', 'POST', $headers, wp_json_encode( array() ) );
 			if ( is_wp_error( $started ) ) {
-				throw new \RuntimeException(esc_html( 'Operation: start the export on the source site. Reason: ' . $started->get_error_message() . ' Recovery: check the source site is reachable and no other export runs there, then start again.' ));
+				throw new \RuntimeException(\esc_html( 'Operation: start the export on the source site. Reason: ' . $started->get_error_message() . ' Recovery: check the source site is reachable and no other export runs there, then start again.' ));
 			}
 			if ( empty( $started['job_id'] ) ) {
-				throw new \RuntimeException(esc_html( 'Operation: start the export on the source site. Reason: the source did not return an export job. Recovery: update Jisento Migration on the source site, then start again.' ));
+				throw new \RuntimeException(\esc_html( 'Operation: start the export on the source site. Reason: the source did not return an export job. Recovery: update Jisento Migration on the source site, then start again.' ));
 			}
 			$state['remote']['export_job'] = (string) $started['job_id'];
 			return $plugin->jobs->update(
@@ -558,10 +558,10 @@ class Rest_Controller {
 				wp_json_encode( array( 'job_id' => $state['remote']['export_job'] ) )
 			);
 			if ( is_wp_error( $stepped ) ) {
-				throw new \RuntimeException(esc_html( 'Operation: run the export on the source site. Reason: ' . $stepped->get_error_message() . ' Recovery: press Retry on a new import once the source is reachable.' ));
+				throw new \RuntimeException(\esc_html( 'Operation: run the export on the source site. Reason: ' . $stepped->get_error_message() . ' Recovery: press Retry on a new import once the source is reachable.' ));
 			}
 			if ( isset( $stepped['status'] ) && 'failed' === $stepped['status'] ) {
-				throw new \RuntimeException(esc_html( 'Operation: run the export on the source site. Reason: the source export failed: ' . ( isset( $stepped['error_summary'] ) ? (string) $stepped['error_summary'] : '' ) . ' Recovery: fix the problem on the source site, then start a new migration.' ));
+				throw new \RuntimeException(\esc_html( 'Operation: run the export on the source site. Reason: the source export failed: ' . ( isset( $stepped['error_summary'] ) ? (string) $stepped['error_summary'] : '' ) . ' Recovery: fix the problem on the source site, then start a new migration.' ));
 			}
 			if ( isset( $stepped['status'] ) && 'completed' === $stepped['status'] ) {
 				$state['remote']['package_ready'] = true;
@@ -595,7 +595,7 @@ class Rest_Controller {
 				$job->job_id
 			);
 			if ( is_wp_error( $result ) ) {
-				throw new \RuntimeException(esc_html( 'Operation: download the package. Reason: ' . $result->get_error_message() . ' Recovery: start a new migration once the source is reachable.' ));
+				throw new \RuntimeException(\esc_html( 'Operation: download the package. Reason: ' . $result->get_error_message() . ' Recovery: start a new migration once the source is reachable.' ));
 			}
 			$elapsed = microtime( true ) - $t0;
 			$state['remote']['timing_requests'] = ( isset( $state['remote']['timing_requests'] ) ? (int) $state['remote']['timing_requests'] : 0 ) + 1;
@@ -702,7 +702,7 @@ class Rest_Controller {
 	public function upload_package( \WP_REST_Request $request ) {
 		$files = $request->get_file_params();
 		if ( empty( $files['file'] ) || ! empty( $files['file']['error'] ) ) {
-			return new \WP_Error( 'jisento_upload', esc_html__( 'Upload failed.', 'jisento-migration' ), array( 'status' => 400 ) );
+			return new \WP_Error( 'jisento_upload', \esc_html__( 'Upload failed.', 'jisento-migration' ), array( 'status' => 400 ) );
 		}
 		$tmp  = $files['file']['tmp_name'];
 		$name = sanitize_file_name( $files['file']['name'] );
@@ -713,7 +713,7 @@ class Rest_Controller {
 		$dest     = Plugin::instance()->storage->get_path( $dest_rel );
 		wp_mkdir_p( dirname( $dest ) );
 		if ( ! move_uploaded_file( $tmp, $dest ) && ! @copy( $tmp, $dest ) ) {
-			return new \WP_Error( 'jisento_upload', esc_html__( 'Unable to store the uploaded package.', 'jisento-migration' ), array( 'status' => 500 ) );
+			return new \WP_Error( 'jisento_upload', \esc_html__( 'Unable to store the uploaded package.', 'jisento-migration' ), array( 'status' => 500 ) );
 		}
 		$inspect = ( new \Jisento\Migration\Package\Archive() )->inspect( $dest );
 		if ( is_wp_error( $inspect ) ) {
@@ -873,7 +873,7 @@ class Rest_Controller {
 			if ( $existing ) {
 				return rest_ensure_response( Plugin::instance()->jobs->to_response( $existing ) );
 			}
-			return new \WP_Error( 'jisento_session', esc_html__( 'This migration session already created an export, which no longer exists. Connect again with a new migration key.', 'jisento-migration' ), array( 'status' => 409 ) );
+			return new \WP_Error( 'jisento_session', \esc_html__( 'This migration session already created an export, which no longer exists. Connect again with a new migration key.', 'jisento-migration' ), array( 'status' => 409 ) );
 		}
 		$job = ( new Exporter() )->start(
 			array(
@@ -887,7 +887,7 @@ class Rest_Controller {
 		}
 		if ( ! ( new Session_Store() )->bind_job( $sess, $job->job_id ) ) {
 			Job_Runner::cancel( $job->job_id );
-			return new \WP_Error( 'jisento_session', esc_html__( 'Another request already started an export with this migration session.', 'jisento-migration' ), array( 'status' => 409 ) );
+			return new \WP_Error( 'jisento_session', \esc_html__( 'Another request already started an export with this migration session.', 'jisento-migration' ), array( 'status' => 409 ) );
 		}
 		return rest_ensure_response( Plugin::instance()->jobs->to_response( $job ) );
 	}
@@ -903,11 +903,11 @@ class Rest_Controller {
 		$job_id = sanitize_text_field( (string) $request->get_param( 'job_id' ) );
 		$bound  = Session_Store::bound_job( $sess );
 		if ( '' === $bound || ! hash_equals( $bound, $job_id ) ) {
-			return new \WP_Error( 'jisento_forbidden', esc_html__( 'This migration session may only access the export job it created.', 'jisento-migration' ), array( 'status' => 403 ) );
+			return new \WP_Error( 'jisento_forbidden', \esc_html__( 'This migration session may only access the export job it created.', 'jisento-migration' ), array( 'status' => 403 ) );
 		}
 		$job = Plugin::instance()->jobs->get( $job_id );
 		if ( ! $job || 'export' !== $job->type ) {
-			return new \WP_Error( 'jisento_missing', esc_html__( 'Export job not found.', 'jisento-migration' ), array( 'status' => 404 ) );
+			return new \WP_Error( 'jisento_missing', \esc_html__( 'Export job not found.', 'jisento-migration' ), array( 'status' => 404 ) );
 		}
 		return $job;
 	}
@@ -930,7 +930,7 @@ class Rest_Controller {
 		}
 		$job_id = $job->job_id;
 		if ( 'completed' !== $job->status ) {
-			return new \WP_Error( 'jisento_package', esc_html__( 'Remote package is not ready.', 'jisento-migration' ), array( 'status' => 409 ) );
+			return new \WP_Error( 'jisento_package', \esc_html__( 'Remote package is not ready.', 'jisento-migration' ), array( 'status' => 409 ) );
 		}
 		$offset = max( 0, (int) $request->get_param( 'offset' ) );
 		$length = min( 2 * 1024 * 1024, max( 1024, (int) $request->get_param( 'length' ) ) );
@@ -938,20 +938,20 @@ class Rest_Controller {
 
 		if ( ! $job || empty( $job->state['package'] ) ) {
 			Plugin::instance()->logger->log( $job_id, 'chunk', 'serve', 'chunk-' . $index, 'error', 'HTTP 409 package not ready offset=' . $offset );
-			return new \WP_Error( 'jisento_package', esc_html__( 'Remote package is not ready.', 'jisento-migration' ), array( 'status' => 409 ) );
+			return new \WP_Error( 'jisento_package', \esc_html__( 'Remote package is not ready.', 'jisento-migration' ), array( 'status' => 409 ) );
 		}
 
 		$resolved = Plugin::instance()->storage->resolve( $job->state['package'] );
 		$path     = $resolved ? $resolved['path'] : Plugin::instance()->storage->get_path( $job->state['package'] );
 		if ( ! is_readable( $path ) || ! is_file( $path ) ) {
 			Plugin::instance()->logger->log( $job_id, 'chunk', 'serve', 'chunk-' . $index, 'error', 'HTTP 404 package missing' );
-			return new \WP_Error( 'jisento_package', esc_html__( 'Remote package is missing.', 'jisento-migration' ), array( 'status' => 404 ) );
+			return new \WP_Error( 'jisento_package', \esc_html__( 'Remote package is missing.', 'jisento-migration' ), array( 'status' => 404 ) );
 		}
 
 		clearstatcache( true, $path );
 		$total = (int) filesize( $path );
 		if ( $offset > $total ) {
-			return new \WP_Error( 'jisento_chunk', esc_html__( 'Requested chunk is past the end of the package.', 'jisento-migration' ), array( 'status' => 404 ) );
+			return new \WP_Error( 'jisento_chunk', \esc_html__( 'Requested chunk is past the end of the package.', 'jisento-migration' ), array( 'status' => 404 ) );
 		}
 
 		$fp = fopen( $path, 'rb' );
@@ -1067,14 +1067,14 @@ class Rest_Controller {
 		$existing = preg_replace( '/[^a-zA-Z0-9_]/', '', (string) $request->get_param( 'upload_id' ) );
 		$chunk    = $this->upload_chunk_bytes( $request->get_param( 'chunk' ) );
 		if ( $size <= 0 ) {
-			return new \WP_Error( 'jisento_upload', esc_html__( 'Upload size is missing.', 'jisento-migration' ), array( 'status' => 400 ) );
+			return new \WP_Error( 'jisento_upload', \esc_html__( 'Upload size is missing.', 'jisento-migration' ), array( 'status' => 400 ) );
 		}
 		if ( ! preg_match( '/\.jisento$/i', $name ) ) {
-			return new \WP_Error( 'jisento_upload', esc_html__( 'Please choose a .jisento backup.', 'jisento-migration' ), array( 'status' => 400 ) );
+			return new \WP_Error( 'jisento_upload', \esc_html__( 'Please choose a .jisento backup.', 'jisento-migration' ), array( 'status' => 400 ) );
 		}
 		$free = disk_free_space( Plugin::instance()->storage->root() );
 		if ( false !== $free && (int) $free < $size + ( 10 * 1048576 ) ) {
-			return new \WP_Error( 'jisento_upload', esc_html__( 'Not enough free disk space for this package.', 'jisento-migration' ), array( 'status' => 507 ) );
+			return new \WP_Error( 'jisento_upload', \esc_html__( 'Not enough free disk space for this package.', 'jisento-migration' ), array( 'status' => 507 ) );
 		}
 		if ( $existing ) {
 			$paths = $this->upload_paths( $existing );
@@ -1104,7 +1104,7 @@ class Rest_Controller {
 		wp_mkdir_p( dirname( $paths['part'] ) );
 		$fp = fopen( $paths['part'], 'wb' );
 		if ( ! $fp ) {
-			return new \WP_Error( 'jisento_upload', esc_html__( 'Unable to start the upload.', 'jisento-migration' ), array( 'status' => 500 ) );
+			return new \WP_Error( 'jisento_upload', \esc_html__( 'Unable to start the upload.', 'jisento-migration' ), array( 'status' => 500 ) );
 		}
 		fclose( $fp );
 		$meta = array(
@@ -1150,7 +1150,7 @@ class Rest_Controller {
 			$sha = isset( $_SERVER['HTTP_X_JISENTO_CHUNK_SHA256'] ) ? strtolower( sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_JISENTO_CHUNK_SHA256'] ) ) ) : '';
 		}
 		if ( ! preg_match( '/^[a-f0-9]{64}$/', $sha ) ) {
-			return new \WP_Error( 'jisento_upload', esc_html__( 'Missing or invalid chunk checksum.', 'jisento-migration' ), array( 'status' => 400 ) );
+			return new \WP_Error( 'jisento_upload', \esc_html__( 'Missing or invalid chunk checksum.', 'jisento-migration' ), array( 'status' => 400 ) );
 		}
 
 		$paths = $this->upload_paths( $upload_id );
@@ -1159,11 +1159,11 @@ class Rest_Controller {
 			function () use ( $paths, $offset, $sha, $boot_ms, $boot_at, $request ) {
 				$meta = Upload_Session::read_meta( $paths['meta'] );
 				if ( ! is_array( $meta ) ) {
-					return new \WP_Error( 'jisento_upload', esc_html__( 'Upload session expired. Please retry.', 'jisento-migration' ), array( 'status' => 410 ) );
+					return new \WP_Error( 'jisento_upload', \esc_html__( 'Upload session expired. Please retry.', 'jisento-migration' ), array( 'status' => 410 ) );
 				}
 				$size = (int) $meta['size'];
 				if ( $offset >= $size ) {
-					return new \WP_Error( 'jisento_upload', esc_html__( 'Upload chunk is past the end of the file.', 'jisento-migration' ), array( 'status' => 400 ) );
+					return new \WP_Error( 'jisento_upload', \esc_html__( 'Upload chunk is past the end of the file.', 'jisento-migration' ), array( 'status' => 400 ) );
 				}
 
 				$write_started = microtime( true );
@@ -1174,24 +1174,24 @@ class Rest_Controller {
 				}
 				$written = strlen( $raw );
 				if ( $written < 1 ) {
-					return new \WP_Error( 'jisento_upload', esc_html__( 'Missing upload chunk.', 'jisento-migration' ), array( 'status' => 400 ) );
+					return new \WP_Error( 'jisento_upload', \esc_html__( 'Missing upload chunk.', 'jisento-migration' ), array( 'status' => 400 ) );
 				}
 				if ( $written > Upload_Session::MAX_CHUNK ) {
-					return new \WP_Error( 'jisento_upload', esc_html__( 'Upload chunk is too large.', 'jisento-migration' ), array( 'status' => 413 ) );
+					return new \WP_Error( 'jisento_upload', \esc_html__( 'Upload chunk is too large.', 'jisento-migration' ), array( 'status' => 413 ) );
 				}
 				if ( $offset + $written > $size ) {
-					return new \WP_Error( 'jisento_upload', esc_html__( 'Upload chunk would extend past the declared file size.', 'jisento-migration' ), array( 'status' => 400 ) );
+					return new \WP_Error( 'jisento_upload', \esc_html__( 'Upload chunk would extend past the declared file size.', 'jisento-migration' ), array( 'status' => 400 ) );
 				}
 				$actual = hash( 'sha256', $raw );
 				if ( ! hash_equals( $sha, $actual ) ) {
-					return new \WP_Error( 'jisento_upload', esc_html__( 'Chunk checksum mismatch. Retry the upload.', 'jisento-migration' ), array( 'status' => 400 ) );
+					return new \WP_Error( 'jisento_upload', \esc_html__( 'Chunk checksum mismatch. Retry the upload.', 'jisento-migration' ), array( 'status' => 400 ) );
 				}
 
 				clearstatcache( true, $paths['part'] );
 				$part_size = is_file( $paths['part'] ) ? (int) filesize( $paths['part'] ) : 0;
 				$fp        = fopen( $paths['part'], $part_size > 0 ? 'rb+' : 'wb' );
 				if ( ! $fp ) {
-					return new \WP_Error( 'jisento_upload', esc_html__( 'Unable to write upload chunk.', 'jisento-migration' ), array( 'status' => 500 ) );
+					return new \WP_Error( 'jisento_upload', \esc_html__( 'Unable to write upload chunk.', 'jisento-migration' ), array( 'status' => 500 ) );
 				}
 				if ( $part_size < $offset + $written ) {
 					ftruncate( $fp, $offset + $written );
@@ -1200,7 +1200,7 @@ class Rest_Controller {
 				$wrote = fwrite( $fp, $raw );
 				if ( false === $wrote || $wrote !== $written ) {
 					fclose( $fp );
-					return new \WP_Error( 'jisento_upload', esc_html__( 'Unable to write upload chunk.', 'jisento-migration' ), array( 'status' => 500 ) );
+					return new \WP_Error( 'jisento_upload', \esc_html__( 'Unable to write upload chunk.', 'jisento-migration' ), array( 'status' => 500 ) );
 				}
 				fflush( $fp );
 				fclose( $fp );
@@ -1253,19 +1253,19 @@ class Rest_Controller {
 			function () use ( $paths ) {
 				$meta = Upload_Session::read_meta( $paths['meta'] );
 				if ( ! is_array( $meta ) ) {
-					return new \WP_Error( 'jisento_upload', esc_html__( 'Upload session expired. Please retry.', 'jisento-migration' ), array( 'status' => 410 ) );
+					return new \WP_Error( 'jisento_upload', \esc_html__( 'Upload session expired. Please retry.', 'jisento-migration' ), array( 'status' => 410 ) );
 				}
 				$size   = (int) $meta['size'];
 				$ranges = isset( $meta['ranges'] ) && is_array( $meta['ranges'] ) ? $meta['ranges'] : array();
 				if ( ! Upload_Session::covers_exactly( $ranges, $size ) ) {
-					return new \WP_Error( 'jisento_upload', esc_html__( 'The uploaded package is incomplete (missing or overlapping ranges). Please retry the upload.', 'jisento-migration' ), array( 'status' => 400 ) );
+					return new \WP_Error( 'jisento_upload', \esc_html__( 'The uploaded package is incomplete (missing or overlapping ranges). Please retry the upload.', 'jisento-migration' ), array( 'status' => 400 ) );
 				}
 				$storage = Plugin::instance()->storage;
 				$part    = $paths['part'];
 				clearstatcache( true, $part );
 				$on_disk = is_file( $part ) ? (int) filesize( $part ) : 0;
 				if ( $on_disk < $size ) {
-					return new \WP_Error( 'jisento_upload', esc_html__( 'The uploaded package is incomplete. Please retry the upload.', 'jisento-migration' ), array( 'status' => 400 ) );
+					return new \WP_Error( 'jisento_upload', \esc_html__( 'The uploaded package is incomplete. Please retry the upload.', 'jisento-migration' ), array( 'status' => 400 ) );
 				}
 				if ( $on_disk > $size ) {
 					$fp = fopen( $part, 'rb+' );
@@ -1349,7 +1349,7 @@ class Rest_Controller {
 	public function upload_discard( \WP_REST_Request $request ) {
 		$upload_id = preg_replace( '/[^a-zA-Z0-9_]/', '', (string) $request->get_param( 'upload_id' ) );
 		if ( ! $upload_id ) {
-			return new \WP_Error( 'jisento_upload', esc_html__( 'Upload id is missing.', 'jisento-migration' ), array( 'status' => 400 ) );
+			return new \WP_Error( 'jisento_upload', \esc_html__( 'Upload id is missing.', 'jisento-migration' ), array( 'status' => 400 ) );
 		}
 		$deleted = Upload_Session::discard( $upload_id );
 		if ( is_wp_error( $deleted ) ) {
@@ -1362,7 +1362,7 @@ class Rest_Controller {
 		$key      = sanitize_text_field( $request->get_param( 'package' ) );
 		$resolved = Plugin::instance()->storage->resolve( $key );
 		if ( ! $resolved ) {
-			return new \WP_Error( 'jisento_invalid_package', esc_html__( 'Invalid Jisento Package. The file is missing.', 'jisento-migration' ), array( 'status' => 400 ) );
+			return new \WP_Error( 'jisento_invalid_package', \esc_html__( 'Invalid Jisento Package. The file is missing.', 'jisento-migration' ), array( 'status' => 400 ) );
 		}
 		$sidecar = $resolved['path'] . '.json';
 		if ( is_readable( $sidecar ) ) {

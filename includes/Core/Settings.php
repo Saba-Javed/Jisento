@@ -27,16 +27,17 @@ class Settings {
 
 	public static function defaults() {
 		return array(
-			'keep_backups'            => 3,
-			'chunk_size'              => 524288,
-			'skip_cache'              => true,
-			'https_required'          => true,
-			'key_ttl'                 => 1800,
-			'key_single_use'          => true,
-			'default_plugin_strategy' => 'replace_matching',
-			'default_theme_strategy'  => 'keep_destination',
-			'max_log_days'            => 30,
-			'rate_limit'              => 30,
+			'keep_backups'                 => 3,
+			'chunk_size'                   => 524288,
+			'skip_cache'                   => true,
+			'https_required'               => true,
+			'key_ttl'                      => 1800,
+			'key_single_use'               => true,
+			'default_plugin_strategy'      => 'replace_matching',
+			'default_theme_strategy'       => 'keep_destination',
+			'max_log_days'                 => 30,
+			'rate_limit'                   => 30,
+			'delete_backups_on_uninstall'  => false,
 		);
 	}
 
@@ -73,6 +74,7 @@ class Settings {
 			case 'skip_cache':
 			case 'https_required':
 			case 'key_single_use':
+			case 'delete_backups_on_uninstall':
 				return (bool) $value;
 			case 'default_plugin_strategy':
 			case 'default_theme_strategy':

@@ -232,7 +232,7 @@ class Url_Replacer {
 
 		if ( null !== $cursor ) {
 			if ( count( $cursor ) !== count( $table['key'] ) ) {
-				throw new \RuntimeException(esc_html( 'URL replacement cursor does not match the key of table ' . $table['name'] . ' (key: ' . implode( ', ', $table['key'] ) . ')' ));
+				throw new \RuntimeException(\esc_html( 'URL replacement cursor does not match the key of table ' . $table['name'] . ' (key: ' . implode( ', ', $table['key'] ) . ')' ));
 			}
 			$placeholders = array();
 			foreach ( array_values( $cursor ) as $value ) {
@@ -242,7 +242,7 @@ class Url_Replacer {
 					continue;
 				}
 				if ( ! is_string( $value ) || ! preg_match( '/^(?:[0-9a-fA-F]{2})*$/', $value ) ) {
-					throw new \RuntimeException(esc_html( 'URL replacement cursor is corrupt for table ' . $table['name'] . ' (key: ' . implode( ', ', $table['key'] ) . ')' ));
+					throw new \RuntimeException(\esc_html( 'URL replacement cursor is corrupt for table ' . $table['name'] . ' (key: ' . implode( ', ', $table['key'] ) . ')' ));
 				}
 				$placeholders[] = '%s';
 				$args[]         = (string) hex2bin( $value );
@@ -259,7 +259,7 @@ class Url_Replacer {
 
 		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		if ( ! is_array( $rows ) || '' !== (string) $wpdb->last_error ) {
-			throw new \RuntimeException(esc_html( 'URL replacement failed reading table ' . $table['name'] . ' (key: ' . implode( ', ', $table['key'] ) . '): ' . $wpdb->last_error ));
+			throw new \RuntimeException(\esc_html( 'URL replacement failed reading table ' . $table['name'] . ' (key: ' . implode( ', ', $table['key'] ) . '): ' . $wpdb->last_error ));
 		}
 
 		return $rows;
@@ -307,7 +307,7 @@ class Url_Replacer {
 		$sql    = 'UPDATE ' . $this->ident( $table['name'] ) . ' SET ' . implode( ', ', $set ) . ' WHERE ' . implode( ' AND ', $where );
 		$result = $wpdb->query( $wpdb->prepare( $sql, $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		if ( false === $result ) {
-			throw new \RuntimeException(esc_html( 'URL replacement failed updating table ' . $table['name'] . ' (key: ' . implode( ', ', $table['key'] ) . '): ' . $wpdb->last_error ));
+			throw new \RuntimeException(\esc_html( 'URL replacement failed updating table ' . $table['name'] . ' (key: ' . implode( ', ', $table['key'] ) . '): ' . $wpdb->last_error ));
 		}
 
 		return array(
@@ -452,7 +452,7 @@ class Url_Replacer {
 	private function assert_no_error( $action ) {
 		global $wpdb;
 		if ( '' !== (string) $wpdb->last_error ) {
-			throw new \RuntimeException(esc_html( 'URL replacement failed ' . $action . ': ' . $wpdb->last_error ));
+			throw new \RuntimeException(\esc_html( 'URL replacement failed ' . $action . ': ' . $wpdb->last_error ));
 		}
 	}
 

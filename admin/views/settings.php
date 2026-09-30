@@ -32,6 +32,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 				<td><label><input type="checkbox" name="skip_cache" <?php checked( $settings['skip_cache'] ); ?>></label></td>
 			</tr>
 			<tr>
+				<th><?php esc_html_e( 'Delete backups on uninstall', 'jisento-migration' ); ?></th>
+				<td>
+					<label>
+						<input type="checkbox" name="delete_backups_on_uninstall" <?php checked( ! empty( $settings['delete_backups_on_uninstall'] ) ); ?>>
+						<?php esc_html_e( 'Remove the Jisento storage folder when the plugin is deleted (default: keep backups).', 'jisento-migration' ); ?>
+					</label>
+				</td>
+			</tr>
+			<tr>
 				<th><?php esc_html_e( 'Default plugin conflict strategy', 'jisento-migration' ); ?></th>
 				<td>
 					<select name="default_plugin_strategy">
