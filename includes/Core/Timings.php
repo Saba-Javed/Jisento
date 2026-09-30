@@ -183,7 +183,7 @@ class Timings {
 			}
 			return sprintf(
 				/* translators: 1: minutes, 2: seconds */
-				__( '%1$d min %2$d s', 'jisento' ),
+				__( '%1$d min %2$d s', 'jisento-migration' ),
 				$m,
 				$s
 			);
@@ -196,7 +196,7 @@ class Timings {
 		}
 		return sprintf(
 			/* translators: 1: hours, 2: minutes */
-			__( '%1$d h %2$d min', 'jisento' ),
+			__( '%1$d h %2$d min', 'jisento-migration' ),
 			$h,
 			$m
 		);
@@ -219,7 +219,7 @@ class Timings {
 		if ( 'transfer' === $key && ! empty( $entry['requests'] ) ) {
 			return sprintf(
 				/* translators: 1: duration, 2: request count, 3: average chunk duration */
-				__( 'Package transferred in %1$s (%2$d requests, avg chunk %3$s)', 'jisento' ),
+				__( 'Package transferred in %1$s (%2$d requests, avg chunk %3$s)', 'jisento-migration' ),
 				self::format_duration( $entry['seconds'] ),
 				(int) $entry['requests'],
 				self::format_duration( (float) $entry['average_chunk_seconds'] )
@@ -229,14 +229,14 @@ class Timings {
 			$table = substr( $key, 6 );
 			return sprintf(
 				/* translators: 1: table name, 2: duration */
-				__( 'Table %1$s exported in %2$s', 'jisento' ),
+				__( 'Table %1$s exported in %2$s', 'jisento-migration' ),
 				$table,
 				self::format_duration( $entry['seconds'] )
 			);
 		}
 		return sprintf(
 			/* translators: 1: stage label, 2: duration */
-			__( '%1$s in %2$s', 'jisento' ),
+			__( '%1$s in %2$s', 'jisento-migration' ),
 			$label,
 			self::format_duration( $entry['seconds'] )
 		);
@@ -248,20 +248,20 @@ class Timings {
 	 */
 	public static function label_for( $key ) {
 		$map = array(
-			'validating'         => __( 'Package validated', 'jisento' ),
-			'compatibility'      => __( 'Compatibility checked', 'jisento' ),
-			'extracting'         => __( 'Package extracted', 'jisento' ),
-			'importing_database' => __( 'Database restored', 'jisento' ),
-			'importing_files'    => __( 'Files restored', 'jisento' ),
-			'replacing_urls'     => __( 'URLs replaced', 'jisento' ),
-			'finalizing'         => __( 'Migration finalized', 'jisento' ),
-			'exporting_database' => __( 'Database exported', 'jisento' ),
-			'exporting_files'    => __( 'Files exported', 'jisento' ),
-			'packaging'          => __( 'Package built', 'jisento' ),
-			'checksum'           => __( 'Checksum verified', 'jisento' ),
-			'finalize'           => __( 'Export finalized', 'jisento' ),
-			'transfer'           => __( 'Package transferred', 'jisento' ),
-			'upload'             => __( 'Package uploaded', 'jisento' ),
+			'validating'         => __( 'Package validated', 'jisento-migration' ),
+			'compatibility'      => __( 'Compatibility checked', 'jisento-migration' ),
+			'extracting'         => __( 'Package extracted', 'jisento-migration' ),
+			'importing_database' => __( 'Database restored', 'jisento-migration' ),
+			'importing_files'    => __( 'Files restored', 'jisento-migration' ),
+			'replacing_urls'     => __( 'URLs replaced', 'jisento-migration' ),
+			'finalizing'         => __( 'Migration finalized', 'jisento-migration' ),
+			'exporting_database' => __( 'Database exported', 'jisento-migration' ),
+			'exporting_files'    => __( 'Files exported', 'jisento-migration' ),
+			'packaging'          => __( 'Package built', 'jisento-migration' ),
+			'checksum'           => __( 'Checksum verified', 'jisento-migration' ),
+			'finalize'           => __( 'Export finalized', 'jisento-migration' ),
+			'transfer'           => __( 'Package transferred', 'jisento-migration' ),
+			'upload'             => __( 'Package uploaded', 'jisento-migration' ),
 		);
 		$key = (string) $key;
 		if ( isset( $map[ $key ] ) ) {
@@ -270,7 +270,7 @@ class Timings {
 		if ( 0 === strpos( $key, 'table_' ) ) {
 			return sprintf(
 				/* translators: %s: table name */
-				__( 'Table %s exported', 'jisento' ),
+				__( 'Table %s exported', 'jisento-migration' ),
 				substr( $key, 6 )
 			);
 		}

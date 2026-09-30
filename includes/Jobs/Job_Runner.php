@@ -37,7 +37,7 @@ class Job_Runner {
 		if ( function_exists( 'is_multisite' ) && is_multisite() ) {
 			return new \WP_Error(
 				'jisento_multisite',
-				__( 'Stage: start. Operation: start an export or import. Reason: this is a WordPress multisite network, and Jisento Migration only supports single sites; running it here could overwrite every site in the network. Recovery: use a multisite-aware migration tool.', 'jisento' ),
+				__( 'Stage: start. Operation: start an export or import. Reason: this is a WordPress multisite network, and Jisento Migration only supports single sites; running it here could overwrite every site in the network. Recovery: use a multisite-aware migration tool.', 'jisento-migration' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -76,7 +76,7 @@ class Job_Runner {
 			'jisento_busy',
 			sprintf(
 				/* translators: 1: running job id, 2: job id */
-				__( 'Stage: start. Operation: start a job. Reason: an import or export is already running on this site (job %1$s), and only one can run at a time. Recovery: wait for it to finish or cancel it, then try again. Job: %2$s', 'jisento' ),
+				__( 'Stage: start. Operation: start a job. Reason: an import or export is already running on this site (job %1$s), and only one can run at a time. Recovery: wait for it to finish or cancel it, then try again. Job: %2$s', 'jisento-migration' ),
 				$holder,
 				'' !== $job_id ? $job_id : '-'
 			),
@@ -98,7 +98,7 @@ class Job_Runner {
 		$plugin = Plugin::instance();
 		$job    = $plugin->jobs->get( $job_id );
 		if ( ! $job ) {
-			return self::result( null, false, new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento' ), array( 'status' => 404 ) ) );
+			return self::result( null, false, new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento-migration' ), array( 'status' => 404 ) ) );
 		}
 		if ( 'running' !== $job->status ) {
 			// Failed jobs are never restarted here; that needs an explicit retry().
@@ -120,7 +120,7 @@ class Job_Runner {
 						$job,
 						sprintf(
 							/* translators: 1: other job, 2: job id */
-							__( 'Stage: %1$s. Operation: renew the site lease. Reason: this job stopped sending heartbeats for more than two minutes and job %2$s took over the site. Recovery: let the other job finish, then start this one again. Job: %3$s', 'jisento' ),
+							__( 'Stage: %1$s. Operation: renew the site lease. Reason: this job stopped sending heartbeats for more than two minutes and job %2$s took over the site. Recovery: let the other job finish, then start this one again. Job: %3$s', 'jisento-migration' ),
 							$job->stage,
 							isset( $data['owner'] ) ? $data['owner'] : '-',
 							$job->job_id
@@ -177,7 +177,7 @@ class Job_Runner {
 		if ( '' === $message ) {
 			$message = sprintf(
 				/* translators: %s: PHP exception class */
-				__( 'The worker stopped with %s but PHP supplied no error message. Recovery: check the server PHP error log, then press Retry.', 'jisento' ),
+				__( 'The worker stopped with %s but PHP supplied no error message. Recovery: check the server PHP error log, then press Retry.', 'jisento-migration' ),
 				get_class( $e )
 			);
 		}
@@ -248,12 +248,12 @@ class Job_Runner {
 	public static function cancel( $job_id ) {
 		$plugin = Plugin::instance();
 		if ( ! Lease::lock_job( $job_id, 25 ) ) {
-			return new \WP_Error( 'jisento_busy', sprintf( __( 'Stage: cancel. Operation: stop the job. Reason: a step is still running and did not finish within 25 seconds. Recovery: press Cancel again in a moment. Job: %s', 'jisento' ), $job_id ), array( 'status' => 409 ) );
+			return new \WP_Error( 'jisento_busy', sprintf( __( 'Stage: cancel. Operation: stop the job. Reason: a step is still running and did not finish within 25 seconds. Recovery: press Cancel again in a moment. Job: %s', 'jisento-migration' ), $job_id ), array( 'status' => 409 ) );
 		}
 		try {
 			$job = $plugin->jobs->get( $job_id );
 			if ( ! $job ) {
-				return new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento' ), array( 'status' => 404 ) );
+				return new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento-migration' ), array( 'status' => 404 ) );
 			}
 			if ( 'completed' === $job->status || 'cancelled' === $job->status ) {
 				return $job;
@@ -263,7 +263,7 @@ class Job_Runner {
 				array(
 					'status'        => 'cancelled',
 					'stage'         => 'cancelled',
-					'error_summary' => __( 'Cancelled by administrator.', 'jisento' ),
+					'error_summary' => __( 'Cancelled by administrator.', 'jisento-migration' ),
 				)
 			);
 			$plugin->logger->log( $job_id, 'cancelled', 'cancel', '', 'info', 'Cancelled by administrator' );
@@ -281,12 +281,12 @@ class Job_Runner {
 	public static function pause( $job_id ) {
 		$plugin = Plugin::instance();
 		if ( ! Lease::lock_job( $job_id, 25 ) ) {
-			return new \WP_Error( 'jisento_busy', sprintf( __( 'Stage: pause. Operation: pause the job. Reason: a step is still running. Recovery: press Pause again in a moment. Job: %s', 'jisento' ), $job_id ), array( 'status' => 409 ) );
+			return new \WP_Error( 'jisento_busy', sprintf( __( 'Stage: pause. Operation: pause the job. Reason: a step is still running. Recovery: press Pause again in a moment. Job: %s', 'jisento-migration' ), $job_id ), array( 'status' => 409 ) );
 		}
 		try {
 			$job = $plugin->jobs->get( $job_id );
 			if ( ! $job ) {
-				return new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento' ), array( 'status' => 404 ) );
+				return new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento-migration' ), array( 'status' => 404 ) );
 			}
 			if ( 'running' !== $job->status ) {
 				return $job;
@@ -307,7 +307,7 @@ class Job_Runner {
 		$plugin = Plugin::instance();
 		$job    = $plugin->jobs->get( $job_id );
 		if ( ! $job ) {
-			return new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento' ), array( 'status' => 404 ) );
+			return new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento-migration' ), array( 'status' => 404 ) );
 		}
 		if ( 'paused' !== $job->status ) {
 			return $job;
@@ -333,18 +333,18 @@ class Job_Runner {
 			return $blocked;
 		}
 		if ( ! Lease::lock_job( $job_id ) ) {
-			return new \WP_Error( 'jisento_busy', sprintf( __( 'Stage: retry. Operation: restart the job. Reason: another request is working on it. Recovery: wait a moment and reload. Job: %s', 'jisento' ), $job_id ), array( 'status' => 409 ) );
+			return new \WP_Error( 'jisento_busy', sprintf( __( 'Stage: retry. Operation: restart the job. Reason: another request is working on it. Recovery: wait a moment and reload. Job: %s', 'jisento-migration' ), $job_id ), array( 'status' => 409 ) );
 		}
 		try {
 			$job = $plugin->jobs->get( $job_id );
 			if ( ! $job ) {
-				return new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento' ), array( 'status' => 404 ) );
+				return new \WP_Error( 'jisento_missing', __( 'Job not found.', 'jisento-migration' ), array( 'status' => 404 ) );
 			}
 			if ( 'failed' !== $job->status ) {
-				return new \WP_Error( 'jisento_retry', sprintf( __( 'Stage: retry. Operation: restart the job. Reason: only a failed job can be retried; this one is %1$s. Recovery: none needed. Job: %2$s', 'jisento' ), $job->status, $job_id ), array( 'status' => 409 ) );
+				return new \WP_Error( 'jisento_retry', sprintf( __( 'Stage: retry. Operation: restart the job. Reason: only a failed job can be retried; this one is %1$s. Recovery: none needed. Job: %2$s', 'jisento-migration' ), $job->status, $job_id ), array( 'status' => 409 ) );
 			}
 			if ( 'import' !== $job->type ) {
-				return new \WP_Error( 'jisento_retry', sprintf( __( 'Stage: retry. Operation: restart the job. Reason: a failed %1$s cannot be resumed safely. Recovery: start a new one. Job: %2$s', 'jisento' ), $job->type, $job_id ), array( 'status' => 409 ) );
+				return new \WP_Error( 'jisento_retry', sprintf( __( 'Stage: retry. Operation: restart the job. Reason: a failed %1$s cannot be resumed safely. Recovery: start a new one. Job: %2$s', 'jisento-migration' ), $job->type, $job_id ), array( 'status' => 409 ) );
 			}
 			$lease = Lease::acquire( $job_id );
 			if ( is_wp_error( $lease ) ) {

@@ -47,7 +47,7 @@ class Job_Store {
 		);
 		if ( ! $ok ) {
 			throw new \RuntimeException(
-				sprintf( __( 'Stage: start. Operation: create the job record. Reason: database error %1$s. Recovery: deactivate and reactivate Jisento Migration so its tables are repaired, then retry. Job: %2$s', 'jisento' ), $wpdb->last_error, $job_id )
+				sprintf( __( 'Stage: start. Operation: create the job record. Reason: database error %1$s. Recovery: deactivate and reactivate Jisento Migration so its tables are repaired, then retry. Job: %2$s', 'jisento-migration' ), $wpdb->last_error, $job_id )
 			);
 		}
 		return $this->get( $job_id );
@@ -89,7 +89,7 @@ class Job_Store {
 		if ( null === $version ) {
 			$current = $this->get( $job_id );
 			if ( ! $current ) {
-				throw new \RuntimeException( sprintf( __( 'Job %s no longer exists.', 'jisento' ), $job_id ) );
+				throw new \RuntimeException( sprintf( __( 'Job %s no longer exists.', 'jisento-migration' ), $job_id ) );
 			}
 			$version = (int) $current->version;
 		}
@@ -122,17 +122,17 @@ class Job_Store {
 		$result = $wpdb->query( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		if ( false === $result ) {
 			throw new \RuntimeException(
-				sprintf( __( 'Operation: save job state. Reason: database error %1$s. Recovery: check the database connection and disk space, then press Retry. Job: %2$s', 'jisento' ), $wpdb->last_error, $job_id )
+				sprintf( __( 'Operation: save job state. Reason: database error %1$s. Recovery: check the database connection and disk space, then press Retry. Job: %2$s', 'jisento-migration' ), $wpdb->last_error, $job_id )
 			);
 		}
 		if ( 1 !== (int) $result ) {
 			throw new Job_Conflict(
-				sprintf( __( 'Operation: save job state. Reason: the job was changed by another request (paused, cancelled, or a second worker) since this step started, so this step\'s result was discarded. Recovery: none needed; reload the job status. Job: %s', 'jisento' ), $job_id )
+				sprintf( __( 'Operation: save job state. Reason: the job was changed by another request (paused, cancelled, or a second worker) since this step started, so this step\'s result was discarded. Recovery: none needed; reload the job status. Job: %s', 'jisento-migration' ), $job_id )
 			);
 		}
 		$saved = $this->get( $job_id );
 		if ( ! $saved ) {
-			throw new \RuntimeException( sprintf( __( 'Job %s disappeared while it was being saved.', 'jisento' ), $job_id ) );
+			throw new \RuntimeException( sprintf( __( 'Job %s disappeared while it was being saved.', 'jisento-migration' ), $job_id ) );
 		}
 		return $saved;
 	}
@@ -174,7 +174,7 @@ class Job_Store {
 			$wpdb->prepare(
 				"UPDATE {$wpdb->prefix}jisento_jobs SET status = 'failed', error_summary = %s, updated_at = %s, version = version + 1
 				WHERE status IN ('created','preparing','running','paused') AND updated_at < DATE_SUB(%s, INTERVAL 2 DAY)",
-				__( 'Migration expired after inactivity.', 'jisento' ),
+				__( 'Migration expired after inactivity.', 'jisento-migration' ),
 				current_time( 'mysql' ),
 				current_time( 'mysql' )
 			)
@@ -244,7 +244,7 @@ class Job_Store {
 		$json = wp_json_encode( self::encode_value( $state ) );
 		if ( ! is_string( $json ) || '' === $json ) {
 			throw new \RuntimeException(
-				sprintf( __( 'Operation: save job state. Reason: the state could not be encoded as JSON (%1$s). Recovery: press Retry; if it repeats, send the debug log to support. Job: %2$s', 'jisento' ), function_exists( 'json_last_error_msg' ) ? json_last_error_msg() : 'unknown', $job_id )
+				sprintf( __( 'Operation: save job state. Reason: the state could not be encoded as JSON (%1$s). Recovery: press Retry; if it repeats, send the debug log to support. Job: %2$s', 'jisento-migration' ), function_exists( 'json_last_error_msg' ) ? json_last_error_msg() : 'unknown', $job_id )
 			);
 		}
 		return $json;

@@ -240,7 +240,7 @@ class Job_Scheduler {
 		if ( strlen( $nonce ) < 16 || strlen( $nonce ) > 64 ) {
 			return new \WP_Error(
 				'jisento_probe',
-				__( 'Stage: start. Operation: loopback probe. Reason: the probe nonce is invalid. Recovery: start the job again. Job: -', 'jisento' ),
+				__( 'Stage: start. Operation: loopback probe. Reason: the probe nonce is invalid. Recovery: start the job again. Job: -', 'jisento-migration' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -249,14 +249,14 @@ class Job_Scheduler {
 		if ( ! is_file( $expect ) ) {
 			return new \WP_Error(
 				'jisento_probe',
-				__( 'Stage: start. Operation: loopback probe. Reason: no matching probe was waiting. Recovery: start the job again. Job: -', 'jisento' ),
+				__( 'Stage: start. Operation: loopback probe. Reason: no matching probe was waiting. Recovery: start the job again. Job: -', 'jisento-migration' ),
 				array( 'status' => 404 )
 			);
 		}
 		if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
 			return new \WP_Error(
 				'jisento_probe',
-				__( 'Stage: start. Operation: loopback probe. Reason: the probe folder is not writable. Recovery: make wp-content/jisento writable by PHP. Job: -', 'jisento' ),
+				__( 'Stage: start. Operation: loopback probe. Reason: the probe folder is not writable. Recovery: make wp-content/jisento writable by PHP. Job: -', 'jisento-migration' ),
 				array( 'status' => 500 )
 			);
 		}
@@ -264,7 +264,7 @@ class Job_Scheduler {
 		if ( false === file_put_contents( $marker, (string) time(), LOCK_EX ) ) {
 			return new \WP_Error(
 				'jisento_probe',
-				__( 'Stage: start. Operation: loopback probe. Reason: the probe marker could not be written. Recovery: make wp-content/jisento writable by PHP. Job: -', 'jisento' ),
+				__( 'Stage: start. Operation: loopback probe. Reason: the probe marker could not be written. Recovery: make wp-content/jisento writable by PHP. Job: -', 'jisento-migration' ),
 				array( 'status' => 500 )
 			);
 		}

@@ -283,7 +283,7 @@ class Live_Url {
 	 */
 	public static function apply_imported_theme( array $pin ) {
 		if ( ! empty( $pin['skip_themes'] ) ) {
-			return __( 'The imported theme was not activated (--skip-themes). The destination theme stays active.', 'jisento' );
+			return __( 'The imported theme was not activated (--skip-themes). The destination theme stays active.', 'jisento-migration' );
 		}
 		$style = isset( $pin['imported_stylesheet'] ) ? (string) $pin['imported_stylesheet'] : '';
 		$tmpl  = isset( $pin['imported_template'] ) ? (string) $pin['imported_template'] : $style;
@@ -293,7 +293,7 @@ class Live_Url {
 		if ( ! self::theme_files_ready( $style, $tmpl ) ) {
 			return sprintf(
 				/* translators: 1: stylesheet slug, 2: template slug */
-				__( 'The imported theme "%1$s" (template "%2$s") is incomplete on disk, so the destination theme was kept. Finish restoring theme files, then switch themes in Appearance, or resume with: wp jisento resume --job=<id> after the files are present.', 'jisento' ),
+				__( 'The imported theme "%1$s" (template "%2$s") is incomplete on disk, so the destination theme was kept. Finish restoring theme files, then switch themes in Appearance, or resume with: wp jisento resume --job=<id> after the files are present.', 'jisento-migration' ),
 				$style,
 				$tmpl
 			);

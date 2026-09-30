@@ -69,7 +69,7 @@ class Plugin {
 	}
 
 	public function boot() {
-		load_plugin_textdomain( 'jisento', false, dirname( JISENTO_BASENAME ) . '/languages' );
+		load_plugin_textdomain( 'jisento-migration', false, dirname( JISENTO_BASENAME ) . '/languages' );
 
 		$this->settings = new Settings();
 		$this->logger   = new Logger();
@@ -114,7 +114,7 @@ class Plugin {
 		if ( ! isset( $schedules['jisento_minute'] ) ) {
 			$schedules['jisento_minute'] = array(
 				'interval' => 60,
-				'display'  => __( 'Every minute (Jisento)', 'jisento' ),
+				'display'  => __( 'Every minute (Jisento)', 'jisento-migration' ),
 			);
 		}
 		return $schedules;

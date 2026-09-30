@@ -49,7 +49,7 @@ class Admin_Guard {
 		}
 		return new \WP_Error(
 			'jisento_import_running',
-			__( 'A Jisento import is still running. Updates are blocked until it finishes so the destination is not left without an administrator.', 'jisento' )
+			__( 'A Jisento import is still running. Updates are blocked until it finishes so the destination is not left without an administrator.', 'jisento-migration' )
 		);
 	}
 
@@ -70,7 +70,7 @@ class Admin_Guard {
 		if ( ! self::import_running() ) {
 			return;
 		}
-		echo '<div class="notice notice-warning"><p>' . esc_html__( 'A Jisento import is in progress. Do not update or delete plugins until it finishes. Live tables stay in place until the database restore completes.', 'jisento' ) . '</p></div>';
+		echo '<div class="notice notice-warning"><p>' . esc_html__( 'A Jisento import is in progress. Do not update or delete plugins until it finishes. Live tables stay in place until the database restore completes.', 'jisento-migration' ) . '</p></div>';
 	}
 
 	/**

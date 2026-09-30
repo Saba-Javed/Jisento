@@ -90,40 +90,40 @@ class Diagnostics {
 	public function run_check( $id ) {
 		switch ( $id ) {
 			case 'php':
-				return $this->item( $id, __( 'PHP Version', 'jisento' ), PHP_VERSION, version_compare( PHP_VERSION, '7.4', '>=' ) );
+				return $this->item( $id, __( 'PHP Version', 'jisento-migration' ), PHP_VERSION, version_compare( PHP_VERSION, '7.4', '>=' ) );
 			case 'wordpress':
-				return $this->item( $id, __( 'WordPress Version', 'jisento' ), get_bloginfo( 'version' ), true );
+				return $this->item( $id, __( 'WordPress Version', 'jisento-migration' ), get_bloginfo( 'version' ), true );
 			case 'zip':
-				return $this->item( $id, __( 'ZipArchive', 'jisento' ), Archive::zip_available() ? 'Yes' : 'No', Archive::zip_available() );
+				return $this->item( $id, __( 'ZipArchive', 'jisento-migration' ), Archive::zip_available() ? 'Yes' : 'No', Archive::zip_available() );
 			case 'curl':
-				return $this->item( $id, __( 'cURL', 'jisento' ), function_exists( 'curl_init' ) ? 'Yes' : 'No', function_exists( 'curl_init' ) );
+				return $this->item( $id, __( 'cURL', 'jisento-migration' ), function_exists( 'curl_init' ) ? 'Yes' : 'No', function_exists( 'curl_init' ) );
 			case 'openssl':
-				return $this->item( $id, __( 'OpenSSL', 'jisento' ), extension_loaded( 'openssl' ) ? 'Yes' : 'No', extension_loaded( 'openssl' ) );
+				return $this->item( $id, __( 'OpenSSL', 'jisento-migration' ), extension_loaded( 'openssl' ) ? 'Yes' : 'No', extension_loaded( 'openssl' ) );
 			case 'memory':
-				return $this->item( $id, __( 'Memory Limit', 'jisento' ), ini_get( 'memory_limit' ), true );
+				return $this->item( $id, __( 'Memory Limit', 'jisento-migration' ), ini_get( 'memory_limit' ), true );
 			case 'max_execution':
-				return $this->item( $id, __( 'Max Execution Time', 'jisento' ), (string) ini_get( 'max_execution_time' ), true );
+				return $this->item( $id, __( 'Max Execution Time', 'jisento-migration' ), (string) ini_get( 'max_execution_time' ), true );
 			case 'upload_max':
-				return $this->item( $id, __( 'Upload Max Filesize', 'jisento' ), ini_get( 'upload_max_filesize' ), true );
+				return $this->item( $id, __( 'Upload Max Filesize', 'jisento-migration' ), ini_get( 'upload_max_filesize' ), true );
 			case 'post_max':
-				return $this->item( $id, __( 'Post Max Size', 'jisento' ), ini_get( 'post_max_size' ), true );
+				return $this->item( $id, __( 'Post Max Size', 'jisento-migration' ), ini_get( 'post_max_size' ), true );
 			case 'disk':
 				$disk = @disk_free_space( \WP_CONTENT_DIR );
 				return $this->item(
 					$id,
-					__( 'Free disk space (reported by server)', 'jisento' ),
+					__( 'Free disk space (reported by server)', 'jisento-migration' ),
 					false === $disk ? 'Unknown' : size_format( $disk ),
 					false === $disk || $disk > 20 * 1024 * 1024,
 					false,
-					__( 'Your hosting plan may have a lower limit than this figure.', 'jisento' )
+					__( 'Your hosting plan may have a lower limit than this figure.', 'jisento-migration' )
 				);
 			case 'rest':
-				return $this->item( $id, __( 'REST API', 'jisento' ), rest_url( 'jisento/v1/' ), true );
+				return $this->item( $id, __( 'REST API', 'jisento-migration' ), rest_url( 'jisento/v1/' ), true );
 			case 'writable':
-				return $this->item( $id, __( 'Filesystem Writable', 'jisento' ), is_writable( \WP_CONTENT_DIR ) ? 'Yes' : 'No', is_writable( \WP_CONTENT_DIR ) );
+				return $this->item( $id, __( 'Filesystem Writable', 'jisento-migration' ), is_writable( \WP_CONTENT_DIR ) ? 'Yes' : 'No', is_writable( \WP_CONTENT_DIR ) );
 			case 'https':
 				$ssl = function_exists( 'is_ssl' ) && is_ssl();
-				return $this->item( $id, __( 'HTTPS', 'jisento' ), $ssl ? 'Yes' : 'No', $ssl || $this->is_local() );
+				return $this->item( $id, __( 'HTTPS', 'jisento-migration' ), $ssl ? 'Yes' : 'No', $ssl || $this->is_local() );
 			case 'loopback':
 				return $this->loopback();
 			case 'outbound':
@@ -161,12 +161,12 @@ class Diagnostics {
 			$ok = false;
 		}
 		if ( $ok ) {
-			return $this->item( 'loopback', __( 'Loopback Requests', 'jisento' ), __( 'Background processing works', 'jisento' ), true );
+			return $this->item( 'loopback', __( 'Loopback Requests', 'jisento-migration' ), __( 'Background processing works', 'jisento-migration' ), true );
 		}
 		return $this->item(
 			'loopback',
-			__( 'Loopback Requests', 'jisento' ),
-			__( 'Background processing is blocked by the server. Migrations still work, but keep this tab open.', 'jisento' ),
+			__( 'Loopback Requests', 'jisento-migration' ),
+			__( 'Background processing is blocked by the server. Migrations still work, but keep this tab open.', 'jisento-migration' ),
 			false,
 			true
 		);
@@ -175,9 +175,9 @@ class Diagnostics {
 	private function outbound() {
 		$response = wp_remote_get( 'https://api.wordpress.org/core/version-check/1.7/', array( 'timeout' => 8 ) );
 		if ( is_wp_error( $response ) ) {
-			return $this->item( 'outbound', __( 'Outbound Connections', 'jisento' ), $response->get_error_message(), false );
+			return $this->item( 'outbound', __( 'Outbound Connections', 'jisento-migration' ), $response->get_error_message(), false );
 		}
 		$code = (int) wp_remote_retrieve_response_code( $response );
-		return $this->item( 'outbound', __( 'Outbound Connections', 'jisento' ), $code < 500 ? 'Yes' : 'HTTP ' . $code, $code < 500 );
+		return $this->item( 'outbound', __( 'Outbound Connections', 'jisento-migration' ), $code < 500 ? 'Yes' : 'HTTP ' . $code, $code < 500 );
 	}
 }

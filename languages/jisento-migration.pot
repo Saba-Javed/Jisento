@@ -1,0 +1,2135 @@
+# Copyright (C) 2026 Jisento
+# This file is distributed under the GPLv2 or later.
+msgid ""
+msgstr ""
+"Project-Id-Version: Jisento Migration 1.0.0\n"
+"Report-Msgid-Bugs-To: https://jisento.com\n"
+"POT-Creation-Date: 2026-09-30 10:22:07+0000\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"X-Domain: jisento-migration\n"
+
+#: admin/views/partials/mode-review.php:57
+msgid "% repair for old packages"
+msgstr ""
+
+#: includes/Admin/Admin.php:234 includes/Core/Timings.php:199
+msgid "%1$d h %2$d min"
+msgstr ""
+
+#: includes/Core/Timings.php:186
+msgid "%1$d min %2$d s"
+msgstr ""
+
+#: includes/Import/Importer.php:692
+msgid "%1$d tables restored, logins kept"
+msgstr ""
+
+#: includes/Package/Archive.php:474
+msgid "%1$s extracted to %2$d bytes but the package says %3$d."
+msgstr ""
+
+#: includes/Package/Archive.php:396
+msgid "%1$s extracted to %2$d bytes, but the manifest records %3$d. The package is damaged; export it again."
+msgstr ""
+
+#: includes/Core/Timings.php:239
+msgid "%1$s in %2$s"
+msgstr ""
+
+#: includes/Import/Importer.php:806
+msgid "%1$s · %2$d statements · %3$ss"
+msgstr ""
+
+#: includes/Admin/Admin.php:226
+msgid "%d minute"
+msgid_plural "%d minutes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: includes/Admin/Admin.php:219
+msgid "%d second"
+msgid_plural "%d seconds"
+msgstr[0] ""
+msgstr[1] ""
+
+#: includes/Package/Archive.php:401
+msgid "%s does not match the SHA-256 recorded in the manifest. The package is damaged or was modified; export it again."
+msgstr ""
+
+#: includes/Package/Archive.php:486 includes/Package/Archive.php:802
+msgid "%s failed its SHA-256 check. The package is damaged or was modified; export or upload it again."
+msgstr ""
+
+#: includes/Package/Archive.php:477 includes/Package/Archive.php:793
+msgid "%s failed its ZIP CRC check. The package is damaged; export or upload it again."
+msgstr ""
+
+#: includes/Package/Archive.php:582
+msgid "%s has no SHA-256 in checksums/entries.jsonl. The package is incomplete; export it again."
+msgstr ""
+
+#: includes/Import/Importer.php:1487
+msgid "%s is a symlink; restoring over it could write outside the site, so the restore stopped."
+msgstr ""
+
+#: includes/Security/Admin_Guard.php:73
+msgid "A Jisento import is in progress. Do not update or delete plugins until it finishes. Live tables stay in place until the database restore completes."
+msgstr ""
+
+#: includes/Security/Admin_Guard.php:52
+msgid "A Jisento import is still running. Updates are blocked until it finishes so the destination is not left without an administrator."
+msgstr ""
+
+#: includes/Core/Lease.php:38
+msgid "A job id is required to take the site lease."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:716
+msgid "A single SQL statement is larger than 32 MB, so it cannot be restored safely. Export the package again with this version of Jisento."
+msgstr ""
+
+#: includes/Remote/Transfer.php:98
+msgid "A valid source site URL is required."
+msgstr ""
+
+#: includes/Security/Guard.php:88
+msgid "Absolute archive paths are not allowed."
+msgstr ""
+
+#: admin/views/backups.php:25 admin/views/key-send.php:21
+msgid "Actions"
+msgstr ""
+
+#: admin/views/key-send.php:14
+msgid "Active keys"
+msgstr ""
+
+#: includes/Core/Cleanup.php:168
+msgid "Active theme %s is not installed on the destination."
+msgstr ""
+
+#: includes/Export/Exporter.php:704 includes/Export/Exporter.php:705
+msgid "Adding database to package"
+msgstr ""
+
+#: includes/Admin/Admin.php:95 includes/Export/Exporter.php:189 includes/Export/Exporter.php:710
+msgid "Adding files to package"
+msgstr ""
+
+#: admin/views/logs.php:50
+msgid "Advanced"
+msgstr ""
+
+#: admin/views/migration.php:33
+msgid "Advanced Options"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:49
+msgid "Advanced settings"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:42
+msgid "All links updated to the new address"
+msgstr ""
+
+#: includes/Import/Importer.php:692
+msgid "All tables will be replaced"
+msgstr ""
+
+#: includes/Core/Lease.php:78
+msgid "An import or export is already running on this site (job %1$s). Only one can run at a time. Wait for it to finish, cancel it, or retry after %2$d seconds if it has stopped. Job: %3$s"
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:886
+msgid "Another request already started an export with this migration session."
+msgstr ""
+
+#: includes/Security/Guard.php:83
+msgid "Archive path traversal is not allowed."
+msgstr ""
+
+#: includes/Core/Compatibility.php:82
+msgid "Available memory"
+msgstr ""
+
+#: includes/Core/Diagnostics.php:169
+msgid "Background processing is blocked by the server. Migrations still work, but keep this tab open."
+msgstr ""
+
+#: includes/Core/Diagnostics.php:164
+msgid "Background processing works"
+msgstr ""
+
+#: includes/Admin/Admin.php:105 includes/Export/Exporter.php:834 includes/Export/Exporter.php:871
+msgid "Backup completed"
+msgstr ""
+
+#: includes/Admin/Admin.php:340
+msgid "Backup unavailable"
+msgstr ""
+
+#: admin/views/backups.php:14 includes/Admin/Admin.php:42
+msgid "Backups"
+msgstr ""
+
+#: admin/views/backups.php:39 admin/views/migration.php:44 admin/views/partials/mode-review.php:75
+msgid "Cancel"
+msgstr ""
+
+#: includes/Admin/Admin.php:74
+msgid "Cancel Export"
+msgstr ""
+
+#: includes/Admin/Admin.php:88
+msgid "Cancel Import"
+msgstr ""
+
+#: includes/Admin/Admin.php:81
+msgid "Cancel Migration"
+msgstr ""
+
+#: includes/Admin/Admin.php:107 includes/Admin/Admin.php:205
+msgid "Cancelled"
+msgstr ""
+
+#: includes/Jobs/Job_Runner.php:266
+msgid "Cancelled by administrator."
+msgstr ""
+
+#: includes/Export/Exporter.php:225 includes/Export/Exporter.php:230
+msgid "Cannot read directory: %s"
+msgstr ""
+
+#: includes/Import/Importer.php:661
+msgid "Check that they hold nothing you need, drop them (for example with phpMyAdmin), then start the import again. No table was changed."
+msgstr ""
+
+#: includes/Import/Importer.php:745
+msgid "Check the database user can create tables, then press Retry."
+msgstr ""
+
+#: includes/Import/Importer.php:1799
+msgid "Checking Elementor and WooCommerce"
+msgstr ""
+
+#: includes/Import/Importer.php:908
+msgid "Checking foreign keys"
+msgstr ""
+
+#: includes/Import/Importer.php:754
+msgid "Checking restored tables"
+msgstr ""
+
+#: includes/Import/Importer.php:358
+msgid "Checking the package"
+msgstr ""
+
+#: includes/Core/Timings.php:261
+msgid "Checksum verified"
+msgstr ""
+
+#: admin/views/import.php:30
+msgid "Choose a package"
+msgstr ""
+
+#: admin/views/import.php:44
+msgid "Choose file"
+msgstr ""
+
+#: includes/Remote/Transfer.php:269
+msgid "Chunk checksum mismatch for chunk %d. The transfer will retry."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1182
+msgid "Chunk checksum mismatch. Retry the upload."
+msgstr ""
+
+#: includes/Remote/Transfer.php:225
+msgid "Chunk download failed (network): %s"
+msgstr ""
+
+#: includes/Remote/Transfer.php:247
+msgid "Chunk download failed. HTTP Status: %1$d. Reason: %2$s. Chunk: %3$d."
+msgstr ""
+
+#: admin/views/settings.php:15
+msgid "Chunk size (bytes)"
+msgstr ""
+
+#: includes/Import/Importer.php:1793
+msgid "Clearing caches"
+msgstr ""
+
+#: includes/Package/Archive.php:471 includes/Package/Archive.php:774
+msgid "Closing %s failed (disk full)."
+msgstr ""
+
+#: includes/Admin/Admin.php:97
+msgid "Compatibility check"
+msgstr ""
+
+#: includes/Core/Timings.php:252
+msgid "Compatibility checked"
+msgstr ""
+
+#: includes/Import/Importer.php:397
+msgid "Complete replacement requires explicit confirmation."
+msgstr ""
+
+#: includes/Admin/Admin.php:203 includes/Package/Package_Registry.php:204
+msgid "Completed"
+msgstr ""
+
+#: includes/Import/Importer.php:400
+msgid "Confirm that logins, themes and plugins on this site should be kept, then start again."
+msgstr ""
+
+#: admin/views/key-receive.php:36
+msgid "Connect"
+msgstr ""
+
+#: admin/views/import.php:60
+msgid "Continue"
+msgstr ""
+
+#: admin/views/keys.php:15
+msgid "Continue to migrate using migration key"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:58
+msgid "Convert MyISAM back"
+msgstr ""
+
+#: admin/views/settings.php:63
+msgid "Copy results"
+msgstr ""
+
+#: includes/Export/Exporter.php:500
+msgid "Copying files"
+msgstr ""
+
+#: admin/views/migration.php:11
+msgid "Create .jisento Backup"
+msgstr ""
+
+#: admin/views/backups.php:33 admin/views/backups.php:38
+msgid "Create Backup"
+msgstr ""
+
+#: admin/views/backups.php:16
+msgid "Create New Backup"
+msgstr ""
+
+#: admin/views/backups.php:23 includes/Admin/Admin.php:208
+msgid "Created"
+msgstr ""
+
+#: includes/Admin/Admin.php:98
+msgid "Creating safety backup"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:9
+msgid "Current website: %s"
+msgstr ""
+
+#: includes/Export/Exporter.php:162 includes/Export/Exporter.php:192 includes/Export/Exporter.php:418 includes/Package/Package_Registry.php:419
+msgid "Database"
+msgstr ""
+
+#: admin/views/backups.php:35
+msgid "Database Only"
+msgstr ""
+
+#: includes/Core/Compatibility.php:38
+msgid "Database connection working"
+msgstr ""
+
+#: includes/Import/Importer.php:826
+msgid "Database dump"
+msgstr ""
+
+#: includes/Export/Exporter.php:408
+msgid "Database export complete"
+msgstr ""
+
+#: includes/Core/Timings.php:258
+msgid "Database exported"
+msgstr ""
+
+#: includes/Database/Database_Importer.php:1635
+msgid "Database operation \"%1$s\" failed%2$s. Database error %3$s: %4$s"
+msgstr ""
+
+#: includes/Import/Importer.php:944
+msgid "Database restore complete"
+msgstr ""
+
+#: includes/Core/Timings.php:254
+msgid "Database restored"
+msgstr ""
+
+#: includes/Database/Dump_Writer.php:134
+msgid "Database segment %1$s has %2$d bytes on disk but %3$d were written."
+msgstr ""
+
+#: includes/Package/Archive.php:233
+msgid "Database segment %1$s is %2$d bytes in the package but %3$d in the manifest."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:763
+msgid "Database segment %d ends in the middle of a statement. The package is incomplete; export it again."
+msgstr ""
+
+#: includes/Package/Archive.php:224
+msgid "Database segment %d in the manifest is malformed."
+msgstr ""
+
+#: includes/Database/Dump_Writer.php:129
+msgid "Database segment %s could not be flushed to disk."
+msgstr ""
+
+#: includes/Database/Dump_Writer.php:141
+msgid "Database segment %s could not be renamed into place."
+msgstr ""
+
+#: includes/Package/Archive.php:229
+msgid "Database segment %s is listed in the manifest but missing from the package."
+msgstr ""
+
+#: admin/views/migration.php:31
+msgid "Database, plugins, themes, uploads, and WordPress content."
+msgstr ""
+
+#: admin/views/logs.php:14
+msgid "Date"
+msgstr ""
+
+#: admin/views/logs.php:52
+msgid "Debug log"
+msgstr ""
+
+#: admin/views/settings.php:35
+msgid "Default plugin conflict strategy"
+msgstr ""
+
+#: admin/views/settings.php:46
+msgid "Default theme conflict strategy"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:52
+msgid "Destination"
+msgstr ""
+
+#: includes/Core/Compatibility.php:29
+msgid "Destination PHP is older than the source site"
+msgstr ""
+
+#: includes/Core/Compatibility.php:106
+msgid "Destination URL"
+msgstr ""
+
+#: includes/Import/Importer.php:499
+msgid "Destination compatibility"
+msgstr ""
+
+#: includes/Import/Importer.php:491
+msgid "Destination compatibility checks failed."
+msgstr ""
+
+#: admin/views/logs.php:18 admin/views/logs.php:30
+msgid "Details"
+msgstr ""
+
+#: admin/views/settings.php:60
+msgid "Diagnostics"
+msgstr ""
+
+#: admin/views/import.php:34
+msgid "Discard"
+msgstr ""
+
+#: includes/Core/Compatibility.php:52
+msgid "Disk space sufficient"
+msgstr ""
+
+#: includes/Import/Importer.php:363
+msgid "Done"
+msgstr ""
+
+#: admin/views/logs.php:53
+msgid "Download a plain-text debug log for a migration. Secrets are redacted."
+msgstr ""
+
+#: admin/views/logs.php:61
+msgid "Download debug log"
+msgstr ""
+
+#: admin/views/import.php:41
+msgid "Drag and drop a .jisento file here, or choose a file."
+msgstr ""
+
+#: admin/views/logs.php:17
+msgid "Duration"
+msgstr ""
+
+#: includes/Security/Guard.php:73
+msgid "Empty archive path."
+msgstr ""
+
+#: admin/views/backups.php:15
+msgid "Every .jisento package saved in wp-content/jisento is listed here, including manual full, database, and wp-content backups. A backup is marked Completed when the file exists, is larger than 0 bytes, and matches its registry record. A backup created in the last hour is never removed by retention."
+msgstr ""
+
+#: includes/Plugin.php:117
+msgid "Every minute (Jisento)"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:72
+msgid "Everything from the source site will be imported. Your users and passwords, site address, and the themes and plugins already installed here are kept. Users and customer accounts from the source site are not imported. If a plugin exists on both sites, this site's version is used."
+msgstr ""
+
+#: admin/views/migration.php:35
+msgid "Exclude backup files"
+msgstr ""
+
+#: admin/views/migration.php:40
+msgid "Exclude selected database tables"
+msgstr ""
+
+#: admin/views/migration.php:38
+msgid "Exclude selected directories"
+msgstr ""
+
+#: admin/views/migration.php:36
+msgid "Exclude selected plugins (slugs, comma separated)"
+msgstr ""
+
+#: admin/views/key-send.php:20
+msgid "Expires"
+msgstr ""
+
+#: includes/Admin/Admin.php:188
+msgid "Export"
+msgstr ""
+
+#: admin/views/migration.php:8
+msgid "Export / Migrate Site"
+msgstr ""
+
+#: includes/Admin/Admin.php:70
+msgid "Export Completed"
+msgstr ""
+
+#: includes/Admin/Admin.php:71
+msgid "Export Failed"
+msgstr ""
+
+#: admin/views/migration.php:27
+msgid "Export Options"
+msgstr ""
+
+#: includes/Admin/Admin.php:72
+msgid "Export Paused"
+msgstr ""
+
+#: includes/Core/Timings.php:262
+msgid "Export finalized"
+msgstr ""
+
+#: includes/Admin/Admin.php:69
+msgid "Export in Progress"
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:906
+msgid "Export job not found."
+msgstr ""
+
+#: includes/Import/Importer.php:877
+msgid "Export the source again and check its users table. Live tables were not changed."
+msgstr ""
+
+#: includes/Import/Importer.php:873
+msgid "Export the source again. Live tables were not changed."
+msgstr ""
+
+#: includes/Import/Importer.php:390
+msgid "Export the source site again with this plugin version and upload the new package."
+msgstr ""
+
+#: includes/Import/Importer.php:393
+msgid "Export the source site again."
+msgstr ""
+
+#: admin/views/layout-start.php:12
+msgid "Export, import, or migrate a complete WordPress site using .jisento packages or a short-lived migration key."
+msgstr ""
+
+#: includes/Admin/Admin.php:93 includes/Export/Exporter.php:192 includes/Export/Exporter.php:414
+msgid "Exporting database"
+msgstr ""
+
+#: includes/Admin/Admin.php:94 includes/Export/Exporter.php:496 includes/Export/Exporter.php:499
+msgid "Exporting wp-content"
+msgstr ""
+
+#: includes/Import/Importer.php:758
+msgid "Extracted segment %s is missing."
+msgstr ""
+
+#: includes/Admin/Admin.php:99 includes/Import/Importer.php:523 includes/Import/Importer.php:569 includes/Import/Importer.php:691
+msgid "Extracting package"
+msgstr ""
+
+#: includes/Admin/Admin.php:106 includes/Admin/Admin.php:204
+msgid "Failed"
+msgstr ""
+
+#: includes/Export/Exporter.php:189 includes/Export/Exporter.php:503 includes/Export/Exporter.php:582 includes/Export/Exporter.php:699 includes/Export/Exporter.php:710 includes/Import/Importer.php:1039
+msgid "Files"
+msgstr ""
+
+#: includes/Core/Timings.php:259
+msgid "Files exported"
+msgstr ""
+
+#: includes/Export/Exporter.php:176
+msgid "Files found"
+msgstr ""
+
+#: includes/Core/Timings.php:255
+msgid "Files restored"
+msgstr ""
+
+#: includes/Core/Diagnostics.php:123
+msgid "Filesystem Writable"
+msgstr ""
+
+#: includes/Core/Compatibility.php:77
+msgid "Filesystem permissions"
+msgstr ""
+
+#: includes/Admin/Admin.php:104
+msgid "Finalizing"
+msgstr ""
+
+#: includes/Import/Importer.php:362 includes/Import/Importer.php:1788 includes/Import/Importer.php:1793 includes/Import/Importer.php:1799
+msgid "Finalizing migration"
+msgstr ""
+
+#: includes/Export/Exporter.php:582 includes/Export/Exporter.php:699 includes/Export/Exporter.php:700
+msgid "Finalizing package"
+msgstr ""
+
+#: includes/Import/Importer.php:996
+msgid "Fix the reported cause (permissions or disk space), then press Retry. Files already restored are complete; none is half-written."
+msgstr ""
+
+#: includes/Import/Importer.php:762
+msgid "Fix the reported cause, then press Retry. Live tables were not changed; the restore restarts from the beginning."
+msgstr ""
+
+#: includes/Import/Importer.php:546
+msgid "Folder %s could not be created."
+msgstr ""
+
+#: includes/Admin/Admin.php:293 includes/Admin/Admin.php:479
+msgid "Forbidden"
+msgstr ""
+
+#: includes/Import/Importer.php:480
+msgid "Format marker, manifest and contents verified"
+msgstr ""
+
+#: includes/Import/Importer.php:1507
+msgid "Free disk space (old backups, caches), then press Retry."
+msgstr ""
+
+#: includes/Core/Diagnostics.php:114
+msgid "Free disk space (reported by server)"
+msgstr ""
+
+#: includes/Import/Importer.php:1017
+msgid "Free disk space and fix permissions, then press Retry so missing files can be restored, or re-export the package."
+msgstr ""
+
+#: admin/views/partials/mode-review.php:29
+msgid "From"
+msgstr ""
+
+#: includes/Package/Package_Registry.php:428
+msgid "Full"
+msgstr ""
+
+#: admin/views/backups.php:34
+msgid "Full Site"
+msgstr ""
+
+#: admin/views/migration.php:30
+msgid "Full Website"
+msgstr ""
+
+#: admin/views/key-send.php:8
+msgid "Generate a short-lived key on this site, then paste it on the destination under Import → Receive migration from key."
+msgstr ""
+
+#: admin/views/key-send.php:9
+msgid "Generate migration key"
+msgstr ""
+
+#: includes/Core/Diagnostics.php:126
+msgid "HTTPS"
+msgstr ""
+
+#: admin/views/key-send.php:18
+msgid "Hint"
+msgstr ""
+
+#: admin/views/settings.php:61
+msgid "Hosting checks used when a migration fails before it starts."
+msgstr ""
+
+#: admin/views/partials/mode-review.php:64
+msgid "I have a backup of this site"
+msgstr ""
+
+#: includes/Admin/Admin.php:43 includes/Admin/Admin.php:196
+msgid "Import"
+msgstr ""
+
+#: admin/views/migration.php:19
+msgid "Import .jisento File"
+msgstr ""
+
+#: admin/views/migration.php:16
+msgid "Import / Restore Site"
+msgstr ""
+
+#: includes/Admin/Admin.php:84
+msgid "Import Completed"
+msgstr ""
+
+#: includes/Admin/Admin.php:85
+msgid "Import Failed"
+msgstr ""
+
+#: includes/Admin/Admin.php:86
+msgid "Import Paused"
+msgstr ""
+
+#: includes/Admin/Admin.php:83
+msgid "Import in Progress"
+msgstr ""
+
+#: includes/Admin/Admin.php:194
+msgid "Import preserve"
+msgstr ""
+
+#: includes/Admin/Admin.php:192
+msgid "Import replace"
+msgstr ""
+
+#: admin/views/import.php:6
+msgid "Import steps"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:19
+msgid "Imports everything, but keeps your users, site address, and the themes and plugins already installed here."
+msgstr ""
+
+#: includes/Package/Package_Registry.php:207
+msgid "In progress"
+msgstr ""
+
+#: admin/views/settings.php:40 admin/views/settings.php:51
+msgid "Install missing"
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1360
+msgid "Invalid Jisento Package. The file is missing."
+msgstr ""
+
+#: includes/Package/Archive.php:92
+msgid "Invalid Jisento Package. The file is not a readable ZIP container."
+msgstr ""
+
+#: includes/Package/Archive.php:101
+msgid "Invalid Jisento Package. The format marker is missing, so this file was not created by Jisento Migration or was created by a newer version."
+msgstr ""
+
+#: includes/Security/Guard.php:77
+msgid "Invalid archive path."
+msgstr ""
+
+#: includes/Security/Migration_Key_Store.php:65
+msgid "Invalid migration key."
+msgstr ""
+
+#: includes/Security/Session_Store.php:57 includes/Security/Session_Store.php:68
+msgid "Invalid migration session."
+msgstr ""
+
+#: includes/Admin/Admin.php:34
+msgid "Jisento"
+msgstr ""
+
+#: admin/views/layout-start.php:10 includes/Admin/Admin.php:33
+msgid "Jisento Migration"
+msgstr ""
+
+#: includes/Remote/Transfer.php:150
+msgid "Jisento detected"
+msgstr ""
+
+#: includes/Jobs/Job_Store.php:135
+msgid "Job %s disappeared while it was being saved."
+msgstr ""
+
+#: includes/Jobs/Job_Store.php:92
+msgid "Job %s no longer exists."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:467 includes/Api/Rest_Controller.php:472 includes/Jobs/Job_Runner.php:101 includes/Jobs/Job_Runner.php:256 includes/Jobs/Job_Runner.php:289 includes/Jobs/Job_Runner.php:310 includes/Jobs/Job_Runner.php:341
+msgid "Job not found."
+msgstr ""
+
+#: admin/views/settings.php:39 admin/views/settings.php:49
+msgid "Keep destination"
+msgstr ""
+
+#: admin/views/settings.php:11
+msgid "Keep last backups"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:18
+msgid "Keep my logins, themes and plugins"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:71
+msgid "Keep this site's logins, themes and plugins"
+msgstr ""
+
+#: includes/Import/Importer.php:1818
+msgid "Kept your existing versions of: %s"
+msgstr ""
+
+#: admin/views/key-receive.php:11
+msgid "Key"
+msgstr ""
+
+#: includes/Admin/Admin.php:190
+msgid "Key transfer"
+msgstr ""
+
+#: admin/views/settings.php:24
+msgid "Keys cannot be reused"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:41
+msgid "Links"
+msgstr ""
+
+#: admin/views/import.php:59
+msgid "Loading backups…"
+msgstr ""
+
+#: includes/Import/Importer.php:1815
+msgid "Log in with the SOURCE site's username and password."
+msgstr ""
+
+#: includes/Admin/Admin.php:49
+msgid "Logs"
+msgstr ""
+
+#: includes/Core/Diagnostics.php:164 includes/Core/Diagnostics.php:168
+msgid "Loopback Requests"
+msgstr ""
+
+#: includes/Import/Importer.php:546
+msgid "Make wp-content/jisento writable by PHP, then press Retry."
+msgstr ""
+
+#: includes/Core/Diagnostics.php:105
+msgid "Max Execution Time"
+msgstr ""
+
+#: includes/Core/Diagnostics.php:103
+msgid "Memory Limit"
+msgstr ""
+
+#: includes/Admin/Admin.php:44
+msgid "Migrate using key"
+msgstr ""
+
+#: admin/views/key-send.php:7 admin/views/migration.php:12
+msgid "Migrate using migration key"
+msgstr ""
+
+#: includes/Admin/Admin.php:41
+msgid "Migration"
+msgstr ""
+
+#: includes/Admin/Admin.php:77
+msgid "Migration Completed Successfully"
+msgstr ""
+
+#: includes/Admin/Admin.php:78
+msgid "Migration Failed"
+msgstr ""
+
+#: includes/Admin/Admin.php:79
+msgid "Migration Interrupted"
+msgstr ""
+
+#: includes/Admin/Admin.php:46
+msgid "Migration Keys"
+msgstr ""
+
+#: includes/Import/Importer.php:363 includes/Import/Importer.php:1843
+msgid "Migration completed successfully"
+msgstr ""
+
+#: includes/Jobs/Job_Store.php:177
+msgid "Migration expired after inactivity."
+msgstr ""
+
+#: includes/Core/Timings.php:257
+msgid "Migration finalized"
+msgstr ""
+
+#: admin/views/logs.php:7
+msgid "Migration history"
+msgstr ""
+
+#: includes/Admin/Admin.php:76
+msgid "Migration in Progress"
+msgstr ""
+
+#: admin/views/key-receive.php:32
+msgid "Migration key"
+msgstr ""
+
+#: admin/views/settings.php:19
+msgid "Migration key lifetime (seconds)"
+msgstr ""
+
+#: includes/Remote/Transfer.php:161
+msgid "Migration key valid"
+msgstr ""
+
+#: includes/Package/Package_Registry.php:210 includes/Package/Package_Registry.php:268
+msgid "Missing / corrupted"
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1148
+msgid "Missing or invalid chunk checksum."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1172
+msgid "Missing upload chunk."
+msgstr ""
+
+#: admin/views/import.php:17 admin/views/key-receive.php:17
+msgid "Mode"
+msgstr ""
+
+#: admin/views/backups.php:20
+msgid "Name"
+msgstr ""
+
+#: includes/Database/Database_Importer.php:1926
+msgid "Neither the live table nor its restored copy exists for %s."
+msgstr ""
+
+#: admin/views/logs.php:38
+msgid "No extra details recorded."
+msgstr ""
+
+#: includes/Export/Exporter.php:442
+msgid "No files to export"
+msgstr ""
+
+#: includes/Package/Upload_Session.php:237
+msgid "No free package file name was found. Delete old packages and try again."
+msgstr ""
+
+#: admin/views/logs.php:55
+msgid "No jobs available."
+msgstr ""
+
+#: admin/views/logs.php:9
+msgid "No migrations yet."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1073
+msgid "Not enough free disk space for this package."
+msgstr ""
+
+#: admin/views/partials/mode-review.php:74
+msgid "OK"
+msgstr ""
+
+#: includes/Admin/Admin.php:287
+msgid "Open"
+msgstr ""
+
+#: includes/Core/Diagnostics.php:101
+msgid "OpenSSL"
+msgstr ""
+
+#: includes/Export/Exporter.php:652
+msgid "Operation: add files to the package. Reason: the file list ended before every file was added. Recovery: start a new export."
+msgstr ""
+
+#: includes/Export/Exporter.php:645
+msgid "Operation: add files to the package. Reason: the file list for this backup is missing. Recovery: start a new export."
+msgstr ""
+
+#: includes/Export/Exporter.php:664
+msgid "Operation: add files to the package. Reason: the source file disappeared or is unreadable: %s. Recovery: make sure the file exists and is readable, then start a new export."
+msgstr ""
+
+#: includes/Export/Exporter.php:611
+msgid "Operation: add the database to the package. Reason: no database segments were written. Recovery: start a new export."
+msgstr ""
+
+#: includes/Export/Exporter.php:618
+msgid "Operation: add the database to the package. Reason: segment %s is missing or changed size after it was written. Recovery: start a new export."
+msgstr ""
+
+#: includes/Export/Exporter.php:815
+msgid "Operation: confirm the package. Reason: the integrity record could not be written (disk full or permission denied). Recovery: free disk space, then start a new export."
+msgstr ""
+
+#: includes/Export/Exporter.php:789
+msgid "Operation: confirm the package. Reason: the saved package does not match the one that was built. Recovery: start a new export."
+msgstr ""
+
+#: includes/Export/Exporter.php:736
+msgid "Operation: finalize the package. Reason: %1$d files were scanned but %2$d are in the package. Recovery: start a new export."
+msgstr ""
+
+#: includes/Import/Importer.php:296
+msgid "Operation: open the package. Reason: the selected .jisento package could not be found. Recovery: upload it again, then start the import."
+msgstr ""
+
+#: includes/Import/Importer.php:180
+msgid "Operation: retry. Reason: the job has no saved options. Recovery: start a new import."
+msgstr ""
+
+#: includes/Import/Importer.php:191
+msgid "Operation: retry. Reason: the package file is gone, and the database was already restored. Recovery: upload the same package again and start a new import."
+msgstr ""
+
+#: includes/Jobs/Job_Store.php:125
+msgid "Operation: save job state. Reason: database error %1$s. Recovery: check the database connection and disk space, then press Retry. Job: %2$s"
+msgstr ""
+
+#: includes/Jobs/Job_Store.php:130
+msgid "Operation: save job state. Reason: the job was changed by another request (paused, cancelled, or a second worker) since this step started, so this step's result was discarded. Recovery: none needed; reload the job status. Job: %s"
+msgstr ""
+
+#: includes/Jobs/Job_Store.php:247
+msgid "Operation: save job state. Reason: the state could not be encoded as JSON (%1$s). Recovery: press Retry; if it repeats, send the debug log to support. Job: %2$s"
+msgstr ""
+
+#: includes/Export/Exporter.php:777
+msgid "Operation: save the package. Reason: %s could not be renamed into place (it already exists, or the folder is not writable). Recovery: check wp-content/jisento/packages/, then start a new export."
+msgstr ""
+
+#: includes/Export/Exporter.php:900
+msgid "Operation: save the package. Reason: no free file name was found for %s. Recovery: delete old packages, then start a new export. Job: %s"
+msgstr ""
+
+#: includes/Export/Exporter.php:780
+msgid "Operation: save the package. Reason: the built package disappeared before it was saved. Recovery: start a new export."
+msgstr ""
+
+#: includes/Export/Exporter.php:757
+msgid "Operation: verify the package. Reason: the built package is missing or changed size. Recovery: start a new export."
+msgstr ""
+
+#: includes/Export/Exporter.php:274
+msgid "Operation: write the file list. Reason: the write failed (disk full or quota reached). Recovery: free disk space, then press Retry."
+msgstr ""
+
+#: admin/views/import.php:58
+msgid "Or pick an existing backup"
+msgstr ""
+
+#: includes/Core/Diagnostics.php:178 includes/Core/Diagnostics.php:181
+msgid "Outbound Connections"
+msgstr ""
+
+#: includes/Core/Diagnostics.php:93
+msgid "PHP Version"
+msgstr ""
+
+#: includes/Core/Compatibility.php:91
+msgid "PHP execution time"
+msgstr ""
+
+#: includes/Core/Compatibility.php:24
+msgid "PHP version compatible"
+msgstr ""
+
+#: admin/views/import.php:11 includes/Export/Exporter.php:750 includes/Export/Exporter.php:834
+msgid "Package"
+msgstr ""
+
+#: includes/Core/Timings.php:260
+msgid "Package built"
+msgstr ""
+
+#: includes/Export/Exporter.php:699
+msgid "Package contents are ready"
+msgstr ""
+
+#: includes/Package/Archive.php:385
+msgid "Package entry %s not found."
+msgstr ""
+
+#: includes/Core/Timings.php:253
+msgid "Package extracted"
+msgstr ""
+
+#: includes/Export/Exporter.php:1109
+msgid "Package file"
+msgstr ""
+
+#: includes/Import/Importer.php:524
+msgid "Package has no database dump"
+msgstr ""
+
+#: includes/Import/Importer.php:970
+msgid "Package has no files"
+msgstr ""
+
+#: admin/views/migration.php:9
+msgid "Package this website into a .jisento backup or generate a key for direct server-to-server transfer."
+msgstr ""
+
+#: includes/Core/Timings.php:263
+msgid "Package transferred"
+msgstr ""
+
+#: includes/Core/Timings.php:222
+msgid "Package transferred in %1$s (%2$d requests, avg chunk %3$s)"
+msgstr ""
+
+#: includes/Core/Timings.php:264
+msgid "Package uploaded"
+msgstr ""
+
+#: includes/Core/Timings.php:251
+msgid "Package validated"
+msgstr ""
+
+#: includes/Export/Exporter.php:990
+msgid "Package verification failed."
+msgstr ""
+
+#: admin/views/key-receive.php:31
+msgid "Paste the migration key from the source site (URL#key or the key alone with the source URL)."
+msgstr ""
+
+#: includes/Admin/Admin.php:108 includes/Admin/Admin.php:206
+msgid "Paused"
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1069
+msgid "Please choose a .jisento backup."
+msgstr ""
+
+#: includes/Core/Diagnostics.php:109
+msgid "Post Max Size"
+msgstr ""
+
+#: includes/Admin/Admin.php:209
+msgid "Preparing"
+msgstr ""
+
+#: includes/Admin/Admin.php:91 includes/Admin/Admin.php:92 includes/Export/Exporter.php:158 includes/Export/Exporter.php:172
+msgid "Preparing website"
+msgstr ""
+
+#: includes/Import/Importer.php:400
+msgid "Preserve mode requires explicit confirmation."
+msgstr ""
+
+#: includes/Import/Importer.php:758
+msgid "Press Retry to extract and verify the package again. Live tables were not changed."
+msgstr ""
+
+#: includes/Import/Importer.php:741
+msgid "Press Retry to restart the database restore from the beginning. Live tables were not changed."
+msgstr ""
+
+#: includes/Import/Importer.php:786 includes/Import/Importer.php:913
+msgid "Press Retry."
+msgstr ""
+
+#: includes/Import/Importer.php:596
+msgid "Press Retry. If it fails again, upload the package again."
+msgstr ""
+
+#: includes/Import/Importer.php:881
+msgid "Press Retry. Live tables were not changed."
+msgstr ""
+
+#: includes/Import/Importer.php:895
+msgid "Press Retry. The swap is a single RENAME TABLE, so either all tables or none were replaced."
+msgstr ""
+
+#: includes/Export/Exporter.php:712
+msgid "Processed"
+msgstr ""
+
+#: includes/Export/Exporter.php:414
+msgid "Processing database tables"
+msgstr ""
+
+#: includes/Export/Exporter.php:495
+msgid "Processing uploads"
+msgstr ""
+
+#: includes/Core/Diagnostics.php:121
+msgid "REST API"
+msgstr ""
+
+#: includes/Database/Legacy_Package.php:41
+msgid "Reading %s failed."
+msgstr ""
+
+#: includes/Package/Archive.php:436 includes/Package/Archive.php:719 includes/Package/Archive.php:752
+msgid "Reading %s from the package failed (damaged ZIP data)."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:720
+msgid "Reading the database segment failed."
+msgstr ""
+
+#: includes/Admin/Admin.php:45
+msgid "Receive from key"
+msgstr ""
+
+#: admin/views/key-receive.php:30 admin/views/migration.php:20
+msgid "Receive migration from key"
+msgstr ""
+
+#: admin/views/key-receive.php:6
+msgid "Receive migration steps"
+msgstr ""
+
+#: includes/Import/Importer.php:614
+msgid "Recommended: update the plugin on the source site and export again. Or start a new import with \"Repair % characters\" enabled, which replaces exactly those repeated tokens with \"%\"."
+msgstr ""
+
+#: includes/Remote/Transfer.php:103 includes/Security/Guard.php:47
+msgid "Remote migration requires HTTPS."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:944
+msgid "Remote package is missing."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:929 includes/Api/Rest_Controller.php:937
+msgid "Remote package is not ready."
+msgstr ""
+
+#: includes/Remote/Transfer.php:87
+msgid "Remote request failed."
+msgstr ""
+
+#: includes/Remote/Transfer.php:166
+msgid "Remote transfer available"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:54
+msgid "Replace GUIDs"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:53
+msgid "Replace URLs"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:55
+msgid "Replace emails"
+msgstr ""
+
+#: admin/views/settings.php:38 admin/views/settings.php:50
+msgid "Replace matching"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:56
+msgid "Replace server paths"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:13
+msgid "Replace this site"
+msgstr ""
+
+#: includes/Import/Importer.php:361 includes/Import/Importer.php:1771
+msgid "Replacing URLs"
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:950
+msgid "Requested chunk is past the end of the package."
+msgstr ""
+
+#: admin/views/settings.php:27
+msgid "Require HTTPS for remote migration"
+msgstr ""
+
+#: includes/Core/Compatibility.php:71
+msgid "Required PHP extensions available"
+msgstr ""
+
+#: includes/Import/Importer.php:1825
+msgid "Resolve the reported problems, then press Retry."
+msgstr ""
+
+#: admin/views/migration.php:17
+msgid "Restore from a .jisento file or receive a migration from another site."
+msgstr ""
+
+#: includes/Import/Importer.php:1042
+msgid "Restored"
+msgstr ""
+
+#: includes/Import/Importer.php:1197
+msgid "Restored plugins/themes are incomplete. Missing or wrong-sized files: %s"
+msgstr ""
+
+#: includes/Import/Importer.php:873
+msgid "Restored row counts do not match the package: %s"
+msgstr ""
+
+#: includes/Import/Importer.php:1484
+msgid "Restoring %1$s would write outside %2$s (through a symlink or unusual path), so the restore stopped."
+msgstr ""
+
+#: includes/Admin/Admin.php:100 includes/Import/Importer.php:359 includes/Import/Importer.php:754 includes/Import/Importer.php:807 includes/Import/Importer.php:819 includes/Import/Importer.php:885 includes/Import/Importer.php:908 includes/Import/Importer.php:943
+msgid "Restoring database"
+msgstr ""
+
+#: includes/Admin/Admin.php:101 includes/Import/Importer.php:360 includes/Import/Importer.php:969 includes/Import/Importer.php:1035
+msgid "Restoring files"
+msgstr ""
+
+#: includes/Import/Importer.php:1036
+msgid "Restoring files into the site"
+msgstr ""
+
+#: includes/Database/Database_Importer.php:1617
+msgid "Restoring table %1$s failed. Database error %2$s: %3$s Statement %4$d (segment %5$d, byte %6$d, part %7$d): %8$s"
+msgstr ""
+
+#: admin/views/logs.php:16
+msgid "Result"
+msgstr ""
+
+#: includes/Admin/Admin.php:73
+msgid "Resume Export"
+msgstr ""
+
+#: includes/Admin/Admin.php:87
+msgid "Resume Import"
+msgstr ""
+
+#: includes/Admin/Admin.php:80
+msgid "Resume Migration"
+msgstr ""
+
+#: admin/views/import.php:23 admin/views/key-receive.php:23
+msgid "Review"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:25
+msgid "Review and start"
+msgstr ""
+
+#: admin/views/settings.php:62
+msgid "Run Diagnostics"
+msgstr ""
+
+#: includes/Admin/Admin.php:207
+msgid "Running"
+msgstr ""
+
+#: includes/Package/Package_Registry.php:423
+msgid "Safety Backup"
+msgstr ""
+
+#: admin/views/settings.php:56
+msgid "Save Settings"
+msgstr ""
+
+#: includes/Export/Exporter.php:159
+msgid "Scanning the site"
+msgstr ""
+
+#: includes/Export/Exporter.php:173
+msgid "Scanning wp-content"
+msgstr ""
+
+#: includes/Export/Exporter.php:704
+msgid "Segment %1$d of %2$d"
+msgstr ""
+
+#: includes/Export/Exporter.php:704 includes/Import/Importer.php:573 includes/Import/Importer.php:823
+msgid "Segments"
+msgstr ""
+
+#: admin/views/import.php:48
+msgid "Selected file:"
+msgstr ""
+
+#: includes/Remote/Transfer.php:165
+msgid "Session can be established"
+msgstr ""
+
+#: admin/views/settings.php:7 includes/Admin/Admin.php:48
+msgid "Settings"
+msgstr ""
+
+#: admin/views/settings.php:23
+msgid "Single-use keys"
+msgstr ""
+
+#: admin/views/backups.php:22 admin/views/partials/mode-review.php:37
+msgid "Size"
+msgstr ""
+
+#: admin/views/settings.php:31
+msgid "Skip cache files by default"
+msgstr ""
+
+#: admin/views/settings.php:41
+msgid "Skip source plugins"
+msgstr ""
+
+#: admin/views/migration.php:34
+msgid "Skip temporary/cache files"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:51
+msgid "Source"
+msgstr ""
+
+#: includes/Export/Exporter.php:471
+msgid "Source file disappeared during export: %s"
+msgstr ""
+
+#: includes/Remote/Transfer.php:127
+msgid "Source reachable"
+msgstr ""
+
+#: admin/views/key-receive.php:34
+msgid "Source site URL (if not included in the key)"
+msgstr ""
+
+#: includes/Jobs/Job_Runner.php:123
+msgid "Stage: %1$s. Operation: renew the site lease. Reason: this job stopped sending heartbeats for more than two minutes and job %2$s took over the site. Recovery: let the other job finish, then start this one again. Job: %3$s"
+msgstr ""
+
+#: includes/Jobs/Job_Runner.php:251
+msgid "Stage: cancel. Operation: stop the job. Reason: a step is still running and did not finish within 25 seconds. Recovery: press Cancel again in a moment. Job: %s"
+msgstr ""
+
+#: includes/Jobs/Job_Runner.php:284
+msgid "Stage: pause. Operation: pause the job. Reason: a step is still running. Recovery: press Pause again in a moment. Job: %s"
+msgstr ""
+
+#: includes/Jobs/Job_Runner.php:347
+msgid "Stage: retry. Operation: restart the job. Reason: a failed %1$s cannot be resumed safely. Recovery: start a new one. Job: %2$s"
+msgstr ""
+
+#: includes/Jobs/Job_Runner.php:336
+msgid "Stage: retry. Operation: restart the job. Reason: another request is working on it. Recovery: wait a moment and reload. Job: %s"
+msgstr ""
+
+#: includes/Jobs/Job_Runner.php:344
+msgid "Stage: retry. Operation: restart the job. Reason: only a failed job can be retried; this one is %1$s. Recovery: none needed. Job: %2$s"
+msgstr ""
+
+#: includes/Jobs/Job_Store.php:50
+msgid "Stage: start. Operation: create the job record. Reason: database error %1$s. Recovery: deactivate and reactivate Jisento Migration so its tables are repaired, then retry. Job: %2$s"
+msgstr ""
+
+#: includes/Jobs/Job_Scheduler.php:252
+msgid "Stage: start. Operation: loopback probe. Reason: no matching probe was waiting. Recovery: start the job again. Job: -"
+msgstr ""
+
+#: includes/Jobs/Job_Scheduler.php:259
+msgid "Stage: start. Operation: loopback probe. Reason: the probe folder is not writable. Recovery: make wp-content/jisento writable by PHP. Job: -"
+msgstr ""
+
+#: includes/Jobs/Job_Scheduler.php:267
+msgid "Stage: start. Operation: loopback probe. Reason: the probe marker could not be written. Recovery: make wp-content/jisento writable by PHP. Job: -"
+msgstr ""
+
+#: includes/Jobs/Job_Scheduler.php:243
+msgid "Stage: start. Operation: loopback probe. Reason: the probe nonce is invalid. Recovery: start the job again. Job: -"
+msgstr ""
+
+#: includes/Jobs/Job_Runner.php:79
+msgid "Stage: start. Operation: start a job. Reason: an import or export is already running on this site (job %1$s), and only one can run at a time. Recovery: wait for it to finish or cancel it, then try again. Job: %2$s"
+msgstr ""
+
+#: includes/Jobs/Job_Runner.php:40
+msgid "Stage: start. Operation: start an export or import. Reason: this is a WordPress multisite network, and Jisento Migration only supports single sites; running it here could overwrite every site in the network. Recovery: use a multisite-aware migration tool."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:450
+msgid "Stage: start. Operation: store the job token. Reason: the token file could not be written. Recovery: make wp-content/jisento/jobs writable by PHP, then start again. Job: %s"
+msgstr ""
+
+#: includes/Core/Lease.php:65
+msgid "Stage: start. Operation: take the site lease. Reason: database error %1$s. Recovery: check that the %2$s table exists (deactivate and reactivate the plugin), then retry. Job: %3$s"
+msgstr ""
+
+#: admin/views/migration.php:43
+msgid "Start Export"
+msgstr ""
+
+#: admin/views/partials/mode-review.php:65
+msgid "Start migration"
+msgstr ""
+
+#: includes/Export/Exporter.php:192
+msgid "Starting database export"
+msgstr ""
+
+#: includes/Import/Importer.php:359
+msgid "Starting database restore"
+msgstr ""
+
+#: includes/Import/Importer.php:360
+msgid "Starting file restore"
+msgstr ""
+
+#: includes/Import/Importer.php:362
+msgid "Starting finalization"
+msgstr ""
+
+#: includes/Export/Exporter.php:189
+msgid "Starting package"
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:543
+msgid "Starting remote export"
+msgstr ""
+
+#: admin/views/backups.php:24 admin/views/key-send.php:19
+msgid "Status"
+msgstr ""
+
+#: includes/Admin/Admin.php:251
+msgid "Stopped during: %s"
+msgstr ""
+
+#: includes/Import/Importer.php:885
+msgid "Swapping restored tables into place"
+msgstr ""
+
+#: includes/Core/Timings.php:232
+msgid "Table %1$s exported in %2$s"
+msgstr ""
+
+#: includes/Database/Database_Exporter.php:368
+msgid "Table %1$s key (%2$s) did not advance. Previous key: %3$s. Next key: %4$s. The export stopped instead of writing that key twice."
+msgstr ""
+
+#: includes/Database/Database_Exporter.php:361
+msgid "Table %1$s returned a key value in (%2$s) that is not a valid integer, so the export stopped instead of comparing it as text."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:1234
+msgid "Table %1$s uses collation %2$s, which this database server does not support and has no safe equivalent."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:1140
+msgid "Table %1$s uses the %2$s engine, which this restore cannot convert to InnoDB."
+msgstr ""
+
+#: includes/Core/Timings.php:273
+msgid "Table %s exported"
+msgstr ""
+
+#: includes/Database/Database_Exporter.php:307
+msgid "Table %s has no columns to order by, so its rows were not exported."
+msgstr ""
+
+#: includes/Import/Importer.php:1775
+msgid "Tables"
+msgstr ""
+
+#: includes/Export/Exporter.php:831
+msgid "The .jisento file changed after it was verified."
+msgstr ""
+
+#: includes/Export/Exporter.php:982
+msgid "The .jisento file does not exist after export."
+msgstr ""
+
+#: includes/Export/Exporter.php:986
+msgid "The .jisento file is empty (0 bytes)."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:1108
+msgid "The CREATE TABLE statement for %s could not be parsed."
+msgstr ""
+
+#: includes/Package/Archive.php:85
+msgid "The PHP ZipArchive extension is required."
+msgstr ""
+
+#: includes/Package/Package_Registry.php:460
+msgid "The backup record exists, but the package file is missing."
+msgstr ""
+
+#: includes/Import/Importer.php:921
+msgid "The data is restored; convert the table manually or press Retry."
+msgstr ""
+
+#: includes/Database/Database_Exporter.php:641 includes/Database/Database_Exporter.php:669
+msgid "The database export cursor is not a valid integer, so the export stopped instead of writing the table again."
+msgstr ""
+
+#: includes/Database/Database_Exporter.php:627
+msgid "The database export cursor is not a valid keyset, so the export stopped instead of writing the table again."
+msgstr ""
+
+#: includes/Database/Database_Exporter.php:659
+msgid "The database export cursor is not valid hexadecimal, so the export stopped instead of writing the table again."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:273
+msgid "The database restore needs the mysqli driver, but $wpdb is not using a mysqli connection (a db.php drop-in may replace it)."
+msgstr ""
+
+#: includes/Database/Database_Exporter.php:316
+msgid "The export cursor for table %s does not match its key columns (%s), so the export stopped instead of writing the table again."
+msgstr ""
+
+#: includes/Database/Database_Exporter.php:325
+msgid "The export cursor for table %s is not a keyset cursor, so the export stopped instead of writing the table again."
+msgstr ""
+
+#: includes/Database/Database_Exporter.php:320
+msgid "The export cursor for table %s is not a valid keyset, so the export stopped instead of writing the table again."
+msgstr ""
+
+#: includes/Export/Exporter.php:968
+msgid "The export stopped but PHP supplied no error message. Check the server PHP error log."
+msgstr ""
+
+#: includes/Export/Exporter.php:487
+msgid "The file list ended before every file was copied."
+msgstr ""
+
+#: includes/Export/Exporter.php:450
+msgid "The file list for this backup is missing."
+msgstr ""
+
+#: includes/Core/Live_Url.php:296
+msgid "The imported theme \"%1$s\" (template \"%2$s\") is incomplete on disk, so the destination theme was kept. Finish restoring theme files, then switch themes in Appearance, or resume with: wp jisento resume --job=<id> after the files are present."
+msgstr ""
+
+#: includes/Core/Live_Url.php:286
+msgid "The imported theme was not activated (--skip-themes). The destination theme stays active."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:446
+msgid "The job could not be created."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:453
+msgid "The job could not store a continuation proof, so it was not started."
+msgstr ""
+
+#: includes/Security/Session_Store.php:65
+msgid "The migration session has expired."
+msgstr ""
+
+#: includes/Import/Importer.php:1063
+msgid "The package contains WordPress core file %s but was not exported with core files. It was rejected."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:1072
+msgid "The package contains a SET statement the restore does not run: %s"
+msgstr ""
+
+#: includes/Database/Database_Importer.php:1023
+msgid "The package contains a statement type the restore does not run: %s. Only SET, DROP TABLE IF EXISTS, CREATE TABLE and INSERT are accepted, so nothing can touch a live table directly."
+msgstr ""
+
+#: includes/Import/Importer.php:393 includes/Package/Package_Registry.php:520
+msgid "The package contains neither a database dump nor site files."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:1611
+msgid "The package contains the same key twice for this table. Rows were not skipped. Check the source table for duplicate keys and export again."
+msgstr ""
+
+#: includes/Package/Archive.php:186
+msgid "The package contains unsafe paths (absolute or with \"..\"), so it was rejected: %s"
+msgstr ""
+
+#: includes/Package/Archive.php:275
+msgid "The package content checksum does not match checksums/entries.jsonl. The package is damaged or was modified; export it again."
+msgstr ""
+
+#: includes/Package/Archive.php:279
+msgid "The package content checksum does not match its integrity record. The package is damaged or was modified; export it again."
+msgstr ""
+
+#: includes/Package/Archive.php:826
+msgid "The package directory could not be read to locate %s. The package is damaged; export or upload it again."
+msgstr ""
+
+#: includes/Package/Archive.php:82
+msgid "The package file cannot be read."
+msgstr ""
+
+#: includes/Package/Package_Registry.php:472
+msgid "The package file is empty (0 bytes)."
+msgstr ""
+
+#: includes/Package/Package_Registry.php:482
+msgid "The package file is not a valid archive."
+msgstr ""
+
+#: includes/Package/Package_Registry.php:468
+msgid "The package file is not readable."
+msgstr ""
+
+#: includes/Export/Exporter.php:824
+msgid "The package file was saved, but it could not be added to the backup registry."
+msgstr ""
+
+#: includes/Package/Archive.php:115
+msgid "The package format marker (v%1$d) does not match its manifest (package_version %2$s)."
+msgstr ""
+
+#: includes/Package/Archive.php:208
+msgid "The package lists %1$d bytes of files but contains %2$d. It is incomplete or was modified; export it again."
+msgstr ""
+
+#: includes/Package/Archive.php:204
+msgid "The package lists %1$d files but contains %2$d. It is incomplete or was modified; export it again."
+msgstr ""
+
+#: includes/Package/Archive.php:259
+msgid "The package lists %1$d files but contains %2$d. It is incomplete; export it again."
+msgstr ""
+
+#: includes/Package/Archive.php:69
+msgid "The package manifest could not be encoded as JSON."
+msgstr ""
+
+#: includes/Package/Archive.php:214
+msgid "The package manifest has an invalid database segment list."
+msgstr ""
+
+#: includes/Package/Archive.php:193
+msgid "The package manifest has no \"%s\" value."
+msgstr ""
+
+#: includes/Package/Archive.php:199
+msgid "The package manifest has no valid \"%s\" value."
+msgstr ""
+
+#: includes/Package/Archive.php:110
+msgid "The package manifest is missing or invalid."
+msgstr ""
+
+#: includes/Package/Archive.php:218
+msgid "The package should contain a database dump but lists no database segments."
+msgstr ""
+
+#: includes/Package/Package_Registry.php:504
+msgid "The package size does not match its integrity record, so the file was changed or is incomplete."
+msgstr ""
+
+#: includes/Export/Exporter.php:879
+msgid "The package was written, but the backup record could not be saved."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:594
+msgid "The restore cursor (byte %1$d) is past the end of segment %2$s (%3$d bytes)."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:583
+msgid "The restore cursor is not on segment %d. The restore stopped instead of guessing where to continue."
+msgstr ""
+
+#: includes/Import/Importer.php:1470
+msgid "The restore root %s does not exist."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:1920
+msgid "The restored copies of these tables are missing, so no live table was replaced: %s"
+msgstr ""
+
+#: includes/Import/Importer.php:877
+msgid "The restored users table is empty, so it was not swapped in."
+msgstr ""
+
+#: includes/Import/Importer.php:741
+msgid "The saved restore position is missing, so the restore cannot continue without guessing."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1256
+msgid "The uploaded package is incomplete (missing or overlapping ranges). Please retry the upload."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1263
+msgid "The uploaded package is incomplete. Please retry the upload."
+msgstr ""
+
+#: includes/Jobs/Job_Runner.php:180
+msgid "The worker stopped with %s but PHP supplied no error message. Recovery: check the server PHP error log, then press Retry."
+msgstr ""
+
+#: includes/Import/Importer.php:660
+msgid "These tables already exist and would be overwritten by the restore work tables: %s. They are usually left over from an interrupted import."
+msgstr ""
+
+#: includes/Security/Migration_Key_Store.php:72
+msgid "This migration key has expired."
+msgstr ""
+
+#: includes/Security/Migration_Key_Store.php:68
+msgid "This migration key is no longer valid."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:872
+msgid "This migration session already created an export, which no longer exists. Connect again with a new migration key."
+msgstr ""
+
+#: includes/Security/Session_Store.php:61
+msgid "This migration session is no longer valid."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:902
+msgid "This migration session may only access the export job it created."
+msgstr ""
+
+#: includes/Import/Importer.php:610
+msgid "This package was created by Jisento Migration 1.2.11 or older, which replaced every \"%%\" character in the database with a placeholder. It contains %1$d occurrences of %2$d placeholder token(s). Importing it unchanged would put those placeholders into your content and break serialized data. No table was changed."
+msgstr ""
+
+#: admin/views/partials/mode-review.php:14
+msgid "This site becomes an exact copy of the source. Recommended for moving a site."
+msgstr ""
+
+#: includes/Import/Importer.php:1506
+msgid "This step needs about %1$s and %2$s is free."
+msgstr ""
+
+#: includes/Package/Archive.php:249
+msgid "This version 1 package has no checksum for database/database.sql, so it cannot be verified."
+msgstr ""
+
+#: includes/Import/Importer.php:397
+msgid "Tick the confirmation box and start again."
+msgstr ""
+
+#: admin/views/partials/mode-review.php:33
+msgid "To"
+msgstr ""
+
+#: includes/Security/Guard.php:27
+msgid "Too many requests. Please wait and try again."
+msgstr ""
+
+#: includes/Admin/Admin.php:103 includes/Api/Rest_Controller.php:618
+msgid "Transferring package"
+msgstr ""
+
+#: admin/views/backups.php:21 admin/views/logs.php:15
+msgid "Type"
+msgstr ""
+
+#: includes/Core/Timings.php:256
+msgid "URLs replaced"
+msgstr ""
+
+#: includes/Export/Exporter.php:475
+msgid "Unable to copy %s into the backup staging folder."
+msgstr ""
+
+#: includes/Database/Dump_Writer.php:107
+msgid "Unable to create database segment %s."
+msgstr ""
+
+#: includes/Package/Archive.php:415 includes/Package/Archive.php:682
+msgid "Unable to create folder %s."
+msgstr ""
+
+#: includes/Database/Dump_Writer.php:99
+msgid "Unable to create the database dump folder %s."
+msgstr ""
+
+#: includes/Core/Compatibility.php:54
+msgid "Unable to determine free space"
+msgstr ""
+
+#: includes/Package/Upload_Session.php:203 includes/Package/Upload_Session.php:207
+msgid "Unable to lock the upload session."
+msgstr ""
+
+#: includes/Package/Archive.php:505
+msgid "Unable to move the restored file into place at %s."
+msgstr ""
+
+#: includes/Database/Legacy_Package.php:32
+msgid "Unable to open %s to check it."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:588
+msgid "Unable to open database segment %s."
+msgstr ""
+
+#: includes/Import/Importer.php:1215 includes/Package/Archive.php:165 includes/Package/Archive.php:328 includes/Package/Archive.php:380 includes/Package/Archive.php:526
+msgid "Unable to open the package."
+msgstr ""
+
+#: includes/Package/Archive.php:419 includes/Package/Archive.php:705 includes/Package/Archive.php:711
+msgid "Unable to read %s from the package."
+msgstr ""
+
+#: includes/Database/Database_Importer.php:621
+msgid "Unable to read @@max_allowed_packet on the destination database."
+msgstr ""
+
+#: includes/Database/Database_Exporter.php:336
+msgid "Unable to read rows from table %1$s. Database error: %2$s"
+msgstr ""
+
+#: includes/Database/Database_Exporter.php:197
+msgid "Unable to read structure for table %s."
+msgstr ""
+
+#: includes/Database/Database_Exporter.php:298
+msgid "Unable to read the columns for table %s, so its rows were not exported."
+msgstr ""
+
+#: includes/Admin/Admin.php:380
+msgid "Unable to read the package file."
+msgstr ""
+
+#: includes/Package/Upload_Session.php:182 includes/Package/Upload_Session.php:187
+msgid "Unable to save upload progress."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1103
+msgid "Unable to start the upload."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:712
+msgid "Unable to store the uploaded package."
+msgstr ""
+
+#: includes/Package/Archive.php:424 includes/Package/Archive.php:686
+msgid "Unable to write %s (permission denied or disk full)."
+msgstr ""
+
+#: includes/Export/Exporter.php:214
+msgid "Unable to write the file list for this backup."
+msgstr ""
+
+#: includes/Remote/Transfer.php:275
+msgid "Unable to write transferred chunk."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1189 includes/Api/Rest_Controller.php:1198
+msgid "Unable to write upload chunk."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:432
+msgid "Unknown job type."
+msgstr ""
+
+#: includes/Admin/Admin.php:102
+msgid "Updating URLs"
+msgstr ""
+
+#: includes/Import/Importer.php:1788
+msgid "Updating permalinks"
+msgstr ""
+
+#: includes/Import/Importer.php:361 includes/Import/Importer.php:1772
+msgid "Updating stored addresses"
+msgstr ""
+
+#: admin/views/import.php:45
+msgid "Upload"
+msgstr ""
+
+#: includes/Core/Diagnostics.php:107
+msgid "Upload Max Filesize"
+msgstr ""
+
+#: admin/views/import.php:39
+msgid "Upload a .jisento file"
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1161
+msgid "Upload chunk is past the end of the file."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1175
+msgid "Upload chunk is too large."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1178
+msgid "Upload chunk would extend past the declared file size."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:701
+msgid "Upload failed."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1347 includes/Package/Upload_Session.php:150
+msgid "Upload id is missing."
+msgstr ""
+
+#: includes/Core/Compatibility.php:100
+msgid "Upload limits"
+msgstr ""
+
+#: includes/Package/Upload_Session.php:54
+msgid "Upload range is invalid."
+msgstr ""
+
+#: includes/Package/Upload_Session.php:73
+msgid "Upload ranges overlap. Retry the upload."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1157 includes/Api/Rest_Controller.php:1251
+msgid "Upload session expired. Please retry."
+msgstr ""
+
+#: includes/Api/Rest_Controller.php:1066
+msgid "Upload size is missing."
+msgstr ""
+
+#: includes/Import/Importer.php:550
+msgid "Upload the package again; if it fails again, export the source again. No table was changed."
+msgstr ""
+
+#: includes/Package/Package_Registry.php:425
+msgid "Uploaded Package"
+msgstr ""
+
+#: includes/Admin/Admin.php:96 includes/Import/Importer.php:358 includes/Import/Importer.php:479
+msgid "Validating package"
+msgstr ""
+
+#: includes/Import/Importer.php:570
+msgid "Verified database segment %1$d of %2$d"
+msgstr ""
+
+#: includes/Export/Exporter.php:750
+msgid "Verifying package"
+msgstr ""
+
+#: includes/Admin/Admin.php:75
+msgid "View Export Log"
+msgstr ""
+
+#: includes/Admin/Admin.php:89
+msgid "View Import Log"
+msgstr ""
+
+#: includes/Admin/Admin.php:82
+msgid "View Migration Report"
+msgstr ""
+
+#: includes/Import/Importer.php:491
+msgid "View details, resolve the errors, then start the import again."
+msgstr ""
+
+#: admin/views/partials/mode-review.php:8
+msgid "What should happen to this site?"
+msgstr ""
+
+#: includes/Core/Diagnostics.php:95
+msgid "WordPress Version"
+msgstr ""
+
+#: includes/Core/Compatibility.php:21
+msgid "WordPress detected"
+msgstr ""
+
+#: includes/Core/Cleanup.php:161
+msgid "WordPress home or site URL is empty after the restore."
+msgstr ""
+
+#: includes/Package/Archive.php:444 includes/Package/Archive.php:757
+msgid "Writing %s failed after %d bytes (disk full or quota reached)."
+msgstr ""
+
+#: includes/Export/Exporter.php:582 includes/Export/Exporter.php:583
+msgid "Writing package header"
+msgstr ""
+
+#: includes/Database/Database_Exporter.php:179
+msgid "Writing the database segment failed (disk full or file removed)."
+msgstr ""
+
+#: includes/Admin/Admin.php:277 includes/Api/Rest_Controller.php:355 includes/Api/Rest_Controller.php:376 includes/Security/Guard.php:18
+msgid "You are not allowed to run migrations."
+msgstr ""
+
+#: includes/Core/Diagnostics.php:118
+msgid "Your hosting plan may have a lower limit than this figure."
+msgstr ""
+
+#: includes/Core/Diagnostics.php:97
+msgid "ZipArchive"
+msgstr ""
+
+#: includes/Database/Database_Importer.php:1608
+msgid "[not shown for this table]"
+msgstr ""
+
+#: includes/Core/Diagnostics.php:99
+msgid "cURL"
+msgstr ""
+
+#: includes/Package/Archive.php:351
+msgid "checksums/entries.jsonl has a damaged entry line. The package is damaged; export it again."
+msgstr ""
+
+#: includes/Package/Archive.php:341
+msgid "checksums/entries.jsonl has a damaged header. The package is damaged; export it again."
+msgstr ""
+
+#: includes/Package/Archive.php:337
+msgid "checksums/entries.jsonl is empty. The package is damaged; export it again."
+msgstr ""
+
+#: includes/Export/Exporter.php:410
+msgid "row %s"
+msgstr ""
+
+#: includes/Export/Exporter.php:163 includes/Export/Exporter.php:192 includes/Export/Exporter.php:419
+msgid "tables"
+msgstr ""
+
+#: includes/Package/Package_Registry.php:421
+msgid "wp-content"
+msgstr ""
+
+#: admin/views/backups.php:36
+msgid "wp-content Only"
+msgstr ""
+

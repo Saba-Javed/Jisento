@@ -201,13 +201,13 @@ class Package_Registry {
 		$available = ! empty( $check['ok'] );
 		if ( $available ) {
 			$status       = 'completed';
-			$status_label = __( 'Completed', 'jisento' );
+			$status_label = __( 'Completed', 'jisento-migration' );
 		} elseif ( $size > 0 && ! empty( $check['zip'] ) && empty( $meta['status'] ) ) {
 			$status       = 'processing';
-			$status_label = __( 'In progress', 'jisento' );
+			$status_label = __( 'In progress', 'jisento-migration' );
 		} else {
 			$status       = 'unavailable';
-			$status_label = __( 'Missing / corrupted', 'jisento' );
+			$status_label = __( 'Missing / corrupted', 'jisento-migration' );
 		}
 		$modified = filemtime( $path );
 		if ( ! $modified ) {
@@ -265,7 +265,7 @@ class Package_Registry {
 				'type'         => $this->infer_type( $name, array() ),
 				'type_label'   => $this->type_label( $this->infer_type( $name, array() ) ),
 				'status'       => 'unavailable',
-				'status_label' => __( 'Missing / corrupted', 'jisento' ),
+				'status_label' => __( 'Missing / corrupted', 'jisento-migration' ),
 				'available'    => false,
 				'reason'       => $e->getMessage(),
 				'modified'     => time(),
@@ -416,16 +416,16 @@ class Package_Registry {
 	public function type_label( $type ) {
 		switch ( $type ) {
 			case 'database':
-				return __( 'Database', 'jisento' );
+				return __( 'Database', 'jisento-migration' );
 			case 'files':
-				return __( 'wp-content', 'jisento' );
+				return __( 'wp-content', 'jisento-migration' );
 			case 'safety':
-				return __( 'Safety Backup', 'jisento' );
+				return __( 'Safety Backup', 'jisento-migration' );
 			case 'upload':
-				return __( 'Uploaded Package', 'jisento' );
+				return __( 'Uploaded Package', 'jisento-migration' );
 			case 'full':
 			default:
-				return __( 'Full', 'jisento' );
+				return __( 'Full', 'jisento-migration' );
 		}
 	}
 
@@ -457,7 +457,7 @@ class Package_Registry {
 			'reason'        => '',
 		);
 		if ( ! is_string( $path ) || '' === $path || ! file_exists( $path ) ) {
-			$result['reason'] = __( 'The backup record exists, but the package file is missing.', 'jisento' );
+			$result['reason'] = __( 'The backup record exists, but the package file is missing.', 'jisento-migration' );
 			return $result;
 		}
 		$result['exists']   = true;
@@ -465,11 +465,11 @@ class Package_Registry {
 		clearstatcache( true, $path );
 		$result['size'] = (int) filesize( $path );
 		if ( ! $result['readable'] ) {
-			$result['reason'] = __( 'The package file is not readable.', 'jisento' );
+			$result['reason'] = __( 'The package file is not readable.', 'jisento-migration' );
 			return $result;
 		}
 		if ( $result['size'] <= 0 ) {
-			$result['reason'] = __( 'The package file is empty (0 bytes).', 'jisento' );
+			$result['reason'] = __( 'The package file is empty (0 bytes).', 'jisento-migration' );
 			return $result;
 		}
 		$handle = fopen( $path, 'rb' );
@@ -479,7 +479,7 @@ class Package_Registry {
 		}
 		$result['zip'] = ( "PK\x03\x04" === $magic || "PK\x05\x06" === $magic );
 		if ( ! $result['zip'] ) {
-			$result['reason'] = __( 'The package file is not a valid archive.', 'jisento' );
+			$result['reason'] = __( 'The package file is not a valid archive.', 'jisento-migration' );
 			return $result;
 		}
 
@@ -501,7 +501,7 @@ class Package_Registry {
 				return $result;
 			}
 			if ( $complete && $sized ) {
-				$result['reason'] = __( 'The package size does not match its integrity record, so the file was changed or is incomplete.', 'jisento' );
+				$result['reason'] = __( 'The package size does not match its integrity record, so the file was changed or is incomplete.', 'jisento-migration' );
 				return $result;
 			}
 			$inspect = ( new Archive() )->inspect( $path );
@@ -517,7 +517,7 @@ class Package_Registry {
 		$result['structure']     = ! empty( $inspect['has_db'] ) || ! empty( $inspect['has_files'] );
 		$result['ok']            = $result['manifest'] && $result['structure'];
 		if ( ! $result['ok'] ) {
-			$result['reason'] = __( 'The package contains neither a database dump nor site files.', 'jisento' );
+			$result['reason'] = __( 'The package contains neither a database dump nor site files.', 'jisento-migration' );
 		}
 		return $result;
 	}

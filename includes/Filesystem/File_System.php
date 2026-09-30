@@ -194,7 +194,7 @@ class File_System {
 	public static function is_jisento_plugin_header( $header ) {
 		$header = (string) $header;
 		return 1 === preg_match( '/^[ \t\/*#@]*Plugin Name:/mi', $header )
-			&& 1 === preg_match( '/^[ \t\/*#@]*Text Domain:[ \t]*jisento[ \t]*\r?$/mi', $header );
+			&& 1 === preg_match( '/^[ \t\/*#@]*Text Domain:[ \t]*jisento(?:-migration)?[ \t]*\r?$/mi', $header );
 	}
 
 	/**

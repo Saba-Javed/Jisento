@@ -12,4 +12,4 @@ if ( ! headers_sent() ) {
 	exit;
 }
 ?>
-<p><a href="<?php echo esc_url( admin_url( 'admin.php?page=jisento-key-send' ) ); ?>"><?php esc_html_e( 'Continue to migrate using migration key', 'jisento' ); ?></a></p>
+<p><a href="<?php echo esc_url( admin_url( 'admin.php?page=jisento-key-send' ) ); ?>"><?php esc_html_e( 'Continue to migrate using migration key', 'jisento-migration' ); ?></a></p>

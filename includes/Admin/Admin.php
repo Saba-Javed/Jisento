@@ -30,23 +30,23 @@ class Admin {
 	public function menu() {
 		$cap = Capabilities::CAP;
 		add_menu_page(
-			__( 'Jisento Migration', 'jisento' ),
-			__( 'Jisento', 'jisento' ),
+			__( 'Jisento Migration', 'jisento-migration' ),
+			__( 'Jisento', 'jisento-migration' ),
 			$cap,
 			'jisento',
 			array( $this, 'page_migration' ),
 			$this->menu_icon_data_uri(),
 			58
 		);
-		add_submenu_page( 'jisento', __( 'Migration', 'jisento' ), __( 'Migration', 'jisento' ), $cap, 'jisento', array( $this, 'page_migration' ) );
-		add_submenu_page( 'jisento', __( 'Backups', 'jisento' ), __( 'Backups', 'jisento' ), $cap, 'jisento-backups', array( $this, 'page_backups' ) );
-		add_submenu_page( 'jisento', __( 'Import', 'jisento' ), __( 'Import', 'jisento' ), $cap, 'jisento-import', array( $this, 'page_import' ) );
-		add_submenu_page( 'jisento', __( 'Migrate using key', 'jisento' ), __( 'Migrate using key', 'jisento' ), $cap, 'jisento-key-send', array( $this, 'page_key_send' ) );
-		add_submenu_page( 'jisento', __( 'Receive from key', 'jisento' ), __( 'Receive from key', 'jisento' ), $cap, 'jisento-key-receive', array( $this, 'page_key_receive' ) );
-		add_submenu_page( 'jisento', __( 'Migration Keys', 'jisento' ), __( 'Migration Keys', 'jisento' ), $cap, 'jisento-keys', array( $this, 'page_keys' ) );
+		add_submenu_page( 'jisento', __( 'Migration', 'jisento-migration' ), __( 'Migration', 'jisento-migration' ), $cap, 'jisento', array( $this, 'page_migration' ) );
+		add_submenu_page( 'jisento', __( 'Backups', 'jisento-migration' ), __( 'Backups', 'jisento-migration' ), $cap, 'jisento-backups', array( $this, 'page_backups' ) );
+		add_submenu_page( 'jisento', __( 'Import', 'jisento-migration' ), __( 'Import', 'jisento-migration' ), $cap, 'jisento-import', array( $this, 'page_import' ) );
+		add_submenu_page( 'jisento', __( 'Migrate using key', 'jisento-migration' ), __( 'Migrate using key', 'jisento-migration' ), $cap, 'jisento-key-send', array( $this, 'page_key_send' ) );
+		add_submenu_page( 'jisento', __( 'Receive from key', 'jisento-migration' ), __( 'Receive from key', 'jisento-migration' ), $cap, 'jisento-key-receive', array( $this, 'page_key_receive' ) );
+		add_submenu_page( 'jisento', __( 'Migration Keys', 'jisento-migration' ), __( 'Migration Keys', 'jisento-migration' ), $cap, 'jisento-keys', array( $this, 'page_keys' ) );
 		remove_submenu_page( 'jisento', 'jisento-keys' );
-		add_submenu_page( 'jisento', __( 'Settings', 'jisento' ), __( 'Settings', 'jisento' ), $cap, 'jisento-settings', array( $this, 'page_settings' ) );
-		add_submenu_page( 'jisento', __( 'Logs', 'jisento' ), __( 'Logs', 'jisento' ), $cap, 'jisento-logs', array( $this, 'page_logs' ) );
+		add_submenu_page( 'jisento', __( 'Settings', 'jisento-migration' ), __( 'Settings', 'jisento-migration' ), $cap, 'jisento-settings', array( $this, 'page_settings' ) );
+		add_submenu_page( 'jisento', __( 'Logs', 'jisento-migration' ), __( 'Logs', 'jisento-migration' ), $cap, 'jisento-logs', array( $this, 'page_logs' ) );
 	}
 
 	public function assets( $hook ) {
@@ -66,10 +66,47 @@ class Admin {
 				'site'     => site_url(),
 				'loginUrl' => wp_login_url( admin_url( 'admin.php?page=jisento-import' ) ),
 				'i18n'     => array(
-					'running'   => __( 'Migration in Progress', 'jisento' ),
-					'failed'    => __( 'Migration Failed', 'jisento' ),
-					'complete'  => __( 'Migration Completed Successfully', 'jisento' ),
-					'paused'    => __( 'Migration Interrupted', 'jisento' ),
+					'export_running'    => __( 'Export in Progress', 'jisento-migration' ),
+					'export_complete'   => __( 'Export Completed', 'jisento-migration' ),
+					'export_failed'     => __( 'Export Failed', 'jisento-migration' ),
+					'export_paused'     => __( 'Export Paused', 'jisento-migration' ),
+					'export_resume'     => __( 'Resume Export', 'jisento-migration' ),
+					'export_cancel'     => __( 'Cancel Export', 'jisento-migration' ),
+					'export_report'     => __( 'View Export Log', 'jisento-migration' ),
+					'running'           => __( 'Migration in Progress', 'jisento-migration' ),
+					'complete'          => __( 'Migration Completed Successfully', 'jisento-migration' ),
+					'failed'            => __( 'Migration Failed', 'jisento-migration' ),
+					'paused'            => __( 'Migration Interrupted', 'jisento-migration' ),
+					'resume'            => __( 'Resume Migration', 'jisento-migration' ),
+					'cancel'            => __( 'Cancel Migration', 'jisento-migration' ),
+					'report'            => __( 'View Migration Report', 'jisento-migration' ),
+					'import_running'    => __( 'Import in Progress', 'jisento-migration' ),
+					'import_complete'   => __( 'Import Completed', 'jisento-migration' ),
+					'import_failed'     => __( 'Import Failed', 'jisento-migration' ),
+					'import_paused'     => __( 'Import Paused', 'jisento-migration' ),
+					'import_resume'     => __( 'Resume Import', 'jisento-migration' ),
+					'import_cancel'     => __( 'Cancel Import', 'jisento-migration' ),
+					'import_report'     => __( 'View Import Log', 'jisento-migration' ),
+					'stages'            => array(
+						'created'            => __( 'Preparing website', 'jisento-migration' ),
+						'preparing'          => __( 'Preparing website', 'jisento-migration' ),
+						'exporting_database' => __( 'Exporting database', 'jisento-migration' ),
+						'exporting_files'    => __( 'Exporting wp-content', 'jisento-migration' ),
+						'packaging'          => __( 'Adding files to package', 'jisento-migration' ),
+						'validating'         => __( 'Validating package', 'jisento-migration' ),
+						'compatibility'      => __( 'Compatibility check', 'jisento-migration' ),
+						'safety_backup'      => __( 'Creating safety backup', 'jisento-migration' ),
+						'extracting'         => __( 'Extracting package', 'jisento-migration' ),
+						'importing_database' => __( 'Restoring database', 'jisento-migration' ),
+						'importing_files'    => __( 'Restoring files', 'jisento-migration' ),
+						'replacing_urls'     => __( 'Updating URLs', 'jisento-migration' ),
+						'uploading'          => __( 'Transferring package', 'jisento-migration' ),
+						'finalizing'         => __( 'Finalizing', 'jisento-migration' ),
+						'completed'          => __( 'Backup completed', 'jisento-migration' ),
+						'failed'             => __( 'Failed', 'jisento-migration' ),
+						'cancelled'          => __( 'Cancelled', 'jisento-migration' ),
+						'paused'             => __( 'Paused', 'jisento-migration' ),
+					),
 				),
 			)
 		);
@@ -148,28 +185,28 @@ class Admin {
 			$type  = (string) $job->type;
 			$mode  = isset( $opts['destination_mode'] ) ? (string) $opts['destination_mode'] : '';
 			if ( 'export' === $type ) {
-				$type_label = __( 'Export', 'jisento' );
+				$type_label = __( 'Export', 'jisento-migration' );
 			} elseif ( 'receive' === $type ) {
-				$type_label = __( 'Key transfer', 'jisento' );
+				$type_label = __( 'Key transfer', 'jisento-migration' );
 			} elseif ( 'import' === $type && 'replace' === $mode ) {
-				$type_label = __( 'Import replace', 'jisento' );
+				$type_label = __( 'Import replace', 'jisento-migration' );
 			} elseif ( 'import' === $type && 'preserve' === $mode ) {
-				$type_label = __( 'Import preserve', 'jisento' );
+				$type_label = __( 'Import preserve', 'jisento-migration' );
 			} elseif ( 'import' === $type ) {
-				$type_label = __( 'Import', 'jisento' );
+				$type_label = __( 'Import', 'jisento-migration' );
 			} else {
 				$type_label = ucfirst( $type );
 			}
 
 			$status = (string) $job->status;
 			$result_map = array(
-				'completed' => __( 'Completed', 'jisento' ),
-				'failed'    => __( 'Failed', 'jisento' ),
-				'cancelled' => __( 'Cancelled', 'jisento' ),
-				'paused'    => __( 'Paused', 'jisento' ),
-				'running'   => __( 'Running', 'jisento' ),
-				'created'   => __( 'Created', 'jisento' ),
-				'preparing' => __( 'Preparing', 'jisento' ),
+				'completed' => __( 'Completed', 'jisento-migration' ),
+				'failed'    => __( 'Failed', 'jisento-migration' ),
+				'cancelled' => __( 'Cancelled', 'jisento-migration' ),
+				'paused'    => __( 'Paused', 'jisento-migration' ),
+				'running'   => __( 'Running', 'jisento-migration' ),
+				'created'   => __( 'Created', 'jisento-migration' ),
+				'preparing' => __( 'Preparing', 'jisento-migration' ),
 			);
 			$result = isset( $result_map[ $status ] ) ? $result_map[ $status ] : $status;
 
@@ -179,14 +216,14 @@ class Admin {
 			if ( $seconds < 60 ) {
 				$duration = sprintf(
 					/* translators: %d: seconds */
-					_n( '%d second', '%d seconds', $seconds, 'jisento' ),
+					_n( '%d second', '%d seconds', $seconds, 'jisento-migration' ),
 					$seconds
 				);
 			} elseif ( $seconds < 3600 ) {
 				$mins = (int) round( $seconds / 60 );
 				$duration = sprintf(
 					/* translators: %d: minutes */
-					_n( '%d minute', '%d minutes', $mins, 'jisento' ),
+					_n( '%d minute', '%d minutes', $mins, 'jisento-migration' ),
 					$mins
 				);
 			} else {
@@ -194,7 +231,7 @@ class Admin {
 				$mins  = (int) round( ( $seconds % 3600 ) / 60 );
 				$duration = sprintf(
 					/* translators: 1: hours, 2: minutes */
-					__( '%1$d h %2$d min', 'jisento' ),
+					__( '%1$d h %2$d min', 'jisento-migration' ),
 					$hours,
 					$mins
 				);
@@ -211,7 +248,7 @@ class Admin {
 				} elseif ( ! empty( $job->stage ) ) {
 					$lines[] = sprintf(
 						/* translators: %s: stage slug */
-						__( 'Stopped during: %s', 'jisento' ),
+						__( 'Stopped during: %s', 'jisento-migration' ),
 						(string) $job->stage
 					);
 				}
@@ -237,7 +274,7 @@ class Admin {
 
 	private function render( $view, array $data = array() ) {
 		if ( ! Capabilities::current_user_can() ) {
-			wp_die( esc_html__( 'You are not allowed to run migrations.', 'jisento' ) );
+			wp_die( esc_html__( 'You are not allowed to run migrations.', 'jisento-migration' ) );
 		}
 		extract( $data, EXTR_SKIP ); // phpcs:ignore WordPress.PHP.DontExtract.extract_extract
 		include JISENTO_PATH . 'admin/views/layout-start.php';
@@ -247,13 +284,13 @@ class Admin {
 
 	public function action_links( $links ) {
 		$url     = admin_url( 'admin.php?page=jisento' );
-		$links[] = '<a href="' . esc_url( $url ) . '">' . esc_html__( 'Open', 'jisento' ) . '</a>';
+		$links[] = '<a href="' . esc_url( $url ) . '">' . esc_html__( 'Open', 'jisento-migration' ) . '</a>';
 		return $links;
 	}
 
 	public function download() {
 		if ( ! Capabilities::current_user_can() ) {
-			wp_die( esc_html__( 'Forbidden', 'jisento' ), 403 );
+			wp_die( esc_html__( 'Forbidden', 'jisento-migration' ), 403 );
 		}
 		check_admin_referer( 'jisento_download' );
 
@@ -300,7 +337,7 @@ class Admin {
 
 		$check = $registry->verify_file( $path );
 		if ( empty( $check['ok'] ) ) {
-			wp_die( esc_html( $check['reason'] ? $check['reason'] : __( 'Backup unavailable', 'jisento' ) ) );
+			wp_die( esc_html( $check['reason'] ? $check['reason'] : __( 'Backup unavailable', 'jisento-migration' ) ) );
 		}
 
 		$size   = (int) $check['size'];
@@ -340,7 +377,7 @@ class Admin {
 
 		$fp = fopen( $path, 'rb' );
 		if ( ! $fp ) {
-			wp_die( esc_html__( 'Unable to read the package file.', 'jisento' ) );
+			wp_die( esc_html__( 'Unable to read the package file.', 'jisento-migration' ) );
 		}
 		self::stream_file_range( $fp, $start, $length );
 		fclose( $fp );
@@ -439,7 +476,7 @@ class Admin {
 
 	public function download_log() {
 		if ( ! Capabilities::current_user_can() ) {
-			wp_die( esc_html__( 'Forbidden', 'jisento' ), 403 );
+			wp_die( esc_html__( 'Forbidden', 'jisento-migration' ), 403 );
 		}
 		check_admin_referer( 'jisento_log' );
 		$id = isset( $_GET['migration_id'] ) ? sanitize_text_field( wp_unslash( $_GET['migration_id'] ) ) : '';

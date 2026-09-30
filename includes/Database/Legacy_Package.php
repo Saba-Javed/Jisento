@@ -29,7 +29,7 @@ class Legacy_Package {
 	public static function scan( $path ) {
 		$handle = @fopen( $path, 'rb' );
 		if ( ! $handle ) {
-			return new \WP_Error( 'jisento_sql_open', sprintf( __( 'Unable to open %s to check it.', 'jisento' ), basename( (string) $path ) ) );
+			return new \WP_Error( 'jisento_sql_open', sprintf( __( 'Unable to open %s to check it.', 'jisento-migration' ), basename( (string) $path ) ) );
 		}
 		$counts = array();
 		$tables = array();
@@ -38,7 +38,7 @@ class Legacy_Package {
 			$chunk = fread( $handle, 4194304 );
 			if ( false === $chunk ) {
 				fclose( $handle );
-				return new \WP_Error( 'jisento_sql_read', sprintf( __( 'Reading %s failed.', 'jisento' ), basename( (string) $path ) ) );
+				return new \WP_Error( 'jisento_sql_read', sprintf( __( 'Reading %s failed.', 'jisento-migration' ), basename( (string) $path ) ) );
 			}
 			if ( '' === $chunk ) {
 				break;

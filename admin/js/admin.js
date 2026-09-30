@@ -308,42 +308,44 @@
 		});
 	}
 	function headlines(job) {
+		const i18n = (typeof jisentoAdmin !== 'undefined' && jisentoAdmin.i18n) || {};
 		const type = job && job.type;
 		const remote = job && job.state && job.state.remote && (job.state.remote.source_url || job.state.remote.session_id);
 		if (type === 'export') {
 			return {
-				running: 'Export in Progress',
-				complete: 'Export Completed',
-				failed: 'Export Failed',
-				paused: 'Export Paused',
-				resume: 'Resume Export',
-				cancel: 'Cancel Export',
-				report: 'View Export Log'
+				running: i18n.export_running || 'Export in Progress',
+				complete: i18n.export_complete || 'Export Completed',
+				failed: i18n.export_failed || 'Export Failed',
+				paused: i18n.export_paused || 'Export Paused',
+				resume: i18n.export_resume || 'Resume Export',
+				cancel: i18n.export_cancel || 'Cancel Export',
+				report: i18n.export_report || 'View Export Log'
 			};
 		}
 		if (type === 'receive' || remote) {
 			return {
-				running: 'Migration in Progress',
-				complete: 'Migration Completed Successfully',
-				failed: 'Migration Failed',
-				paused: 'Migration Interrupted',
-				resume: 'Resume Migration',
-				cancel: 'Cancel Migration',
-				report: 'View Migration Report'
+				running: i18n.running || 'Migration in Progress',
+				complete: i18n.complete || 'Migration Completed Successfully',
+				failed: i18n.failed || 'Migration Failed',
+				paused: i18n.paused || 'Migration Interrupted',
+				resume: i18n.resume || 'Resume Migration',
+				cancel: i18n.cancel || 'Cancel Migration',
+				report: i18n.report || 'View Migration Report'
 			};
 		}
 		return {
-			running: 'Import in Progress',
-			complete: 'Import Completed',
-			failed: 'Import Failed',
-			paused: 'Import Paused',
-			resume: 'Resume Import',
-			cancel: 'Cancel Import',
-			report: 'View Import Log'
+			running: i18n.import_running || 'Import in Progress',
+			complete: i18n.import_complete || 'Import Completed',
+			failed: i18n.import_failed || 'Import Failed',
+			paused: i18n.import_paused || 'Import Paused',
+			resume: i18n.import_resume || 'Resume Import',
+			cancel: i18n.import_cancel || 'Cancel Import',
+			report: i18n.import_report || 'View Import Log'
 		};
 	}
 
 	function stageLabel(stage) {
+		const localized = (typeof jisentoAdmin !== 'undefined' && jisentoAdmin.i18n && jisentoAdmin.i18n.stages) || {};
 		const map = {
 			created: 'Preparing website',
 			preparing: 'Preparing website',
@@ -364,7 +366,7 @@
 			cancelled: 'Cancelled',
 			paused: 'Paused'
 		};
-		return map[stage] || stage || '';
+		return localized[stage] || map[stage] || stage || '';
 	}
 	function bytes(n) {
 		n = Number(n) || 0;

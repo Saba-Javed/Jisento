@@ -155,12 +155,12 @@ class Exporter {
 
 			$state['activity'] = $this->activity(
 				'preparing',
-				__( 'Preparing website', 'jisento' ),
-				__( 'Scanning the site', 'jisento' ),
+				__( 'Preparing website', 'jisento-migration' ),
+				__( 'Scanning the site', 'jisento-migration' ),
 				count( $tables ),
 				count( $tables ),
-				__( 'Database', 'jisento' ),
-				__( 'tables', 'jisento' )
+				__( 'Database', 'jisento-migration' ),
+				__( 'tables', 'jisento-migration' )
 			);
 			return $this->save_work( $job, $state, 'preparing', $this->export_percent( $options['mode'], 'preparing', 0.2 ), 0, $db_size );
 		}
@@ -169,11 +169,11 @@ class Exporter {
 			$more = $this->scan_batch( $state, Step_Budget::seconds( 4 ) );
 			$state['activity'] = $this->activity(
 				'preparing',
-				__( 'Preparing website', 'jisento' ),
-				isset( $state['scan_current'] ) ? $state['scan_current'] : __( 'Scanning wp-content', 'jisento' ),
+				__( 'Preparing website', 'jisento-migration' ),
+				isset( $state['scan_current'] ) ? $state['scan_current'] : __( 'Scanning wp-content', 'jisento-migration' ),
 				(int) $state['files_found'],
 				0,
-				__( 'Files found', 'jisento' ),
+				__( 'Files found', 'jisento-migration' ),
 				''
 			);
 			if ( $more ) {
@@ -186,10 +186,10 @@ class Exporter {
 
 		$next = ( 'files' === $options['mode'] ) ? 'packaging' : 'exporting_database';
 		if ( 'packaging' === $next ) {
-			$state['activity'] = $this->activity( 'packaging', __( 'Adding files to package', 'jisento' ), __( 'Starting package', 'jisento' ), 0, (int) $state['file_count'], __( 'Files', 'jisento' ), '' );
+			$state['activity'] = $this->activity( 'packaging', __( 'Adding files to package', 'jisento-migration' ), __( 'Starting package', 'jisento-migration' ), 0, (int) $state['file_count'], __( 'Files', 'jisento-migration' ), '' );
 		} else {
 			$table_total = isset( $state['tables'] ) ? count( $state['tables'] ) : 0;
-			$state['activity'] = $this->activity( 'exporting_database', __( 'Exporting database', 'jisento' ), __( 'Starting database export', 'jisento' ), 0, $table_total, __( 'Database', 'jisento' ), __( 'tables', 'jisento' ) );
+			$state['activity'] = $this->activity( 'exporting_database', __( 'Exporting database', 'jisento-migration' ), __( 'Starting database export', 'jisento-migration' ), 0, $table_total, __( 'Database', 'jisento-migration' ), __( 'tables', 'jisento-migration' ) );
 		}
 
 		return $this->save_work( $job, $state, $next, $this->export_percent( $options['mode'], 'preparing', 1 ), 0, (int) $state['db_size'] + (int) $state['files_size'] );
@@ -211,7 +211,7 @@ class Exporter {
 		$index    = 0;
 		$list     = fopen( $list_path, 'ab' );
 		if ( ! $list ) {
-			throw new \RuntimeException( __( 'Unable to write the file list for this backup.', 'jisento' ) );
+			throw new \RuntimeException( __( 'Unable to write the file list for this backup.', 'jisento-migration' ) );
 		}
 
 		while ( $index < count( $queue ) && ( time() - $start ) < $seconds ) {
@@ -222,12 +222,12 @@ class Exporter {
 			}
 			if ( ! is_readable( $dir ) ) {
 				fclose( $list );
-				throw new \RuntimeException( sprintf( __( 'Cannot read directory: %s', 'jisento' ), $dir ) );
+				throw new \RuntimeException( sprintf( __( 'Cannot read directory: %s', 'jisento-migration' ), $dir ) );
 			}
 			$items = scandir( $dir );
 			if ( false === $items ) {
 				fclose( $list );
-				throw new \RuntimeException( sprintf( __( 'Cannot read directory: %s', 'jisento' ), $dir ) );
+				throw new \RuntimeException( sprintf( __( 'Cannot read directory: %s', 'jisento-migration' ), $dir ) );
 			}
 			foreach ( $items as $item ) {
 				if ( '.' === $item || '..' === $item ) {
@@ -271,7 +271,7 @@ class Exporter {
 				$line = Job_Store::encode_state( $row ) . "\n";
 				if ( fwrite( $list, $line ) !== strlen( $line ) ) {
 					fclose( $list );
-					throw new \RuntimeException( __( 'Operation: write the file list. Reason: the write failed (disk full or quota reached). Recovery: free disk space, then press Retry.', 'jisento' ) );
+					throw new \RuntimeException( __( 'Operation: write the file list. Reason: the write failed (disk full or quota reached). Recovery: free disk space, then press Retry.', 'jisento-migration' ) );
 				}
 				$found++;
 				$size += $bytes;
@@ -405,18 +405,18 @@ class Exporter {
 			$progress = $this->export_percent( $mode, 'database', $table_total > 0 ? $index / $table_total : 1 );
 		}
 
-		$detail = isset( $tables[ $index ] ) ? $tables[ $index ] : __( 'Database export complete', 'jisento' );
+		$detail = isset( $tables[ $index ] ) ? $tables[ $index ] : __( 'Database export complete', 'jisento-migration' );
 		if ( isset( $tables[ $index ], $next['table_stats'][ $tables[ $index ] ] ) ) {
-			$detail .= ' (' . sprintf( __( 'row %s', 'jisento' ), number_format_i18n( (int) $next['table_stats'][ $tables[ $index ] ]['rows'] ) ) . ')';
+			$detail .= ' (' . sprintf( __( 'row %s', 'jisento-migration' ), number_format_i18n( (int) $next['table_stats'][ $tables[ $index ] ]['rows'] ) ) . ')';
 		}
 		$state['activity'] = $this->activity(
 			'exporting_database',
-			$index >= $table_total ? __( 'Exporting database', 'jisento' ) : __( 'Processing database tables', 'jisento' ),
+			$index >= $table_total ? __( 'Exporting database', 'jisento-migration' ) : __( 'Processing database tables', 'jisento-migration' ),
 			$detail,
 			min( $index, $table_total ),
 			$table_total,
-			__( 'Database', 'jisento' ),
-			__( 'tables', 'jisento' )
+			__( 'Database', 'jisento-migration' ),
+			__( 'tables', 'jisento-migration' )
 		);
 		$bytes_total = (int) ( $state['db_size'] ?? 0 ) + (int) ( $state['files_size'] ?? 0 );
 
@@ -439,7 +439,7 @@ class Exporter {
 				array(
 					'stage'        => 'packaging',
 					'progress'     => $this->export_percent( isset( $state['options']['mode'] ) ? $state['options']['mode'] : 'full', 'files', 1 ),
-					'current_item' => __( 'No files to export', 'jisento' ),
+					'current_item' => __( 'No files to export', 'jisento-migration' ),
 					'state'        => $state,
 				)
 			);
@@ -447,7 +447,7 @@ class Exporter {
 
 		$fh = fopen( $list, 'rb' );
 		if ( ! $fh ) {
-			throw new \RuntimeException( __( 'The file list for this backup is missing.', 'jisento' ) );
+			throw new \RuntimeException( __( 'The file list for this backup is missing.', 'jisento-migration' ) );
 		}
 		$offset = (int) ( $state['file_offset'] ?? 0 );
 		if ( $offset > 0 ) {
@@ -468,11 +468,11 @@ class Exporter {
 			$current = $file['relative'];
 			if ( ! is_file( $file['source'] ) ) {
 				fclose( $fh );
-				throw new \RuntimeException( sprintf( __( 'Source file disappeared during export: %s', 'jisento' ), $file['relative'] ) );
+				throw new \RuntimeException( sprintf( __( 'Source file disappeared during export: %s', 'jisento-migration' ), $file['relative'] ) );
 			}
 			if ( ! File_System::stream_copy( $file['source'], $dest ) || ! is_file( $dest ) ) {
 				fclose( $fh );
-				throw new \RuntimeException( sprintf( __( 'Unable to copy %s into the backup staging folder.', 'jisento' ), $file['relative'] ) );
+				throw new \RuntimeException( sprintf( __( 'Unable to copy %s into the backup staging folder.', 'jisento-migration' ), $file['relative'] ) );
 			}
 			$copied += (int) filesize( $dest );
 		}
@@ -484,7 +484,7 @@ class Exporter {
 		$state['files_copied_size'] = $copied;
 		$done                       = $eof || $index >= $total;
 		if ( $done && $index < $total ) {
-			throw new \RuntimeException( __( 'The file list ended before every file was copied.', 'jisento' ) );
+			throw new \RuntimeException( __( 'The file list ended before every file was copied.', 'jisento-migration' ) );
 		}
 		$mode                       = isset( $state['options']['mode'] ) ? $state['options']['mode'] : 'full';
 		$file_bytes                 = (int) ( $state['files_size'] ?? 0 );
@@ -492,15 +492,15 @@ class Exporter {
 		$progress                   = $this->export_percent( $mode, 'files', $file_ratio );
 
 		$label = ( false !== strpos( (string) $current, 'wp-content/uploads/' ) )
-			? __( 'Processing uploads', 'jisento' )
-			: __( 'Exporting wp-content', 'jisento' );
+			? __( 'Processing uploads', 'jisento-migration' )
+			: __( 'Exporting wp-content', 'jisento-migration' );
 		$state['activity'] = $this->activity(
 			'exporting_files',
-			$done ? __( 'Exporting wp-content', 'jisento' ) : $label,
-			$current ? $current : __( 'Copying files', 'jisento' ),
+			$done ? __( 'Exporting wp-content', 'jisento-migration' ) : $label,
+			$current ? $current : __( 'Copying files', 'jisento-migration' ),
 			min( $index, $total ),
 			$total,
-			__( 'Files', 'jisento' ),
+			__( 'Files', 'jisento-migration' ),
 			''
 		);
 		$sql_bytes = (int) ( isset( $state['sql_bytes'] ) ? $state['sql_bytes'] : 0 );
@@ -579,8 +579,8 @@ class Exporter {
 			}
 			$state['zip_phase'] = ( 'files' === $mode ) ? 'files' : 'database';
 			$state['zip_index'] = 0;
-			$state['activity']  = $this->activity( 'packaging', __( 'Finalizing package', 'jisento' ), __( 'Writing package header', 'jisento' ), 0, (int) ( $state['file_count'] ?? 0 ), __( 'Files', 'jisento' ), '' );
-			return $this->save_progress( $job, $state, 'packaging', $this->export_percent( $mode, 'zip', 0.01 ), __( 'Writing package header', 'jisento' ), 0 );
+			$state['activity']  = $this->activity( 'packaging', __( 'Finalizing package', 'jisento-migration' ), __( 'Writing package header', 'jisento-migration' ), 0, (int) ( $state['file_count'] ?? 0 ), __( 'Files', 'jisento-migration' ), '' );
+			return $this->save_progress( $job, $state, 'packaging', $this->export_percent( $mode, 'zip', 0.01 ), __( 'Writing package header', 'jisento-migration' ), 0 );
 		}
 
 		if ( 'finalize' === ( $state['zip_phase'] ?? '' ) ) {
@@ -608,14 +608,14 @@ class Exporter {
 			if ( ! $writer->has_open_entry() && 'database' === $cursor['phase'] ) {
 				$segments = isset( $state['dump']['segments'] ) ? $state['dump']['segments'] : array();
 				if ( 'files' !== $mode && ! $segments ) {
-					throw new \RuntimeException( __( 'Operation: add the database to the package. Reason: no database segments were written. Recovery: start a new export.', 'jisento' ) );
+					throw new \RuntimeException( __( 'Operation: add the database to the package. Reason: no database segments were written. Recovery: start a new export.', 'jisento-migration' ) );
 				}
 				while ( $cursor['seg'] < count( $segments ) && ( ! $worked || ( $bytes < $budget && microtime( true ) < $deadline ) ) ) {
 					$segment = $segments[ $cursor['seg'] ];
 					$source  = $state['dump_dir'] . '/' . basename( $segment['entry'] );
 					clearstatcache( true, $source );
 					if ( ! is_file( $source ) || (int) filesize( $source ) !== (int) $segment['bytes'] ) {
-						throw new \RuntimeException( sprintf( __( 'Operation: add the database to the package. Reason: segment %s is missing or changed size after it was written. Recovery: start a new export.', 'jisento' ), $segment['entry'] ) );
+						throw new \RuntimeException( sprintf( __( 'Operation: add the database to the package. Reason: segment %s is missing or changed size after it was written. Recovery: start a new export.', 'jisento-migration' ), $segment['entry'] ) );
 					}
 					if ( $bytes > 0 && (int) $segment['bytes'] <= $budget && $bytes + (int) $segment['bytes'] > $budget ) {
 						break;
@@ -642,14 +642,14 @@ class Exporter {
 				if ( $total > 0 && (int) $cursor['index'] < $total ) {
 					$fh = is_readable( $list ) ? fopen( $list, 'rb' ) : false;
 					if ( ! $fh ) {
-						throw new \RuntimeException( __( 'Operation: add files to the package. Reason: the file list for this backup is missing. Recovery: start a new export.', 'jisento' ) );
+						throw new \RuntimeException( __( 'Operation: add files to the package. Reason: the file list for this backup is missing. Recovery: start a new export.', 'jisento-migration' ) );
 					}
 					fseek( $fh, (int) $cursor['list_offset'] );
 					while ( $cursor['index'] < $total && ( ! $worked || ( $bytes < $budget && microtime( true ) < $deadline ) ) ) {
 						$line = fgets( $fh );
 						if ( false === $line ) {
 							fclose( $fh );
-							throw new \RuntimeException( __( 'Operation: add files to the package. Reason: the file list ended before every file was added. Recovery: start a new export.', 'jisento' ) );
+							throw new \RuntimeException( __( 'Operation: add files to the package. Reason: the file list ended before every file was added. Recovery: start a new export.', 'jisento-migration' ) );
 						}
 						$row = Job_Store::decode_value( json_decode( trim( $line ), true ) );
 						if ( ! is_array( $row ) || empty( $row['relative'] ) ) {
@@ -661,7 +661,7 @@ class Exporter {
 						$label  = Job_Store::is_utf8( $row['relative'] ) ? $row['relative'] : 'hex:' . bin2hex( $row['relative'] );
 						if ( ! is_file( $source ) ) {
 							fclose( $fh );
-							throw new \RuntimeException( sprintf( __( 'Operation: add files to the package. Reason: the source file disappeared or is unreadable: %s. Recovery: make sure the file exists and is readable, then start a new export.', 'jisento' ), $label ) );
+							throw new \RuntimeException( sprintf( __( 'Operation: add files to the package. Reason: the source file disappeared or is unreadable: %s. Recovery: make sure the file exists and is readable, then start a new export.', 'jisento-migration' ), $label ) );
 						}
 						$size = (int) filesize( $source );
 						if ( $bytes > 0 && $size <= $budget && $bytes + $size > $budget ) {
@@ -696,20 +696,20 @@ class Exporter {
 		$state['zip_index'] = (int) $cursor['index'];
 		$state['zip_bytes'] = (int) $totals['files_bytes'];
 		if ( 'finalize' === $cursor['phase'] ) {
-			$state['activity'] = $this->activity( 'finalizing', __( 'Finalizing package', 'jisento' ), __( 'Package contents are ready', 'jisento' ), (int) ( $state['file_count'] ?? 0 ), (int) ( $state['file_count'] ?? 0 ), __( 'Files', 'jisento' ), '' );
-			return $this->save_progress( $job, $state, 'packaging', $this->export_percent( $mode, 'zip', 1 ), __( 'Finalizing package', 'jisento' ), $totals['offset'] );
+			$state['activity'] = $this->activity( 'finalizing', __( 'Finalizing package', 'jisento-migration' ), __( 'Package contents are ready', 'jisento-migration' ), (int) ( $state['file_count'] ?? 0 ), (int) ( $state['file_count'] ?? 0 ), __( 'Files', 'jisento-migration' ), '' );
+			return $this->save_progress( $job, $state, 'packaging', $this->export_percent( $mode, 'zip', 1 ), __( 'Finalizing package', 'jisento-migration' ), $totals['offset'] );
 		}
 		if ( 'database' === $cursor['phase'] ) {
 			$count             = isset( $state['dump']['segments'] ) ? count( $state['dump']['segments'] ) : 0;
-			$state['activity'] = $this->activity( 'packaging', __( 'Adding database to package', 'jisento' ), sprintf( __( 'Segment %1$d of %2$d', 'jisento' ), (int) $cursor['seg'], $count ), (int) $cursor['seg'], $count, __( 'Segments', 'jisento' ), '' );
-			return $this->save_progress( $job, $state, 'packaging', $this->export_percent( $mode, 'zip', 0.02 ), __( 'Adding database to package', 'jisento' ), $totals['offset'] );
+			$state['activity'] = $this->activity( 'packaging', __( 'Adding database to package', 'jisento-migration' ), sprintf( __( 'Segment %1$d of %2$d', 'jisento-migration' ), (int) $cursor['seg'], $count ), (int) $cursor['seg'], $count, __( 'Segments', 'jisento-migration' ), '' );
+			return $this->save_progress( $job, $state, 'packaging', $this->export_percent( $mode, 'zip', 0.02 ), __( 'Adding database to package', 'jisento-migration' ), $totals['offset'] );
 		}
 		$total      = (int) ( $state['file_count'] ?? 0 );
 		$file_bytes = (int) ( $state['files_size'] ?? 0 );
 		$zip_ratio  = $file_bytes > 0 ? min( 1, $totals['files_bytes'] / $file_bytes ) : ( (int) $cursor['index'] / max( 1, $total ) );
-		$state['activity']                  = $this->activity( 'packaging', __( 'Adding files to package', 'jisento' ), $current ? $current : __( 'Adding files to package', 'jisento' ), (int) $cursor['index'], $total, __( 'Files', 'jisento' ), '' );
+		$state['activity']                  = $this->activity( 'packaging', __( 'Adding files to package', 'jisento-migration' ), $current ? $current : __( 'Adding files to package', 'jisento-migration' ), (int) $cursor['index'], $total, __( 'Files', 'jisento-migration' ), '' );
 		$state['activity']['measure_kind']  = 'bytes';
-		$state['activity']['measure_label'] = __( 'Processed', 'jisento' );
+		$state['activity']['measure_label'] = __( 'Processed', 'jisento-migration' );
 		$state['activity']['measure_done']  = (int) $totals['files_bytes'];
 		$state['activity']['measure_total'] = $file_bytes;
 		return $this->save_progress( $job, $state, 'packaging', $this->export_percent( $mode, 'zip', $zip_ratio ), $current, $totals['offset'] );
@@ -733,7 +733,7 @@ class Exporter {
 				try {
 					$totals = $writer->totals();
 					if ( 'database' !== $mode && $totals['files_count'] !== $expected_files ) {
-						throw new \RuntimeException( sprintf( __( 'Operation: finalize the package. Reason: %1$d files were scanned but %2$d are in the package. Recovery: start a new export.', 'jisento' ), $expected_files, $totals['files_count'] ) );
+						throw new \RuntimeException( sprintf( __( 'Operation: finalize the package. Reason: %1$d files were scanned but %2$d are in the package. Recovery: start a new export.', 'jisento-migration' ), $expected_files, $totals['files_count'] ) );
 					}
 					$writer->add_string( 'manifest.json', Archive::encode_manifest( $this->manifest( $state, $mode, $totals['files_count'], $totals['files_bytes'] ) ) );
 					$result               = $writer->finish();
@@ -747,14 +747,14 @@ class Exporter {
 			$state['finalize_step']          = 'verify';
 			\Jisento\Migration\Core\Timings::end( $state, 'packaging', (int) $result['size'] );
 			\Jisento\Migration\Core\Timings::begin( $state, 'checksum', (int) $result['size'] );
-			$state['activity']               = $this->activity( 'verifying', __( 'Verifying package', 'jisento' ), $state['package_name'], 1, 1, __( 'Package', 'jisento' ), '' );
+			$state['activity']               = $this->activity( 'verifying', __( 'Verifying package', 'jisento-migration' ), $state['package_name'], 1, 1, __( 'Package', 'jisento-migration' ), '' );
 			return $this->save_work( $job, $state, 'packaging', $this->export_percent( $mode, 'finalize', 0.3 ), (int) $result['size'], (int) $result['size'] );
 		}
 
 		if ( 'verify' === $step ) {
 			clearstatcache( true, $partial );
 			if ( ! is_file( $partial ) || (int) filesize( $partial ) !== (int) $state['package_built_size'] ) {
-				throw new \RuntimeException( __( 'Operation: verify the package. Reason: the built package is missing or changed size. Recovery: start a new export.', 'jisento' ) );
+				throw new \RuntimeException( __( 'Operation: verify the package. Reason: the built package is missing or changed size. Recovery: start a new export.', 'jisento-migration' ) );
 			}
 			$this->assert_package( $partial );
 			$state['package_name']  = $this->free_package_name( $state['package_name'], $job->job_id );
@@ -774,10 +774,10 @@ class Exporter {
 			clearstatcache( true, $dest );
 			if ( is_file( $partial ) ) {
 				if ( file_exists( $dest ) || ! @rename( $partial, $dest ) ) {
-					throw new \RuntimeException( sprintf( __( 'Operation: save the package. Reason: %s could not be renamed into place (it already exists, or the folder is not writable). Recovery: check wp-content/jisento/packages/, then start a new export.', 'jisento' ), $name ) );
+					throw new \RuntimeException( sprintf( __( 'Operation: save the package. Reason: %s could not be renamed into place (it already exists, or the folder is not writable). Recovery: check wp-content/jisento/packages/, then start a new export.', 'jisento-migration' ), $name ) );
 				}
 			} elseif ( ! is_file( $dest ) || (int) filesize( $dest ) !== $size ) {
-				throw new \RuntimeException( __( 'Operation: save the package. Reason: the built package disappeared before it was saved. Recovery: start a new export.', 'jisento' ) );
+				throw new \RuntimeException( __( 'Operation: save the package. Reason: the built package disappeared before it was saved. Recovery: start a new export.', 'jisento-migration' ) );
 			}
 			$state['finalize_step'] = 'confirm';
 			return $this->save_work( $job, $state, 'packaging', $this->export_percent( $mode, 'finalize', 0.9 ), $size, $size );
@@ -786,7 +786,7 @@ class Exporter {
 		$checksum = isset( $state['package_content_sha256'] ) ? (string) $state['package_content_sha256'] : '';
 		clearstatcache( true, $dest );
 		if ( ! preg_match( '/^[a-f0-9]{64}$/', $checksum ) || ! is_file( $dest ) || $size <= 0 || $size !== (int) filesize( $dest ) ) {
-			throw new \RuntimeException( __( 'Operation: confirm the package. Reason: the saved package does not match the one that was built. Recovery: start a new export.', 'jisento' ) );
+			throw new \RuntimeException( __( 'Operation: confirm the package. Reason: the saved package does not match the one that was built. Recovery: start a new export.', 'jisento-migration' ) );
 		}
 
 		$kind = $mode;
@@ -812,7 +812,7 @@ class Exporter {
 			'contents'          => $mode,
 		);
 		if ( false === file_put_contents( $dest . '.json', wp_json_encode( $meta ) ) ) {
-			throw new \RuntimeException( __( 'Operation: confirm the package. Reason: the integrity record could not be written (disk full or permission denied). Recovery: free disk space, then start a new export.', 'jisento' ) );
+			throw new \RuntimeException( __( 'Operation: confirm the package. Reason: the integrity record could not be written (disk full or permission denied). Recovery: free disk space, then start a new export.', 'jisento-migration' ) );
 		}
 
 		\Jisento\Migration\Core\Installer::maybe_upgrade();
@@ -821,17 +821,17 @@ class Exporter {
 		if ( ! $pack_id ) {
 			global $wpdb;
 			$detail = $wpdb->last_error ? ' ' . $wpdb->last_error : '';
-			throw new \RuntimeException( __( 'The package file was saved, but it could not be added to the backup registry.', 'jisento' ) . $detail );
+			throw new \RuntimeException( __( 'The package file was saved, but it could not be added to the backup registry.', 'jisento-migration' ) . $detail );
 		}
 
 		$plugin->storage->delete_tree( $tmp );
 
 		clearstatcache( true, $dest );
 		if ( $size !== (int) filesize( $dest ) ) {
-			throw new \RuntimeException( __( 'The .jisento file changed after it was verified.', 'jisento' ) );
+			throw new \RuntimeException( __( 'The .jisento file changed after it was verified.', 'jisento-migration' ) );
 		}
 
-		$state['activity']     = $this->activity( 'completed', __( 'Backup completed', 'jisento' ), $name, 1, 1, __( 'Package', 'jisento' ), '' );
+		$state['activity']     = $this->activity( 'completed', __( 'Backup completed', 'jisento-migration' ), $name, 1, 1, __( 'Package', 'jisento-migration' ), '' );
 		$state['package']      = $key;
 		$state['package_abs']  = $dest;
 		$state['package_size'] = $size;
@@ -868,7 +868,7 @@ class Exporter {
 				'status'       => 'completed',
 				'stage'        => 'completed',
 				'progress'     => 100,
-				'current_item' => __( 'Backup completed', 'jisento' ),
+				'current_item' => __( 'Backup completed', 'jisento-migration' ),
 				'bytes_done'   => $size,
 				'bytes_total'  => $size,
 				'state'        => $state,
@@ -876,7 +876,7 @@ class Exporter {
 		);
 
 		if ( ! $saved || 'completed' !== $saved->status ) {
-			throw new \RuntimeException( __( 'The package was written, but the backup record could not be saved.', 'jisento' ) );
+			throw new \RuntimeException( __( 'The package was written, but the backup record could not be saved.', 'jisento-migration' ) );
 		}
 
 		return $saved;
@@ -897,7 +897,7 @@ class Exporter {
 			}
 			$try = $base . '-' . $n . '.jisento';
 		}
-		throw new \RuntimeException( sprintf( __( 'Operation: save the package. Reason: no free file name was found for %s. Recovery: delete old packages, then start a new export. Job: %s', 'jisento' ), $name, $job_id ) );
+		throw new \RuntimeException( sprintf( __( 'Operation: save the package. Reason: no free file name was found for %s. Recovery: delete old packages, then start a new export. Job: %s', 'jisento-migration' ), $name, $job_id ) );
 	}
 
 	/**
@@ -965,7 +965,7 @@ class Exporter {
 	private static function stage_message( $job, $message ) {
 		$message = trim( (string) $message );
 		if ( '' === $message ) {
-			$message = __( 'The export stopped but PHP supplied no error message. Check the server PHP error log.', 'jisento' );
+			$message = __( 'The export stopped but PHP supplied no error message. Check the server PHP error log.', 'jisento-migration' );
 		}
 		if ( false === strpos( $message, 'Stage:' ) ) {
 			$message = 'Stage: ' . $job->stage . '. ' . $message;
@@ -979,15 +979,15 @@ class Exporter {
 	private function assert_package( $path ) {
 		clearstatcache( true, $path );
 		if ( ! is_file( $path ) || ! is_readable( $path ) ) {
-			throw new \RuntimeException( __( 'The .jisento file does not exist after export.', 'jisento' ) );
+			throw new \RuntimeException( __( 'The .jisento file does not exist after export.', 'jisento-migration' ) );
 		}
 		$size = (int) filesize( $path );
 		if ( $size <= 0 ) {
-			throw new \RuntimeException( __( 'The .jisento file is empty (0 bytes).', 'jisento' ) );
+			throw new \RuntimeException( __( 'The .jisento file is empty (0 bytes).', 'jisento-migration' ) );
 		}
 		$verify = ( new \Jisento\Migration\Package\Package_Registry() )->verify_file( $path, 'full' );
 		if ( empty( $verify['ok'] ) ) {
-			throw new \RuntimeException( $verify['reason'] ? $verify['reason'] : __( 'Package verification failed.', 'jisento' ) );
+			throw new \RuntimeException( $verify['reason'] ? $verify['reason'] : __( 'Package verification failed.', 'jisento-migration' ) );
 		}
 		return array(
 			'size' => $size,
@@ -1106,7 +1106,7 @@ class Exporter {
 		);
 		if ( isset( $activity['count_unit'] ) && 'Package' === $activity['count_unit'] ) {
 			$activity['measure_kind']  = 'bytes';
-			$activity['measure_label'] = __( 'Package file', 'jisento' );
+			$activity['measure_label'] = __( 'Package file', 'jisento-migration' );
 			$activity['measure_done']  = (int) $activity['count_done'];
 			$activity['measure_total'] = (int) $activity['count_total'];
 			$activity['count_done']    = 0;

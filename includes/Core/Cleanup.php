@@ -158,14 +158,14 @@ class Cleanup {
 		$site = get_option( 'siteurl' );
 		if ( ! is_string( $home ) || '' === $home || ! is_string( $site ) || '' === $site ) {
 			$report['errors'] = 1;
-			$report['warnings'][] = __( 'WordPress home or site URL is empty after the restore.', 'jisento' );
+			$report['warnings'][] = __( 'WordPress home or site URL is empty after the restore.', 'jisento-migration' );
 		}
 		$stylesheet = get_option( 'stylesheet' );
 		$theme      = wp_get_theme( $stylesheet );
 		if ( ! $theme->exists() ) {
 			$report['warnings'][] = sprintf(
 				/* translators: %s: theme stylesheet */
-				__( 'Active theme %s is not installed on the destination.', 'jisento' ),
+				__( 'Active theme %s is not installed on the destination.', 'jisento-migration' ),
 				$stylesheet
 			);
 		}

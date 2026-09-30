@@ -35,7 +35,7 @@ class Lease {
 		global $wpdb;
 		$job_id = (string) $job_id;
 		if ( '' === $job_id ) {
-			return new \WP_Error( 'jisento_lease', __( 'A job id is required to take the site lease.', 'jisento' ), array( 'status' => 500 ) );
+			return new \WP_Error( 'jisento_lease', __( 'A job id is required to take the site lease.', 'jisento-migration' ), array( 'status' => 500 ) );
 		}
 		try {
 			$token = bin2hex( random_bytes( 16 ) );
@@ -62,7 +62,7 @@ class Lease {
 		if ( false === $wpdb->query( $sql ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			return new \WP_Error(
 				'jisento_lease',
-				sprintf( __( 'Stage: start. Operation: take the site lease. Reason: database error %1$s. Recovery: check that the %2$s table exists (deactivate and reactivate the plugin), then retry. Job: %3$s', 'jisento' ), $wpdb->last_error, $table, $job_id ),
+				sprintf( __( 'Stage: start. Operation: take the site lease. Reason: database error %1$s. Recovery: check that the %2$s table exists (deactivate and reactivate the plugin), then retry. Job: %3$s', 'jisento-migration' ), $wpdb->last_error, $table, $job_id ),
 				array( 'status' => 500 )
 			);
 		}
@@ -75,7 +75,7 @@ class Lease {
 			'jisento_busy',
 			sprintf(
 				/* translators: 1: owning job, 2: seconds, 3: job id */
-				__( 'An import or export is already running on this site (job %1$s). Only one can run at a time. Wait for it to finish, cancel it, or retry after %2$d seconds if it has stopped. Job: %3$s', 'jisento' ),
+				__( 'An import or export is already running on this site (job %1$s). Only one can run at a time. Wait for it to finish, cancel it, or retry after %2$d seconds if it has stopped. Job: %3$s', 'jisento-migration' ),
 				$owner,
 				$row ? max( 0, (int) $row['expires_in'] ) : self::TTL,
 				$job_id

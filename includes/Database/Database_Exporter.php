@@ -176,7 +176,7 @@ class Database_Exporter {
 		while ( $done < $length ) {
 			$wrote = fwrite( $handle, 0 === $done ? $bytes : substr( $bytes, $done ) );
 			if ( false === $wrote || 0 === $wrote ) {
-				return new \WP_Error( 'jisento_export_write', __( 'Writing the database segment failed (disk full or file removed).', 'jisento' ) );
+				return new \WP_Error( 'jisento_export_write', __( 'Writing the database segment failed (disk full or file removed).', 'jisento-migration' ) );
 			}
 			$done += $wrote;
 		}
@@ -194,7 +194,7 @@ class Database_Exporter {
 	public function export_table_structure( $handle, $table, $hash = null ) {
 		$create = $this->wpdb->get_row( 'SHOW CREATE TABLE `' . $this->esc_ident( $table ) . '`', ARRAY_N ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		if ( ! $create || empty( $create[1] ) ) {
-			return new \WP_Error( 'jisento_create', sprintf( __( 'Unable to read structure for table %s.', 'jisento' ), $table ) );
+			return new \WP_Error( 'jisento_create', sprintf( __( 'Unable to read structure for table %s.', 'jisento-migration' ), $table ) );
 		}
 		$sql   = "\n-- Table {$table}\nDROP TABLE IF EXISTS `{$table}`;\n" . $create[1] . ";\n\n";
 		$wrote = self::write_all( $handle, $sql, $hash );
@@ -295,7 +295,7 @@ class Database_Exporter {
 		$binary = $this->binary_column_map( $table );
 		$select = $this->select_list( $table, $binary );
 		if ( '' === $select ) {
-			return new \WP_Error( 'jisento_export_columns', sprintf( __( 'Unable to read the columns for table %s, so its rows were not exported.', 'jisento' ), $table ) );
+			return new \WP_Error( 'jisento_export_columns', sprintf( __( 'Unable to read the columns for table %s, so its rows were not exported.', 'jisento-migration' ), $table ) );
 		}
 		$key       = $this->key_columns( $table );
 		$keyed     = 'none' !== $key['source'];
@@ -304,7 +304,7 @@ class Database_Exporter {
 			$order_sql[] = $ident . '.`' . $this->esc_ident( $col ) . '`';
 		}
 		if ( ! $order_sql ) {
-			return new \WP_Error( 'jisento_export_columns', sprintf( __( 'Table %s has no columns to order by, so its rows were not exported.', 'jisento' ), $table ) );
+			return new \WP_Error( 'jisento_export_columns', sprintf( __( 'Table %s has no columns to order by, so its rows were not exported.', 'jisento-migration' ), $table ) );
 		}
 		$order  = ' ORDER BY ' . implode( ', ', $order_sql );
 		$offset = 0;
@@ -313,16 +313,16 @@ class Database_Exporter {
 			$args  = array();
 			if ( is_array( $cursor ) && isset( $cursor['__keyset'] ) ) {
 				if ( ! is_array( $cursor['__keyset'] ) || count( $cursor['__keyset'] ) !== count( $key['columns'] ) ) {
-					return new \WP_Error( 'jisento_export_cursor', sprintf( __( 'The export cursor for table %s does not match its key columns (%s), so the export stopped instead of writing the table again.', 'jisento' ), $table, implode( ', ', $key['columns'] ) ) );
+					return new \WP_Error( 'jisento_export_cursor', sprintf( __( 'The export cursor for table %s does not match its key columns (%s), so the export stopped instead of writing the table again.', 'jisento-migration' ), $table, implode( ', ', $key['columns'] ) ) );
 				}
 				$predicate = self::keyset_predicate( $order_sql, $cursor['__keyset'] );
 				if ( null === $predicate ) {
-					return new \WP_Error( 'jisento_export_cursor', sprintf( __( 'The export cursor for table %s is not a valid keyset, so the export stopped instead of writing the table again.', 'jisento' ), $table ) );
+					return new \WP_Error( 'jisento_export_cursor', sprintf( __( 'The export cursor for table %s is not a valid keyset, so the export stopped instead of writing the table again.', 'jisento-migration' ), $table ) );
 				}
 				$where = ' WHERE ' . $predicate[0];
 				$args  = $predicate[1];
 			} elseif ( null !== $cursor ) {
-				return new \WP_Error( 'jisento_export_cursor', sprintf( __( 'The export cursor for table %s is not a keyset cursor, so the export stopped instead of writing the table again.', 'jisento' ), $table ) );
+				return new \WP_Error( 'jisento_export_cursor', sprintf( __( 'The export cursor for table %s is not a keyset cursor, so the export stopped instead of writing the table again.', 'jisento-migration' ), $table ) );
 			}
 			$args[] = $limit;
 			$sql    = 'SELECT ' . $select . ' FROM ' . $ident . $where . $order . ' LIMIT %d';
@@ -333,7 +333,7 @@ class Database_Exporter {
 			$rows   = $this->wpdb->get_results( $this->wpdb->prepare( $sql, $limit, $offset ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		}
 		if ( ! is_array( $rows ) ) {
-			return new \WP_Error( 'jisento_export_read', sprintf( __( 'Unable to read rows from table %1$s. Database error: %2$s', 'jisento' ), $table, (string) $this->wpdb->last_error ) );
+			return new \WP_Error( 'jisento_export_read', sprintf( __( 'Unable to read rows from table %1$s. Database error: %2$s', 'jisento-migration' ), $table, (string) $this->wpdb->last_error ) );
 		}
 		if ( ! $rows ) {
 			return array(
@@ -358,14 +358,14 @@ class Database_Exporter {
 			foreach ( $rows as $row ) {
 				$current = self::comparable_tuple( $row, $key['columns'], $kinds );
 				if ( null === $current ) {
-					return new \WP_Error( 'jisento_export_key', sprintf( __( 'Table %1$s returned a key value in (%2$s) that is not a valid integer, so the export stopped instead of comparing it as text.', 'jisento' ), $table, implode( ', ', $labels ) ) );
+					return new \WP_Error( 'jisento_export_key', sprintf( __( 'Table %1$s returned a key value in (%2$s) that is not a valid integer, so the export stopped instead of comparing it as text.', 'jisento-migration' ), $table, implode( ', ', $labels ) ) );
 				}
 				if ( null !== $previous && self::key_follows( $previous, $current, $kinds ) < 1 ) {
 					return new \WP_Error(
 						'jisento_export_repeat',
 						sprintf(
 							/* translators: 1: table, 2: key description, 3: previous key, 4: next key */
-							__( 'Table %1$s key (%2$s) did not advance. Previous key: %3$s. Next key: %4$s. The export stopped instead of writing that key twice.', 'jisento' ),
+							__( 'Table %1$s key (%2$s) did not advance. Previous key: %3$s. Next key: %4$s. The export stopped instead of writing that key twice.', 'jisento-migration' ),
 							$table,
 							implode( ', ', $labels ),
 							self::format_key( $previous, $kinds ),
@@ -624,7 +624,7 @@ class Database_Exporter {
 			$tuple = array();
 			foreach ( $cursor['__keyset'] as $index => $part ) {
 				if ( ! is_array( $part ) ) {
-					return new \WP_Error( 'jisento_export_cursor', __( 'The database export cursor is not a valid keyset, so the export stopped instead of writing the table again.', 'jisento' ) );
+					return new \WP_Error( 'jisento_export_cursor', __( 'The database export cursor is not a valid keyset, so the export stopped instead of writing the table again.', 'jisento-migration' ) );
 				}
 				$kind = isset( $kinds[ $index ] ) ? $kinds[ $index ] : ( isset( $part['k'] ) ? $part['k'] : 'string' );
 				if ( ! isset( $part['v'] ) || null === $part['v'] ) {
@@ -638,7 +638,7 @@ class Database_Exporter {
 				if ( 'int' === $kind ) {
 					$value = self::canonical_int( $part['v'] );
 					if ( null === $value ) {
-						return new \WP_Error( 'jisento_export_cursor', __( 'The database export cursor is not a valid integer, so the export stopped instead of writing the table again.', 'jisento' ) );
+						return new \WP_Error( 'jisento_export_cursor', __( 'The database export cursor is not a valid integer, so the export stopped instead of writing the table again.', 'jisento-migration' ) );
 					}
 					$tuple[] = $value;
 					continue;
@@ -656,7 +656,7 @@ class Database_Exporter {
 					continue;
 				}
 				if ( ! is_string( $hex ) || ! preg_match( '/^[0-9a-fA-F]*$/', $hex ) ) {
-					return new \WP_Error( 'jisento_export_cursor', __( 'The database export cursor is not valid hexadecimal, so the export stopped instead of writing the table again.', 'jisento' ) );
+					return new \WP_Error( 'jisento_export_cursor', __( 'The database export cursor is not valid hexadecimal, so the export stopped instead of writing the table again.', 'jisento-migration' ) );
 				}
 				if ( 'binary' === $kind ) {
 					$tuple[] = strtolower( $hex );
@@ -666,7 +666,7 @@ class Database_Exporter {
 				if ( 'int' === $kind ) {
 					$value = self::canonical_int( $raw );
 					if ( null === $value ) {
-						return new \WP_Error( 'jisento_export_cursor', __( 'The database export cursor is not a valid integer, so the export stopped instead of writing the table again.', 'jisento' ) );
+						return new \WP_Error( 'jisento_export_cursor', __( 'The database export cursor is not a valid integer, so the export stopped instead of writing the table again.', 'jisento-migration' ) );
 					}
 					$tuple[] = $value;
 					continue;

@@ -18,15 +18,15 @@ class Compatibility {
 	public function run( array $manifest = array() ) {
 		$checks = array();
 
-		$checks[] = $this->item( 'wordpress', __( 'WordPress detected', 'jisento' ), true, sprintf( 'WordPress %s', get_bloginfo( 'version' ) ) );
+		$checks[] = $this->item( 'wordpress', __( 'WordPress detected', 'jisento-migration' ), true, sprintf( 'WordPress %s', get_bloginfo( 'version' ) ) );
 
 		$php_ok = version_compare( PHP_VERSION, '7.4', '>=' );
-		$checks[] = $this->item( 'php', __( 'PHP version compatible', 'jisento' ), $php_ok, 'PHP ' . PHP_VERSION, $php_ok ? 'ok' : 'error' );
+		$checks[] = $this->item( 'php', __( 'PHP version compatible', 'jisento-migration' ), $php_ok, 'PHP ' . PHP_VERSION, $php_ok ? 'ok' : 'error' );
 
 		if ( ! empty( $manifest['php_version'] ) && version_compare( PHP_VERSION, $manifest['php_version'], '<' ) ) {
 			$checks[] = $this->item(
 				'php_source',
-				__( 'Destination PHP is older than the source site', 'jisento' ),
+				__( 'Destination PHP is older than the source site', 'jisento-migration' ),
 				true,
 				sprintf( 'Source PHP %s / Destination PHP %s', $manifest['php_version'], PHP_VERSION ),
 				'warn'
@@ -35,7 +35,7 @@ class Compatibility {
 
 		global $wpdb;
 		$db_ok = (bool) $wpdb->check_connection( false );
-		$checks[] = $this->item( 'database', __( 'Database connection working', 'jisento' ), $db_ok, DB_NAME );
+		$checks[] = $this->item( 'database', __( 'Database connection working', 'jisento-migration' ), $db_ok, DB_NAME );
 
 		$disk = $this->disk_free();
 		$need = isset( $manifest['files_size'] ) ? (int) $manifest['files_size'] + (int) ( $manifest['database_size'] ?? 0 ) : 0;
@@ -49,9 +49,9 @@ class Compatibility {
 		}
 		$checks[] = $this->item(
 			'disk',
-			__( 'Disk space sufficient', 'jisento' ),
+			__( 'Disk space sufficient', 'jisento-migration' ),
 			$disk_ok,
-			$disk < 0 ? __( 'Unable to determine free space', 'jisento' ) : size_format( $disk ),
+			$disk < 0 ? __( 'Unable to determine free space', 'jisento-migration' ) : size_format( $disk ),
 			$level
 		);
 
@@ -68,18 +68,18 @@ class Compatibility {
 		}
 		$checks[] = $this->item(
 			'extensions',
-			__( 'Required PHP extensions available', 'jisento' ),
+			__( 'Required PHP extensions available', 'jisento-migration' ),
 			empty( $missing ),
 			empty( $missing ) ? 'json, mbstring, zip' : implode( ', ', $missing )
 		);
 
 		$writable = is_writable( WP_CONTENT_DIR );
-		$checks[] = $this->item( 'permissions', __( 'Filesystem permissions', 'jisento' ), $writable, WP_CONTENT_DIR );
+		$checks[] = $this->item( 'permissions', __( 'Filesystem permissions', 'jisento-migration' ), $writable, WP_CONTENT_DIR );
 
 		$memory = $this->ini_bytes( ini_get( 'memory_limit' ) );
 		$checks[] = $this->item(
 			'memory',
-			__( 'Available memory', 'jisento' ),
+			__( 'Available memory', 'jisento-migration' ),
 			true,
 			ini_get( 'memory_limit' ),
 			( $memory > 0 && $memory < 64 * 1024 * 1024 ) ? 'warn' : 'ok'
@@ -88,7 +88,7 @@ class Compatibility {
 		$max_exec = (int) ini_get( 'max_execution_time' );
 		$checks[] = $this->item(
 			'execution',
-			__( 'PHP execution time', 'jisento' ),
+			__( 'PHP execution time', 'jisento-migration' ),
 			true,
 			(string) $max_exec,
 			( $max_exec > 0 && $max_exec < 30 ) ? 'warn' : 'ok'
@@ -97,13 +97,13 @@ class Compatibility {
 		$upload = $this->ini_bytes( ini_get( 'upload_max_filesize' ) );
 		$checks[] = $this->item(
 			'upload',
-			__( 'Upload limits', 'jisento' ),
+			__( 'Upload limits', 'jisento-migration' ),
 			true,
 			ini_get( 'upload_max_filesize' ) . ' / ' . ini_get( 'post_max_size' ),
 			( $upload > 0 && $upload < 8 * 1024 * 1024 ) ? 'warn' : 'ok'
 		);
 
-		$checks[] = $this->item( 'url', __( 'Destination URL', 'jisento' ), true, home_url() );
+		$checks[] = $this->item( 'url', __( 'Destination URL', 'jisento-migration' ), true, home_url() );
 
 		$errors = 0;
 		$warns  = 0;

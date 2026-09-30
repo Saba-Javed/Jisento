@@ -177,7 +177,7 @@ class Importer {
 	public static function retry_fields( $job ) {
 		$state = is_array( $job->state ) ? $job->state : array();
 		if ( empty( $state['options'] ) ) {
-			throw new \RuntimeException( __( 'Operation: retry. Reason: the job has no saved options. Recovery: start a new import.', 'jisento' ) );
+			throw new \RuntimeException( __( 'Operation: retry. Reason: the job has no saved options. Recovery: start a new import.', 'jisento-migration' ) );
 		}
 		if ( empty( $state['db_swapped'] ) ) {
 			return array(
@@ -188,7 +188,7 @@ class Importer {
 		}
 		$path = isset( $state['package_path'] ) ? (string) $state['package_path'] : '';
 		if ( '' === $path || ! is_file( $path ) ) {
-			throw new \RuntimeException( __( 'Operation: retry. Reason: the package file is gone, and the database was already restored. Recovery: upload the same package again and start a new import.', 'jisento' ) );
+			throw new \RuntimeException( __( 'Operation: retry. Reason: the package file is gone, and the database was already restored. Recovery: upload the same package again and start a new import.', 'jisento-migration' ) );
 		}
 		$info = ( new Archive() )->verify_structure( $path );
 		if ( is_wp_error( $info ) ) {
@@ -293,7 +293,7 @@ class Importer {
 		}
 		$path = $plugin->storage->resolve( $relative );
 		if ( ! $path ) {
-			throw new \RuntimeException( __( 'Operation: open the package. Reason: the selected .jisento package could not be found. Recovery: upload it again, then start the import.', 'jisento' ) );
+			throw new \RuntimeException( __( 'Operation: open the package. Reason: the selected .jisento package could not be found. Recovery: upload it again, then start the import.', 'jisento-migration' ) );
 		}
 		return $path['path'];
 	}
@@ -355,12 +355,12 @@ class Importer {
 	 */
 	private function activity_for_stage( $stage ) {
 		$map = array(
-			'validating'          => array( __( 'Validating package', 'jisento' ), __( 'Checking the package', 'jisento' ) ),
-			'importing_database'  => array( __( 'Restoring database', 'jisento' ), __( 'Starting database restore', 'jisento' ) ),
-			'importing_files'     => array( __( 'Restoring files', 'jisento' ), __( 'Starting file restore', 'jisento' ) ),
-			'replacing_urls'      => array( __( 'Replacing URLs', 'jisento' ), __( 'Updating stored addresses', 'jisento' ) ),
-			'finalizing'          => array( __( 'Finalizing migration', 'jisento' ), __( 'Starting finalization', 'jisento' ) ),
-			'completed'           => array( __( 'Migration completed successfully', 'jisento' ), __( 'Done', 'jisento' ) ),
+			'validating'          => array( __( 'Validating package', 'jisento-migration' ), __( 'Checking the package', 'jisento-migration' ) ),
+			'importing_database'  => array( __( 'Restoring database', 'jisento-migration' ), __( 'Starting database restore', 'jisento-migration' ) ),
+			'importing_files'     => array( __( 'Restoring files', 'jisento-migration' ), __( 'Starting file restore', 'jisento-migration' ) ),
+			'replacing_urls'      => array( __( 'Replacing URLs', 'jisento-migration' ), __( 'Updating stored addresses', 'jisento-migration' ) ),
+			'finalizing'          => array( __( 'Finalizing migration', 'jisento-migration' ), __( 'Starting finalization', 'jisento-migration' ) ),
+			'completed'           => array( __( 'Migration completed successfully', 'jisento-migration' ), __( 'Done', 'jisento-migration' ) ),
 		);
 		$pair = isset( $map[ $stage ] ) ? $map[ $stage ] : array( $stage, $stage );
 		return array(
@@ -387,17 +387,17 @@ class Importer {
 		$archive = new Archive();
 		$info    = $archive->verify_structure( $path );
 		if ( is_wp_error( $info ) ) {
-			throw self::error( $job, 'verify the package', $info->get_error_message(), __( 'Export the source site again with this plugin version and upload the new package.', 'jisento' ) );
+			throw self::error( $job, 'verify the package', $info->get_error_message(), __( 'Export the source site again with this plugin version and upload the new package.', 'jisento-migration' ) );
 		}
 		if ( empty( $info['has_db'] ) && empty( $info['has_files'] ) ) {
-			throw self::error( $job, 'verify the package', __( 'The package contains neither a database dump nor site files.', 'jisento' ), __( 'Export the source site again.', 'jisento' ) );
+			throw self::error( $job, 'verify the package', __( 'The package contains neither a database dump nor site files.', 'jisento-migration' ), __( 'Export the source site again.', 'jisento-migration' ) );
 		}
 		$mode = $state['options']['destination_mode'];
 		if ( 'replace' === $mode && empty( $state['options']['confirm_replace'] ) ) {
-			throw self::error( $job, 'check options', __( 'Complete replacement requires explicit confirmation.', 'jisento' ), __( 'Tick the confirmation box and start again.', 'jisento' ) );
+			throw self::error( $job, 'check options', __( 'Complete replacement requires explicit confirmation.', 'jisento-migration' ), __( 'Tick the confirmation box and start again.', 'jisento-migration' ) );
 		}
 		if ( 'preserve' === $mode && empty( $state['options']['confirm_preserve'] ) ) {
-			throw self::error( $job, 'check options', __( 'Preserve mode requires explicit confirmation.', 'jisento' ), __( 'Confirm that logins, themes and plugins on this site should be kept, then start again.', 'jisento' ) );
+			throw self::error( $job, 'check options', __( 'Preserve mode requires explicit confirmation.', 'jisento-migration' ), __( 'Confirm that logins, themes and plugins on this site should be kept, then start again.', 'jisento-migration' ) );
 		}
 		if ( empty( $state['import_admin_id'] ) && function_exists( 'get_current_user_id' ) ) {
 			$state['import_admin_id'] = (int) get_current_user_id();
@@ -476,8 +476,8 @@ class Importer {
 			),
 			array(
 				'phase'          => 'validating',
-				'label'          => __( 'Validating package', 'jisento' ),
-				'detail'         => __( 'Format marker, manifest and contents verified', 'jisento' ),
+				'label'          => __( 'Validating package', 'jisento-migration' ),
+				'detail'         => __( 'Format marker, manifest and contents verified', 'jisento-migration' ),
 				'stage_progress' => 100,
 			)
 		);
@@ -488,7 +488,7 @@ class Importer {
 		$compat = ( new Compatibility() )->run( $state['manifest'] );
 		$state['compatibility'] = $compat;
 		if ( ! $compat['can_run'] ) {
-			throw self::error( $job, 'check destination compatibility', __( 'Destination compatibility checks failed.', 'jisento' ), __( 'View details, resolve the errors, then start the import again.', 'jisento' ) );
+			throw self::error( $job, 'check destination compatibility', __( 'Destination compatibility checks failed.', 'jisento-migration' ), __( 'View details, resolve the errors, then start the import again.', 'jisento-migration' ) );
 		}
 		$plugin->logger->log( $job->job_id, 'compatibility', 'check', '', 'ok', 'Compatibility passed' );
 		return $plugin->jobs->update(
@@ -496,7 +496,7 @@ class Importer {
 			array(
 				'stage'        => 'extracting',
 				'progress'     => $this->import_percent( $state, 'compatibility', 1 ),
-				'current_item' => __( 'Destination compatibility', 'jisento' ),
+				'current_item' => __( 'Destination compatibility', 'jisento-migration' ),
 				'state'        => $state,
 			)
 		);
@@ -520,8 +520,8 @@ class Importer {
 				),
 				array(
 					'phase'          => 'extracting',
-					'label'          => __( 'Extracting package', 'jisento' ),
-					'detail'         => __( 'Package has no database dump', 'jisento' ),
+					'label'          => __( 'Extracting package', 'jisento-migration' ),
+					'detail'         => __( 'Package has no database dump', 'jisento-migration' ),
 					'stage_progress' => 100,
 				)
 			);
@@ -543,11 +543,11 @@ class Importer {
 			$segment = $segments[ $index ];
 			$dest    = $dir . '/' . basename( $segment['entry'] );
 			if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
-				throw self::error( $job, 'extract the database', sprintf( __( 'Folder %s could not be created.', 'jisento' ), $dir ), __( 'Make wp-content/jisento writable by PHP, then press Retry.', 'jisento' ) );
+				throw self::error( $job, 'extract the database', sprintf( __( 'Folder %s could not be created.', 'jisento-migration' ), $dir ), __( 'Make wp-content/jisento writable by PHP, then press Retry.', 'jisento-migration' ) );
 			}
 			$result = $archive->extract_verified( $state['package_path'], $segment['entry'], $dest, $segment['bytes'], $segment['sha256'] );
 			if ( is_wp_error( $result ) ) {
-				throw self::error( $job, sprintf( 'verify database segment %s', $segment['entry'] ), $result->get_error_message(), __( 'Upload the package again; if it fails again, export the source again. No table was changed.', 'jisento' ) );
+				throw self::error( $job, sprintf( 'verify database segment %s', $segment['entry'] ), $result->get_error_message(), __( 'Upload the package again; if it fails again, export the source again. No table was changed.', 'jisento-migration' ) );
 			}
 			$index++;
 			$done++;
@@ -566,11 +566,11 @@ class Importer {
 			),
 			array(
 				'phase'          => 'extracting',
-				'label'          => __( 'Extracting package', 'jisento' ),
-				'detail'         => sprintf( __( 'Verified database segment %1$d of %2$d', 'jisento' ), $index, count( $segments ) ),
+				'label'          => __( 'Extracting package', 'jisento-migration' ),
+				'detail'         => sprintf( __( 'Verified database segment %1$d of %2$d', 'jisento-migration' ), $index, count( $segments ) ),
 				'count_done'     => $index,
 				'count_total'    => count( $segments ),
-				'count_unit'     => __( 'Segments', 'jisento' ),
+				'count_unit'     => __( 'Segments', 'jisento-migration' ),
 				'stage_progress' => (int) floor( 100 * ( count( $segments ) ? $index / count( $segments ) : 1 ) ),
 			)
 		);
@@ -593,7 +593,7 @@ class Importer {
 			$sql  = $this->segment_path( $job, $state, 0 );
 			$scan = Legacy_Package::scan( $sql );
 			if ( is_wp_error( $scan ) ) {
-				throw self::error( $job, 'check the version 1 dump', $scan->get_error_message(), __( 'Press Retry. If it fails again, upload the package again.', 'jisento' ) );
+				throw self::error( $job, 'check the version 1 dump', $scan->get_error_message(), __( 'Press Retry. If it fails again, upload the package again.', 'jisento-migration' ) );
 			}
 			$source_tables = $scan['tables'];
 			if ( $scan['tokens'] ) {
@@ -607,11 +607,11 @@ class Importer {
 						'check the version 1 dump',
 						sprintf(
 							/* translators: 1: occurrences, 2: distinct tokens */
-							__( 'This package was created by Jisento Migration 1.2.11 or older, which replaced every "%%" character in the database with a placeholder. It contains %1$d occurrences of %2$d placeholder token(s). Importing it unchanged would put those placeholders into your content and break serialized data. No table was changed.', 'jisento' ),
+							__( 'This package was created by Jisento Migration 1.2.11 or older, which replaced every "%%" character in the database with a placeholder. It contains %1$d occurrences of %2$d placeholder token(s). Importing it unchanged would put those placeholders into your content and break serialized data. No table was changed.', 'jisento-migration' ),
 							(int) $scan['occurrences'],
 							count( $scan['tokens'] )
 						),
-						__( 'Recommended: update the plugin on the source site and export again. Or start a new import with "Repair % characters" enabled, which replaces exactly those repeated tokens with "%".', 'jisento' )
+						__( 'Recommended: update the plugin on the source site and export again. Or start a new import with "Repair % characters" enabled, which replaces exactly those repeated tokens with "%".', 'jisento-migration' )
 					);
 				}
 				$state['placeholder_tokens'] = array_keys( $scan['tokens'] );
@@ -657,8 +657,8 @@ class Importer {
 			throw self::error(
 				$job,
 				'plan the restore',
-				sprintf( __( 'These tables already exist and would be overwritten by the restore work tables: %s. They are usually left over from an interrupted import.', 'jisento' ), implode( ', ', $collisions ) ),
-				__( 'Check that they hold nothing you need, drop them (for example with phpMyAdmin), then start the import again. No table was changed.', 'jisento' )
+				sprintf( __( 'These tables already exist and would be overwritten by the restore work tables: %s. They are usually left over from an interrupted import.', 'jisento-migration' ), implode( ', ', $collisions ) ),
+				__( 'Check that they hold nothing you need, drop them (for example with phpMyAdmin), then start the import again. No table was changed.', 'jisento-migration' )
 			);
 		}
 
@@ -688,8 +688,8 @@ class Importer {
 			),
 			array(
 				'phase'          => 'extracting',
-				'label'          => __( 'Extracting package', 'jisento' ),
-				'detail'         => $replace ? __( 'All tables will be replaced', 'jisento' ) : sprintf( __( '%1$d tables restored, logins kept', 'jisento' ), count( $restore ) ),
+				'label'          => __( 'Extracting package', 'jisento-migration' ),
+				'detail'         => $replace ? __( 'All tables will be replaced', 'jisento-migration' ) : sprintf( __( '%1$d tables restored, logins kept', 'jisento-migration' ), count( $restore ) ),
 				'stage_progress' => 100,
 			)
 		);
@@ -738,11 +738,11 @@ class Importer {
 		$cursor   = $importer->read_cursor();
 		if ( null === $cursor ) {
 			if ( ! empty( $state['db_started'] ) ) {
-				throw self::error( $job, 'resume the database restore', __( 'The saved restore position is missing, so the restore cannot continue without guessing.', 'jisento' ), __( 'Press Retry to restart the database restore from the beginning. Live tables were not changed.', 'jisento' ) );
+				throw self::error( $job, 'resume the database restore', __( 'The saved restore position is missing, so the restore cannot continue without guessing.', 'jisento-migration' ), __( 'Press Retry to restart the database restore from the beginning. Live tables were not changed.', 'jisento-migration' ) );
 			}
 			$started = $importer->start_segment( 0 );
 			if ( is_wp_error( $started ) ) {
-				throw self::error( $job, 'start the database restore', $started->get_error_message(), __( 'Check the database user can create tables, then press Retry.', 'jisento' ) );
+				throw self::error( $job, 'start the database restore', $started->get_error_message(), __( 'Check the database user can create tables, then press Retry.', 'jisento-migration' ) );
 			}
 			$state['db_started'] = true;
 			$cursor              = $importer->read_cursor();
@@ -751,15 +751,15 @@ class Importer {
 		$index = (int) $cursor['segment'];
 		if ( $index >= count( $segments ) ) {
 			$state['db_phase'] = 'verify';
-			return $this->report( $job, $state, array( 'stage' => 'importing_database' ), array( 'phase' => 'importing_database', 'label' => __( 'Restoring database', 'jisento' ), 'detail' => __( 'Checking restored tables', 'jisento' ), 'stage_progress' => 99 ) );
+			return $this->report( $job, $state, array( 'stage' => 'importing_database' ), array( 'phase' => 'importing_database', 'label' => __( 'Restoring database', 'jisento-migration' ), 'detail' => __( 'Checking restored tables', 'jisento-migration' ), 'stage_progress' => 99 ) );
 		}
 		$path = $this->segment_path( $job, $state, $index );
 		if ( ! is_file( $path ) ) {
-			throw self::error( $job, 'restore the database', sprintf( __( 'Extracted segment %s is missing.', 'jisento' ), basename( $path ) ), __( 'Press Retry to extract and verify the package again. Live tables were not changed.', 'jisento' ) );
+			throw self::error( $job, 'restore the database', sprintf( __( 'Extracted segment %s is missing.', 'jisento-migration' ), basename( $path ) ), __( 'Press Retry to extract and verify the package again. Live tables were not changed.', 'jisento-migration' ) );
 		}
 		$chunk = $importer->import_chunk( $index, $path, max( 1, Step_Budget::seconds( 12 ) ), 800 );
 		if ( is_wp_error( $chunk ) ) {
-			throw self::error( $job, sprintf( 'restore %s', basename( $path ) ), $chunk->get_error_message(), __( 'Fix the reported cause, then press Retry. Live tables were not changed; the restore restarts from the beginning.', 'jisento' ) );
+			throw self::error( $job, sprintf( 'restore %s', basename( $path ) ), $chunk->get_error_message(), __( 'Fix the reported cause, then press Retry. Live tables were not changed; the restore restarts from the beginning.', 'jisento-migration' ) );
 		}
 		$state['db_session']      = $chunk['session'];
 		$state['db_statement_no'] = (int) $chunk['statement_no'];
@@ -783,7 +783,7 @@ class Importer {
 			if ( $next < count( $segments ) ) {
 				$moved = $importer->start_segment( $next );
 				if ( is_wp_error( $moved ) ) {
-					throw self::error( $job, 'save the restore position', $moved->get_error_message(), __( 'Press Retry.', 'jisento' ) );
+					throw self::error( $job, 'save the restore position', $moved->get_error_message(), __( 'Press Retry.', 'jisento-migration' ) );
 				}
 			} else {
 				$importer->start_segment( $next );
@@ -803,8 +803,8 @@ class Importer {
 		$done  += $chunk['done'] ? (int) $segments[ $index ]['bytes'] : (int) $chunk['offset'];
 		$ratio  = $total > 0 ? min( 1, $done / $total ) : 1;
 		$detail = '' !== $chunk['table']
-			? sprintf( __( '%1$s · %2$d statements · %3$ss', 'jisento' ), $chunk['table'], (int) $chunk['statements'], $chunk['seconds'] )
-			: __( 'Restoring database', 'jisento' );
+			? sprintf( __( '%1$s · %2$d statements · %3$ss', 'jisento-migration' ), $chunk['table'], (int) $chunk['statements'], $chunk['seconds'] )
+			: __( 'Restoring database', 'jisento-migration' );
 
 		return $this->report(
 			$job,
@@ -816,14 +816,14 @@ class Importer {
 			),
 			array(
 				'phase'          => 'importing_database',
-				'label'          => __( 'Restoring database', 'jisento' ),
+				'label'          => __( 'Restoring database', 'jisento-migration' ),
 				'detail'         => $detail,
 				'count_done'     => min( count( $segments ), $index + ( $chunk['done'] ? 1 : 0 ) ),
 				'count_total'    => count( $segments ),
-				'count_unit'     => __( 'Segments', 'jisento' ),
+				'count_unit'     => __( 'Segments', 'jisento-migration' ),
 				'stage_progress' => (int) floor( 97 * $ratio ),
 				'measure_kind'   => 'bytes',
-				'measure_label'  => __( 'Database dump', 'jisento' ),
+				'measure_label'  => __( 'Database dump', 'jisento-migration' ),
 				'measure_done'   => $done,
 				'measure_total'  => $total,
 			)
@@ -870,19 +870,19 @@ class Importer {
 			$expected = array_intersect_key( $state['plan']['expected'], array_flip( $restore ) );
 			$wrong    = $importer->count_mismatches( $expected );
 			if ( $wrong ) {
-				throw self::error( $job, 'check restored row counts', sprintf( __( 'Restored row counts do not match the package: %s', 'jisento' ), implode( '; ', array_slice( $wrong, 0, 10 ) ) ), __( 'Export the source again. Live tables were not changed.', 'jisento' ) );
+				throw self::error( $job, 'check restored row counts', sprintf( __( 'Restored row counts do not match the package: %s', 'jisento-migration' ), implode( '; ', array_slice( $wrong, 0, 10 ) ) ), __( 'Export the source again. Live tables were not changed.', 'jisento-migration' ) );
 			}
 		}
 		if ( $importer->shadow_users_empty() ) {
-			throw self::error( $job, 'check restored users', __( 'The restored users table is empty, so it was not swapped in.', 'jisento' ), __( 'Export the source again and check its users table. Live tables were not changed.', 'jisento' ) );
+			throw self::error( $job, 'check restored users', __( 'The restored users table is empty, so it was not swapped in.', 'jisento-migration' ), __( 'Export the source again and check its users table. Live tables were not changed.', 'jisento-migration' ) );
 		}
 		$rewritten = $importer->rewrite_prefix_in_shadows();
 		if ( is_wp_error( $rewritten ) ) {
-			throw self::error( $job, 'rewrite the table prefix', $rewritten->get_error_message(), __( 'Press Retry. Live tables were not changed.', 'jisento' ) );
+			throw self::error( $job, 'rewrite the table prefix', $rewritten->get_error_message(), __( 'Press Retry. Live tables were not changed.', 'jisento-migration' ) );
 		}
 		$state['db_phase'] = 'swap';
 		$plugin->logger->log( $job->job_id, 'importing_database', 'verify', '', 'ok', 'Restored tables checked: ' . count( $restore ) . ' table(s), row counts match the manifest.' );
-		return $this->report( $job, $state, array( 'stage' => 'importing_database', 'progress' => $this->import_percent( $state, 'database', 0.98 ) ), array( 'phase' => 'importing_database', 'label' => __( 'Restoring database', 'jisento' ), 'detail' => __( 'Swapping restored tables into place', 'jisento' ), 'stage_progress' => 98 ) );
+		return $this->report( $job, $state, array( 'stage' => 'importing_database', 'progress' => $this->import_percent( $state, 'database', 0.98 ) ), array( 'phase' => 'importing_database', 'label' => __( 'Restoring database', 'jisento-migration' ), 'detail' => __( 'Swapping restored tables into place', 'jisento-migration' ), 'stage_progress' => 98 ) );
 	}
 
 	private function swap_database( $job, array $state ) {
@@ -892,7 +892,7 @@ class Importer {
 		if ( $restore ) {
 			$swapped = $importer->swap_shadows( $restore );
 			if ( is_wp_error( $swapped ) ) {
-				throw self::error( $job, 'swap restored tables into place', $swapped->get_error_message(), __( 'Press Retry. The swap is a single RENAME TABLE, so either all tables or none were replaced.', 'jisento' ) );
+				throw self::error( $job, 'swap restored tables into place', $swapped->get_error_message(), __( 'Press Retry. The swap is a single RENAME TABLE, so either all tables or none were replaced.', 'jisento-migration' ) );
 			}
 			if ( ! empty( $swapped['retired_left'] ) ) {
 				$plugin->logger->log( $job->job_id, 'importing_database', 'swap', '', 'warning', 'Old tables could not be dropped (drop them manually): ' . implode( ', ', $swapped['retired_left'] ) );
@@ -905,12 +905,12 @@ class Importer {
 			$state = $this->reassign_orphan_authors( $job, $state );
 		}
 		// Saved before the follow-up work, so a crash after this point never restores into shadows again.
-		$job = $this->report( $job, $state, array( 'stage' => 'importing_database' ), array( 'phase' => 'importing_database', 'label' => __( 'Restoring database', 'jisento' ), 'detail' => __( 'Checking foreign keys', 'jisento' ), 'stage_progress' => 99 ) );
+		$job = $this->report( $job, $state, array( 'stage' => 'importing_database' ), array( 'phase' => 'importing_database', 'label' => __( 'Restoring database', 'jisento-migration' ), 'detail' => __( 'Checking foreign keys', 'jisento-migration' ), 'stage_progress' => 99 ) );
 
 		$constraints = isset( $state['db_notes']['constraints'] ) ? $state['db_notes']['constraints'] : array();
 		$fk          = $importer->repair_foreign_keys( $restore, $constraints );
 		if ( is_wp_error( $fk ) ) {
-			throw self::error( $job, 'repair foreign keys', $fk->get_error_message(), __( 'Press Retry.', 'jisento' ) );
+			throw self::error( $job, 'repair foreign keys', $fk->get_error_message(), __( 'Press Retry.', 'jisento-migration' ) );
 		}
 		if ( ! empty( $fk['repaired'] ) ) {
 			$plugin->logger->log( $job->job_id, 'importing_database', 'foreign-keys', '', 'info', 'Foreign keys pointed at work-table names and were recreated: ' . implode( ', ', $fk['repaired'] ) );
@@ -918,7 +918,7 @@ class Importer {
 		if ( ! empty( $state['options']['restore_original_engines'] ) && ! empty( $state['db_notes']['engines'] ) ) {
 			$converted = $importer->restore_engines( $state['db_notes']['engines'] );
 			if ( is_wp_error( $converted ) ) {
-				throw self::error( $job, 'convert tables back to their original engine', $converted->get_error_message(), __( 'The data is restored; convert the table manually or press Retry.', 'jisento' ) );
+				throw self::error( $job, 'convert tables back to their original engine', $converted->get_error_message(), __( 'The data is restored; convert the table manually or press Retry.', 'jisento-migration' ) );
 			}
 			$plugin->logger->log( $job->job_id, 'importing_database', 'engine', '', 'info', 'Converted back after the swap: ' . implode( ', ', $converted ) );
 		}
@@ -940,8 +940,8 @@ class Importer {
 			),
 			array(
 				'phase'          => 'importing_database',
-				'label'          => __( 'Restoring database', 'jisento' ),
-				'detail'         => __( 'Database restore complete', 'jisento' ),
+				'label'          => __( 'Restoring database', 'jisento-migration' ),
+				'detail'         => __( 'Database restore complete', 'jisento-migration' ),
 				'stage_progress' => 100,
 			)
 		);
@@ -966,8 +966,8 @@ class Importer {
 				),
 				array(
 					'phase'          => 'importing_files',
-					'label'          => __( 'Restoring files', 'jisento' ),
-					'detail'         => __( 'Package has no files', 'jisento' ),
+					'label'          => __( 'Restoring files', 'jisento-migration' ),
+					'detail'         => __( 'Package has no files', 'jisento-migration' ),
 					'stage_progress' => 100,
 				)
 			);
@@ -993,7 +993,7 @@ class Importer {
 		);
 		if ( is_wp_error( $batch ) ) {
 			unset( $state['zip_partial'] );
-			throw self::error( $job, 'restore files', $batch->get_error_message(), __( 'Fix the reported cause (permissions or disk space), then press Retry. Files already restored are complete; none is half-written.', 'jisento' ) );
+			throw self::error( $job, 'restore files', $batch->get_error_message(), __( 'Fix the reported cause (permissions or disk space), then press Retry. Files already restored are complete; none is half-written.', 'jisento-migration' ) );
 		}
 
 		if ( ! empty( $batch['partial'] ) ) {
@@ -1014,7 +1014,7 @@ class Importer {
 		if ( $done ) {
 			$check = $this->verify_restored_extensions( $state['package_path'], $state );
 			if ( is_wp_error( $check ) ) {
-				throw self::error( $job, 'verify restored plugins and themes', $check->get_error_message(), __( 'Free disk space and fix permissions, then press Retry so missing files can be restored, or re-export the package.', 'jisento' ) );
+				throw self::error( $job, 'verify restored plugins and themes', $check->get_error_message(), __( 'Free disk space and fix permissions, then press Retry so missing files can be restored, or re-export the package.', 'jisento-migration' ) );
 			}
 			$state = $this->record_kept_extensions( $state );
 			$ratio = 1;
@@ -1032,14 +1032,14 @@ class Importer {
 			),
 			array(
 				'phase'          => 'importing_files',
-				'label'          => __( 'Restoring files', 'jisento' ),
-				'detail'         => ! empty( $batch['current'] ) ? $batch['current'] : __( 'Restoring files into the site', 'jisento' ),
+				'label'          => __( 'Restoring files', 'jisento-migration' ),
+				'detail'         => ! empty( $batch['current'] ) ? $batch['current'] : __( 'Restoring files into the site', 'jisento-migration' ),
 				'count_done'     => (int) $state['files_restored'],
 				'count_total'    => $file_total,
-				'count_unit'     => __( 'Files', 'jisento' ),
+				'count_unit'     => __( 'Files', 'jisento-migration' ),
 				'stage_progress' => (int) floor( 100 * $ratio ),
 				'measure_kind'   => 'bytes',
-				'measure_label'  => __( 'Restored', 'jisento' ),
+				'measure_label'  => __( 'Restored', 'jisento-migration' ),
 				'measure_done'   => (int) $state['file_bytes'],
 				'measure_total'  => $files_bytes,
 			)
@@ -1060,7 +1060,7 @@ class Importer {
 				if ( ! empty( $state['legacy'] ) ) {
 					return '';
 				}
-				return new \WP_Error( 'jisento_path', sprintf( __( 'The package contains WordPress core file %s but was not exported with core files. It was rejected.', 'jisento' ), $relative ) );
+				return new \WP_Error( 'jisento_path', sprintf( __( 'The package contains WordPress core file %s but was not exported with core files. It was rejected.', 'jisento-migration' ), $relative ) );
 			}
 		}
 		$content_rel = 0 === strpos( $relative, 'wp-content/' ) ? substr( $relative, strlen( 'wp-content/' ) ) : ( $core ? '' : $relative );
@@ -1194,7 +1194,7 @@ class Importer {
 				'jisento_incomplete_restore',
 				sprintf(
 					/* translators: %s: comma-separated file paths with reason */
-					__( 'Restored plugins/themes are incomplete. Missing or wrong-sized files: %s', 'jisento' ),
+					__( 'Restored plugins/themes are incomplete. Missing or wrong-sized files: %s', 'jisento-migration' ),
 					$list
 				)
 			);
@@ -1212,7 +1212,7 @@ class Importer {
 	public function package_extension_entries( $package_path, array $copies = array() ) {
 		$zip = new \ZipArchive();
 		if ( true !== $zip->open( $package_path ) ) {
-			return new \WP_Error( 'jisento_zip_open', __( 'Unable to open the package.', 'jisento' ) );
+			return new \WP_Error( 'jisento_zip_open', __( 'Unable to open the package.', 'jisento-migration' ) );
 		}
 		$out = array(
 			'plugins' => array(),
@@ -1467,7 +1467,7 @@ class Importer {
 	public static function contained( $dest, $root ) {
 		$root_real = realpath( $root );
 		if ( false === $root_real ) {
-			return new \WP_Error( 'jisento_path', sprintf( __( 'The restore root %s does not exist.', 'jisento' ), $root ) );
+			return new \WP_Error( 'jisento_path', sprintf( __( 'The restore root %s does not exist.', 'jisento-migration' ), $root ) );
 		}
 		$root_real = rtrim( str_replace( '\\', '/', $root_real ), '/' );
 		$parent    = dirname( $dest );
@@ -1481,10 +1481,10 @@ class Importer {
 		$real = realpath( $parent );
 		$real = false === $real ? '' : rtrim( str_replace( '\\', '/', $real ), '/' );
 		if ( '' === $real || ( $real !== $root_real && 0 !== strpos( $real . '/', $root_real . '/' ) ) ) {
-			return new \WP_Error( 'jisento_path', sprintf( __( 'Restoring %1$s would write outside %2$s (through a symlink or unusual path), so the restore stopped.', 'jisento' ), $dest, $root_real ) );
+			return new \WP_Error( 'jisento_path', sprintf( __( 'Restoring %1$s would write outside %2$s (through a symlink or unusual path), so the restore stopped.', 'jisento-migration' ), $dest, $root_real ) );
 		}
 		if ( is_link( $dest ) ) {
-			return new \WP_Error( 'jisento_path', sprintf( __( '%s is a symlink; restoring over it could write outside the site, so the restore stopped.', 'jisento' ), $dest ) );
+			return new \WP_Error( 'jisento_path', sprintf( __( '%s is a symlink; restoring over it could write outside the site, so the restore stopped.', 'jisento-migration' ), $dest ) );
 		}
 		return true;
 	}
@@ -1503,8 +1503,8 @@ class Importer {
 			throw self::error(
 				$job,
 				'check disk space',
-				sprintf( __( 'This step needs about %1$s and %2$s is free.', 'jisento' ), size_format( $need ), size_format( $free ) ),
-				__( 'Free disk space (old backups, caches), then press Retry.', 'jisento' )
+				sprintf( __( 'This step needs about %1$s and %2$s is free.', 'jisento-migration' ), size_format( $need ), size_format( $free ) ),
+				__( 'Free disk space (old backups, caches), then press Retry.', 'jisento-migration' )
 			);
 		}
 	}
@@ -1768,11 +1768,11 @@ class Importer {
 			),
 			array(
 				'phase'          => 'replacing_urls',
-				'label'          => __( 'Replacing URLs', 'jisento' ),
-				'detail'         => '' !== $current ? $current : __( 'Updating stored addresses', 'jisento' ),
+				'label'          => __( 'Replacing URLs', 'jisento-migration' ),
+				'detail'         => '' !== $current ? $current : __( 'Updating stored addresses', 'jisento-migration' ),
 				'count_done'     => $table_index,
 				'count_total'    => $table_total,
-				'count_unit'     => __( 'Tables', 'jisento' ),
+				'count_unit'     => __( 'Tables', 'jisento-migration' ),
 				'stage_progress' => (int) floor( 100 * $ratio ),
 			)
 		);
@@ -1785,18 +1785,18 @@ class Importer {
 		if ( 'rewrites' === $step ) {
 			$cleanup->flush_rewrites();
 			$state['finalize_step'] = 'caches';
-			return $this->report( $job, $state, array( 'stage' => 'finalizing', 'progress' => 98 ), array( 'phase' => 'finalizing', 'label' => __( 'Finalizing migration', 'jisento' ), 'detail' => __( 'Updating permalinks', 'jisento' ), 'stage_progress' => 25 ) );
+			return $this->report( $job, $state, array( 'stage' => 'finalizing', 'progress' => 98 ), array( 'phase' => 'finalizing', 'label' => __( 'Finalizing migration', 'jisento-migration' ), 'detail' => __( 'Updating permalinks', 'jisento-migration' ), 'stage_progress' => 25 ) );
 		}
 		if ( 'caches' === $step ) {
 			$cleanup->clear_caches();
 			$state['finalize_step'] = 'plugins';
-			return $this->report( $job, $state, array( 'stage' => 'finalizing', 'progress' => 99 ), array( 'phase' => 'finalizing', 'label' => __( 'Finalizing migration', 'jisento' ), 'detail' => __( 'Clearing caches', 'jisento' ), 'stage_progress' => 50 ) );
+			return $this->report( $job, $state, array( 'stage' => 'finalizing', 'progress' => 99 ), array( 'phase' => 'finalizing', 'label' => __( 'Finalizing migration', 'jisento-migration' ), 'detail' => __( 'Clearing caches', 'jisento-migration' ), 'stage_progress' => 50 ) );
 		}
 		if ( 'plugins' === $step ) {
 			$cleanup->elementor();
 			$cleanup->woocommerce();
 			$state['finalize_step'] = 'verify';
-			return $this->report( $job, $state, array( 'stage' => 'finalizing', 'progress' => 99 ), array( 'phase' => 'finalizing', 'label' => __( 'Finalizing migration', 'jisento' ), 'detail' => __( 'Checking Elementor and WooCommerce', 'jisento' ), 'stage_progress' => 75 ) );
+			return $this->report( $job, $state, array( 'stage' => 'finalizing', 'progress' => 99 ), array( 'phase' => 'finalizing', 'label' => __( 'Finalizing migration', 'jisento-migration' ), 'detail' => __( 'Checking Elementor and WooCommerce', 'jisento-migration' ), 'stage_progress' => 75 ) );
 		}
 		$report = array(
 			'source'         => isset( $state['manifest']['home_url'] ) ? $state['manifest']['home_url'] : '',
@@ -1812,17 +1812,17 @@ class Importer {
 			'tables_restored'=> isset( $state['plan']['restore'] ) ? count( $state['plan']['restore'] ) : 0,
 			'tables_kept'    => isset( $state['plan']['keep'] ) ? count( $state['plan']['keep'] ) : 0,
 			'users_replaced' => ! empty( $state['users_replaced'] ),
-			'login_notice'   => ! empty( $state['users_replaced'] ) ? __( "Log in with the SOURCE site's username and password.", 'jisento' ) : '',
+			'login_notice'   => ! empty( $state['users_replaced'] ) ? __( "Log in with the SOURCE site's username and password.", 'jisento-migration' ) : '',
 			'kept_versions'  => ! empty( $state['kept_extensions'] ) ? sprintf(
 				/* translators: %s: comma-separated plugin/theme folder names */
-				__( 'Kept your existing versions of: %s', 'jisento' ),
+				__( 'Kept your existing versions of: %s', 'jisento-migration' ),
 				implode( ', ', $state['kept_extensions'] )
 			) : '',
 			'timings'        => isset( $state['timings'] ) && is_array( $state['timings'] ) ? $state['timings'] : array(),
 		);
 		$cleanup->verify( $report );
 		if ( ! empty( $report['errors'] ) ) {
-			throw self::error( $job, 'verify the migrated site', implode( ' ', $report['warnings'] ), __( 'Resolve the reported problems, then press Retry.', 'jisento' ) );
+			throw self::error( $job, 'verify the migrated site', implode( ' ', $report['warnings'] ), __( 'Resolve the reported problems, then press Retry.', 'jisento-migration' ) );
 		}
 		$report['total_seconds'] = \Jisento\Migration\Core\Timings::total_seconds( $report['timings'] );
 		$report['timing_lines']  = \Jisento\Migration\Core\Timings::readable_list( $report['timings'] );
@@ -1840,7 +1840,7 @@ class Importer {
 				'status'       => 'completed',
 				'stage'        => 'completed',
 				'progress'     => 100,
-				'current_item' => __( 'Migration completed successfully', 'jisento' ),
+				'current_item' => __( 'Migration completed successfully', 'jisento-migration' ),
 				'state'        => $state,
 			)
 		);
