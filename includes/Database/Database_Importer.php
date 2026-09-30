@@ -514,7 +514,7 @@ class Database_Importer {
 		$row = $this->rows( 'SELECT @@SESSION.sql_mode AS sql_mode, @@SESSION.foreign_key_checks AS fk, @@SESSION.time_zone AS tz' );
 		$this->saved_session = is_array( $row ) && $row ? $row[0] : array();
 		$names = isset( $this->session['names'] ) ? $this->session['names'] : 'utf8mb4';
-		if ( ! mysqli_set_charset( $this->dbh, $names ) ) {
+		if ( ! mysqli_set_charset( $this->dbh, $names ) ) { // phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_set_charset -- Charset must match the dump session on the same mysqli handle used for restore.
 			return $this->driver_error( 'set connection charset ' . $names, '' );
 		}
 		$mode = isset( $this->session['sql_mode'] ) ? $this->session['sql_mode'] : 'NO_AUTO_VALUE_ON_ZERO';
@@ -1074,7 +1074,7 @@ class Database_Importer {
 
 	private function apply_set( array $plan ) {
 		if ( 'names' === $plan['var'] ) {
-			if ( ! mysqli_set_charset( $this->dbh, $plan['value'] ) ) {
+			if ( ! mysqli_set_charset( $this->dbh, $plan['value'] ) ) { // phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_set_charset -- SET NAMES during restore uses the unfiltered mysqli handle.
 				return $this->driver_error( 'SET NAMES ' . $plan['value'], '' );
 			}
 			$this->session['names'] = $plan['value'];
@@ -1690,7 +1690,11 @@ class Database_Importer {
 	 * ------------------------------------------------------------------ */
 
 	/**
-	 * Every restore statement goes straight to mysqli, so no WordPress "query" filter can change it.
+	 * Run one restore statement on the raw mysqli connection.
+	 *
+	 * Intentionally bypasses $wpdb->query(): migration SQL must not be altered by the
+	 * WordPress "query" filter (or by $wpdb->_real_escape / prepare % placeholders). The
+	 * dump statements are already escaped for the connection charset by the exporter.
 	 *
 	 * @param string $sql Statement.
 	 * @return bool
@@ -1702,21 +1706,22 @@ class Database_Importer {
 			return false;
 		}
 		try {
+			// phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_real_query -- Restore SQL must bypass $wpdb query filters; see method docblock.
 			$ok = mysqli_real_query( $this->dbh, $sql );
 		} catch ( \mysqli_sql_exception $e ) {
 			$this->last_errno = (string) $e->getCode();
 			$this->last_error = $e->getMessage();
 			return false;
 		}
-		if ( ! $ok || 0 !== mysqli_errno( $this->dbh ) ) {
-			$this->last_errno = (string) mysqli_errno( $this->dbh );
-			$this->last_error = (string) mysqli_error( $this->dbh );
+		if ( ! $ok || 0 !== mysqli_errno( $this->dbh ) ) { // phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_errno
+			$this->last_errno = (string) mysqli_errno( $this->dbh ); // phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_errno
+			$this->last_error = (string) mysqli_error( $this->dbh ); // phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_error
 			return false;
 		}
-		if ( mysqli_field_count( $this->dbh ) > 0 ) {
-			$result = mysqli_store_result( $this->dbh );
+		if ( mysqli_field_count( $this->dbh ) > 0 ) { // phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_field_count
+			$result = mysqli_store_result( $this->dbh ); // phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_store_result
 			if ( $result instanceof \mysqli_result ) {
-				mysqli_free_result( $result );
+				mysqli_free_result( $result ); // phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_free_result
 			}
 		}
 		$this->last_errno = '0';
@@ -1725,6 +1730,8 @@ class Database_Importer {
 	}
 
 	/**
+	 * Run a read-only helper query on the raw mysqli connection (same bypass as exec_sql).
+	 *
 	 * @param string $sql Query.
 	 * @return array[]|null
 	 */
@@ -1733,6 +1740,7 @@ class Database_Importer {
 			return null;
 		}
 		try {
+			// phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_real_query -- Helper SELECTs during restore must use the same unfiltered mysqli handle as exec_sql.
 			$ok = mysqli_real_query( $this->dbh, $sql );
 		} catch ( \mysqli_sql_exception $e ) {
 			$this->last_errno = (string) $e->getCode();
@@ -1740,19 +1748,19 @@ class Database_Importer {
 			return null;
 		}
 		if ( ! $ok ) {
-			$this->last_errno = (string) mysqli_errno( $this->dbh );
-			$this->last_error = (string) mysqli_error( $this->dbh );
+			$this->last_errno = (string) mysqli_errno( $this->dbh ); // phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_errno
+			$this->last_error = (string) mysqli_error( $this->dbh ); // phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_error
 			return null;
 		}
-		$result = mysqli_store_result( $this->dbh );
+		$result = mysqli_store_result( $this->dbh ); // phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_store_result
 		if ( ! ( $result instanceof \mysqli_result ) ) {
 			return array();
 		}
 		$out = array();
-		while ( $row = mysqli_fetch_assoc( $result ) ) { // phpcs:ignore WordPress.CodeAnalysis.AssignmentInCondition.FoundInWhileCondition
+		while ( $row = mysqli_fetch_assoc( $result ) ) { // phpcs:ignore WordPress.CodeAnalysis.AssignmentInCondition.FoundInWhileCondition,WordPress.DB.RestrictedFunctions.mysql_mysqli_fetch_assoc
 			$out[] = $row;
 		}
-		mysqli_free_result( $result );
+		mysqli_free_result( $result ); // phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_free_result
 		return $out;
 	}
 

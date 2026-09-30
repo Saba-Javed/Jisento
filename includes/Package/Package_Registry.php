@@ -280,6 +280,7 @@ class Package_Registry {
 	private function include_job_packages( array &$out, array &$seen ) {
 		global $wpdb;
 		$table = $wpdb->prefix . 'jisento_jobs';
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; no user input.
 		$rows  = $wpdb->get_results( "SELECT state_json FROM {$table} WHERE type = 'export' AND status = 'completed' ORDER BY id DESC LIMIT 20" );
 		if ( ! $rows ) {
 			return;

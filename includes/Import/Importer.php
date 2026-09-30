@@ -1597,7 +1597,7 @@ class Importer {
 		}
 		$admin_id = ! empty( $state['import_admin_id'] ) ? (int) $state['import_admin_id'] : 0;
 		if ( $admin_id <= 0 || ! $wpdb->get_var( $wpdb->prepare( "SELECT ID FROM {$wpdb->users} WHERE ID = %d", $admin_id ) ) ) {
-			$admin_id = (int) $wpdb->get_var( "SELECT ID FROM {$wpdb->users} ORDER BY ID ASC LIMIT 1" );
+			$admin_id = (int) $wpdb->get_var( "SELECT ID FROM {$wpdb->users} ORDER BY ID ASC LIMIT 1" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- No placeholders; {$wpdb->users} is the WP users table.
 		}
 		if ( $admin_id <= 0 ) {
 			return $state;

@@ -239,6 +239,8 @@ class Admin_Guard {
 		if ( $table !== $found ) {
 			return false;
 		}
+		// No user input: table name is derived from $wpdb->prefix; statuses are literals.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$job = $wpdb->get_var( "SELECT job_id FROM `{$table}` WHERE type IN ('import','receive') AND status IN ('running','preparing') LIMIT 1" );
 		return is_string( $job ) && '' !== $job;
 	}
