@@ -341,7 +341,7 @@ class Admin {
 		}
 
 		$size   = (int) $check['size'];
-		$range  = isset( $_SERVER['HTTP_RANGE'] ) ? (string) wp_unslash( $_SERVER['HTTP_RANGE'] ) : '';
+		$range  = isset( $_SERVER['HTTP_RANGE'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_RANGE'] ) ) : '';
 		$parsed = self::parse_byte_range( $range, $size );
 		if ( is_wp_error( $parsed ) ) {
 			status_header( 416 );
@@ -367,7 +367,7 @@ class Admin {
 		}
 		header( 'Content-Type: application/octet-stream' );
 		header( 'Content-Transfer-Encoding: binary' );
-		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+		header( 'Content-Disposition: attachment; filename="' . sanitize_file_name( $filename ) . '"' );
 		header( 'Content-Length: ' . $length );
 		header( 'Accept-Ranges: bytes' );
 		header( 'X-LiteSpeed-Cache-Control: no-cache' );

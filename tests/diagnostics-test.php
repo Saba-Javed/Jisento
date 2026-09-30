@@ -19,6 +19,8 @@ check( 'loopback uses Job_Scheduler::probe_loopback', false !== strpos( $src, 'J
 check( 'loopback blocked copy is present', false !== strpos( $src, 'Background processing is blocked by the server' ) );
 check( 'disk label mentions reported by server', false !== strpos( $src, 'Free disk space (reported by server)' ) );
 check( 'disk note about hosting plan limit', false !== strpos( $src, 'hosting plan may have a lower limit' ) );
+check( 'outbound does not probe api.wordpress.org', false === strpos( $src, 'api.wordpress.org' ) );
+check( 'outbound uses local home_url loopback', false !== strpos( $src, 'home_url( \'/\')' ) || false !== strpos( $src, "home_url( '/' )" ) );
 
 $d = new Diagnostics();
 $disk = $d->run_check( 'disk' );

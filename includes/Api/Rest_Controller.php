@@ -1133,16 +1133,17 @@ class Rest_Controller {
 
 		$upload_id = $request->get_param( 'upload_id' );
 		if ( ! $upload_id ) {
-			$upload_id = isset( $_SERVER['HTTP_X_JISENTO_UPLOAD_ID'] ) ? $_SERVER['HTTP_X_JISENTO_UPLOAD_ID'] : '';
+			$upload_id = isset( $_SERVER['HTTP_X_JISENTO_UPLOAD_ID'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_JISENTO_UPLOAD_ID'] ) ) : '';
 		}
-		$offset = $request->get_param( 'offset' );
+		$upload_id = preg_replace( '/[^a-zA-Z0-9_]/', '', (string) $upload_id );
+		$offset    = $request->get_param( 'offset' );
 		if ( null === $offset || '' === $offset ) {
-			$offset = isset( $_SERVER['HTTP_X_JISENTO_OFFSET'] ) ? $_SERVER['HTTP_X_JISENTO_OFFSET'] : 0;
+			$offset = isset( $_SERVER['HTTP_X_JISENTO_OFFSET'] ) ? absint( wp_unslash( $_SERVER['HTTP_X_JISENTO_OFFSET'] ) ) : 0;
 		}
 		$offset = max( 0, (int) $offset );
 		$sha    = strtolower( (string) $request->get_header( 'x_jisento_chunk_sha256' ) );
 		if ( ! preg_match( '/^[a-f0-9]{64}$/', $sha ) ) {
-			$sha = isset( $_SERVER['HTTP_X_JISENTO_CHUNK_SHA256'] ) ? strtolower( (string) $_SERVER['HTTP_X_JISENTO_CHUNK_SHA256'] ) : '';
+			$sha = isset( $_SERVER['HTTP_X_JISENTO_CHUNK_SHA256'] ) ? strtolower( sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_JISENTO_CHUNK_SHA256'] ) ) ) : '';
 		}
 		if ( ! preg_match( '/^[a-f0-9]{64}$/', $sha ) ) {
 			return new \WP_Error( 'jisento_upload', __( 'Missing or invalid chunk checksum.', 'jisento-migration' ), array( 'status' => 400 ) );

@@ -172,12 +172,29 @@ class Diagnostics {
 		);
 	}
 
+	/**
+	 * Prove the HTTP API can complete a request via a local loopback only.
+	 * Does not contact wordpress.org or any third-party host.
+	 *
+	 * @return array
+	 */
 	private function outbound() {
-		$response = wp_remote_get( 'https://api.wordpress.org/core/version-check/1.7/', array( 'timeout' => 8 ) );
+		$url  = home_url( '/' );
+		$args = array(
+			'timeout'     => 8,
+			'redirection' => 0,
+			'sslverify'   => (bool) apply_filters( 'https_local_ssl_verify', true ),
+		);
+		$response = wp_remote_head( $url, $args );
+		if ( is_wp_error( $response ) ) {
+			// Some hosts reject HEAD; fall back to a local GET.
+			$response = wp_remote_get( $url, $args );
+		}
 		if ( is_wp_error( $response ) ) {
 			return $this->item( 'outbound', __( 'Outbound Connections', 'jisento-migration' ), $response->get_error_message(), false );
 		}
 		$code = (int) wp_remote_retrieve_response_code( $response );
-		return $this->item( 'outbound', __( 'Outbound Connections', 'jisento-migration' ), $code < 500 ? 'Yes' : 'HTTP ' . $code, $code < 500 );
+		$ok   = $code > 0 && $code < 500;
+		return $this->item( 'outbound', __( 'Outbound Connections', 'jisento-migration' ), $ok ? 'Yes' : 'HTTP ' . $code, $ok );
 	}
 }

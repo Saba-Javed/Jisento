@@ -102,7 +102,10 @@ class Job_Continuation {
 	 * @return string
 	 */
 	public static function presented_dispatch() {
-		return isset( $_SERVER['HTTP_X_JISENTO_DISPATCH'] ) ? (string) $_SERVER['HTTP_X_JISENTO_DISPATCH'] : '';
+		if ( ! isset( $_SERVER['HTTP_X_JISENTO_DISPATCH'] ) ) {
+			return '';
+		}
+		return sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_JISENTO_DISPATCH'] ) );
 	}
 
 	/**
@@ -194,7 +197,7 @@ class Job_Continuation {
 	 * @return string
 	 */
 	public static function presented() {
-		$secret = isset( $_SERVER['HTTP_X_JISENTO_JOB_TOKEN'] ) ? (string) $_SERVER['HTTP_X_JISENTO_JOB_TOKEN'] : '';
+		$secret = isset( $_SERVER['HTTP_X_JISENTO_JOB_TOKEN'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_JISENTO_JOB_TOKEN'] ) ) : '';
 		return self::valid_secret( $secret ) ? $secret : '';
 	}
 
