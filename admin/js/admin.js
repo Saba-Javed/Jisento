@@ -581,7 +581,7 @@
 				el('p', null, ['Name: ', el('code', null, job.package_name || '')]),
 				el('p', null, 'Size: ' + bytes(job.package_size)),
 				el('p', null, 'Status: Completed'),
-				el('p', null, 'Saved in wp-content/jisento/packages/'),
+				el('p', null, 'Saved in the Jisento packages folder'),
 				el('p', null, el('a', { className: 'button button-primary', href: dl }, 'Download'))
 			]));
 			loadBackups().catch(function (err) {

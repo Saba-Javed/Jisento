@@ -774,7 +774,7 @@ class Exporter {
 			clearstatcache( true, $dest );
 			if ( is_file( $partial ) ) {
 				if ( file_exists( $dest ) || ! @rename( $partial, $dest ) ) {
-					throw new \RuntimeException( sprintf( __( 'Operation: save the package. Reason: %s could not be renamed into place (it already exists, or the folder is not writable). Recovery: check wp-content/jisento/packages/, then start a new export.', 'jisento-migration' ), $name ) );
+					throw new \RuntimeException( sprintf( __( 'Operation: save the package. Reason: %s could not be renamed into place (it already exists, or the folder is not writable). Recovery: check the Jisento packages folder, then start a new export.', 'jisento-migration' ), $name ) );
 				}
 			} elseif ( ! is_file( $dest ) || (int) filesize( $dest ) !== $size ) {
 				throw new \RuntimeException( __( 'Operation: save the package. Reason: the built package disappeared before it was saved. Recovery: start a new export.', 'jisento-migration' ) );

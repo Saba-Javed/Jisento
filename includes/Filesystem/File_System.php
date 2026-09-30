@@ -102,7 +102,7 @@ class File_System {
 				return true;
 			}
 			if ( false !== strpos( $pattern, '*' ) ) {
-				if ( fnmatch( $pattern, $relative ) ) {
+				if ( fnmatch( $pattern, $relative ) || fnmatch( $pattern . '/*', $relative ) ) {
 					return true;
 				}
 			}
@@ -111,7 +111,7 @@ class File_System {
 	}
 
 	public static function default_cache_excludes() {
-		return array(
+		$excludes = array(
 			'wp-content/cache',
 			'wp-content/uploads/cache',
 			'wp-content/uploads/elementor/css',
@@ -125,6 +125,7 @@ class File_System {
 			'wp-content/upgrade-temp-backup',
 			'wp-content/debug.log',
 			'wp-content/jisento',
+			'wp-content/uploads/jisento-*',
 			'wp-content/backup-db',
 			'wp-content/backups',
 			'wp-content/updraft',
@@ -135,16 +136,22 @@ class File_System {
 			'wp-content/object-cache.php',
 			'wp-content/advanced-cache.php',
 		);
+		$own = \Jisento\Migration\Storage\Local_Storage::relative_content_path();
+		if ( '' !== $own && ! in_array( $own, $excludes, true ) ) {
+			$excludes[] = $own;
+		}
+		return $excludes;
 	}
 
 	public static function backup_excludes() {
-		return array(
+		$excludes = array(
 			'wp-content/updraft',
 			'wp-content/backups',
 			'wp-content/backup-db',
 			'wp-content/ai1wm-backups',
 			'wp-content/ai1wm-storage',
 			'wp-content/jisento',
+			'wp-content/uploads/jisento-*',
 			'wp-content/uploads/backupbuddy_backups',
 			'wp-content/uploads/backupbuddy_temp',
 			'wp-content/uploads/wpvividbackups',
@@ -154,6 +161,11 @@ class File_System {
 			'wp-content/uploads/*.wpress',
 			'wp-content/uploads/*.jisento',
 		);
+		$own = \Jisento\Migration\Storage\Local_Storage::relative_content_path();
+		if ( '' !== $own && ! in_array( $own, $excludes, true ) ) {
+			$excludes[] = $own;
+		}
+		return $excludes;
 	}
 
 	public static function environment_excludes() {

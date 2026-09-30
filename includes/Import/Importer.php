@@ -543,7 +543,7 @@ class Importer {
 			$segment = $segments[ $index ];
 			$dest    = $dir . '/' . basename( $segment['entry'] );
 			if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
-				throw self::error( $job, 'extract the database', sprintf( __( 'Folder %s could not be created.', 'jisento-migration' ), $dir ), __( 'Make wp-content/jisento writable by PHP, then press Retry.', 'jisento-migration' ) );
+				throw self::error( $job, 'extract the database', sprintf( __( 'Folder %s could not be created.', 'jisento-migration' ), $dir ), __( 'Make the Jisento storage folder writable by PHP, then press Retry.', 'jisento-migration' ) );
 			}
 			$result = $archive->extract_verified( $state['package_path'], $segment['entry'], $dest, $segment['bytes'], $segment['sha256'] );
 			if ( is_wp_error( $result ) ) {
@@ -1305,6 +1305,10 @@ class Importer {
 			}
 		}
 		if ( 0 === strpos( $lower, 'jisento/' ) || 'jisento' === $lower ) {
+			return true;
+		}
+		// Plugin data under uploads/jisento-{suffix}/ (and any matching folder name).
+		if ( 0 === strpos( $lower, 'uploads/jisento-' ) || preg_match( '#^uploads/jisento-[a-z0-9]+(/|$)#', $lower ) ) {
 			return true;
 		}
 		foreach ( $copies as $prefix ) {

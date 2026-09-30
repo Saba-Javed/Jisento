@@ -252,7 +252,7 @@ class Admin_Guard {
 	}
 
 	private static function path( $job_id ) {
-		$dir = defined( 'WP_CONTENT_DIR' ) ? WP_CONTENT_DIR . '/jisento/jobs' : sys_get_temp_dir();
+		$dir = \Jisento\Migration\Storage\Local_Storage::root_path() . '/jobs';
 		return $dir . '/' . $job_id . '.admins.json';
 	}
 

@@ -121,6 +121,20 @@ $jisento_stubs = array(
 	'get_option'          => function ( $k, $d = false ) { return array_key_exists( $k, $GLOBALS['jisento_test_options'] ) ? $GLOBALS['jisento_test_options'][ $k ] : $d; },
 	'update_option'       => function ( $k, $v ) { $GLOBALS['jisento_test_options'][ $k ] = $v; return true; },
 	'delete_option'       => function ( $k ) { unset( $GLOBALS['jisento_test_options'][ $k ] ); return true; },
+	'wp_upload_dir'       => function ( $time = null, $create_dir = true ) {
+		$base = defined( 'WP_CONTENT_DIR' ) ? WP_CONTENT_DIR . '/uploads' : sys_get_temp_dir() . '/jisento-uploads';
+		if ( $create_dir && ! is_dir( $base ) ) {
+			@mkdir( $base, 0777, true );
+		}
+		return array(
+			'path'    => $base,
+			'url'     => 'https://destination.test/wp-content/uploads',
+			'subdir'  => '',
+			'basedir' => $base,
+			'baseurl' => 'https://destination.test/wp-content/uploads',
+			'error'   => false,
+		);
+	},
 	'maybe_serialize'     => function ( $v ) { return ( is_array( $v ) || is_object( $v ) ) ? serialize( $v ) : $v; },
 	'maybe_unserialize'   => function ( $v ) { $u = @unserialize( (string) $v ); return ( false === $u && 'b:0;' !== $v ) ? $v : $u; },
 	'wp_cache_delete'     => function () { return true; },

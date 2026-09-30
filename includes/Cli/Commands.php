@@ -57,7 +57,7 @@ class Commands {
 		}
 		$secret = Job_Continuation::issue( $job->job_id );
 		if ( '' === $secret ) {
-			Job_Runner::fail( $job, sprintf( 'Stage: start. Operation: store the job token. Reason: the token file could not be written. Recovery: make wp-content/jisento/jobs writable. Job: %s', $job->job_id ) );
+			Job_Runner::fail( $job, sprintf( 'Stage: start. Operation: store the job token. Reason: the token file could not be written. Recovery: make the Jisento jobs folder writable. Job: %s', $job->job_id ) );
 			\WP_CLI::error( 'Could not store the job continuation token.' );
 		}
 		$state                = is_array( $job->state ) ? $job->state : array();
@@ -125,7 +125,7 @@ class Commands {
 		}
 		$secret = Job_Continuation::issue( $job->job_id );
 		if ( '' === $secret ) {
-			Job_Runner::fail( $job, sprintf( 'Stage: start. Operation: store the job token. Reason: the token file could not be written. Recovery: make wp-content/jisento/jobs writable. Job: %s', $job->job_id ) );
+			Job_Runner::fail( $job, sprintf( 'Stage: start. Operation: store the job token. Reason: the token file could not be written. Recovery: make the Jisento jobs folder writable. Job: %s', $job->job_id ) );
 			\WP_CLI::error( 'Could not store the job continuation token.' );
 		}
 		$state                = is_array( $job->state ) ? $job->state : array();

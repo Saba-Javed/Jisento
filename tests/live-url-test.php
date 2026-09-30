@@ -12,6 +12,18 @@ require __DIR__ . '/bootstrap.php';
 
 use Jisento\Migration\Core\Live_Url;
 use Jisento\Migration\Import\Importer;
+use Jisento\Migration\Storage\Local_Storage;
+
+$GLOBALS['jisento_test_options']['jisento_storage_suffix'] = 'testpin01';
+
+/**
+ * Absolute path to the live-url pin file under the current storage root.
+ *
+ * @return string
+ */
+function lu_pin_path() {
+	return Local_Storage::root_path() . '/live-url.json';
+}
 
 function lu_rmtree( $dir ) {
 	if ( ! is_dir( $dir ) ) {
@@ -104,9 +116,9 @@ check( 'single-file plugins are kept', in_array( 'hello.php', Live_Url::filter_a
 $dirs = Importer::skipped_plugin_dirs( array( 'wp-content/plugins/old-jisento-copy/', 'plugins/jisento-migration/' ), array( 'plugin_basename' => 'jisento-src/jisento-migration.php' ) );
 check( 'skipped dirs come from package copies and the source basename', array( 'old-jisento-copy', 'jisento-migration', 'jisento-src' ) === $dirs, json_encode( $dirs ) );
 
-@mkdir( WP_CONTENT_DIR . '/jisento', 0777, true );
+wp_mkdir_p( dirname( lu_pin_path() ) );
 file_put_contents(
-	WP_CONTENT_DIR . '/jisento/live-url.json',
+	lu_pin_path(),
 	json_encode(
 		array(
 			'job_id'                  => 'job_release_test',
@@ -125,7 +137,7 @@ check(
 	array( 'woocommerce/woocommerce.php', 'elementor/elementor.php', JISENTO_BASENAME ) === $written,
 	json_encode( $written )
 );
-check( 'release removes the pin', ! is_file( WP_CONTENT_DIR . '/jisento/live-url.json' ) );
+check( 'release removes the pin', ! is_file( lu_pin_path() ) );
 
 // --- theme pin during import / release -------------------------------------
 
@@ -138,7 +150,7 @@ file_put_contents( $themes . '/grillino/functions.php', "<?php require_once __DI
 check( 'incomplete imported theme is not ready', ! Live_Url::theme_files_ready( 'grillino', 'grillino' ) );
 
 file_put_contents(
-	WP_CONTENT_DIR . '/jisento/live-url.json',
+	lu_pin_path(),
 	json_encode(
 		array(
 			'job_id'               => 'job_theme_pin',
@@ -182,7 +194,7 @@ $warn = Live_Url::apply_imported_theme(
 check( 'skip_themes keeps destination theme with a warning', '' !== $warn && false !== strpos( $warn, 'skip-themes' ), $warn );
 
 file_put_contents(
-	WP_CONTENT_DIR . '/jisento/live-url.json',
+	lu_pin_path(),
 	json_encode(
 		array(
 			'job_id'     => 'job_skip_theme',
@@ -194,9 +206,9 @@ file_put_contents(
 	)
 );
 Live_Url::skip_themes( 'job_skip_theme' );
-$pin = json_decode( (string) file_get_contents( WP_CONTENT_DIR . '/jisento/live-url.json' ), true );
+$pin = json_decode( (string) file_get_contents( lu_pin_path() ), true );
 check( 'skip_themes is stored on the pin', ! empty( $pin['skip_themes'] ) );
-@unlink( WP_CONTENT_DIR . '/jisento/live-url.json' );
+@unlink( lu_pin_path() );
 
 $live = file_get_contents( JISENTO_PATH . 'includes/Core/Live_Url.php' );
 check( 'hold pins template via pre_option_template', false !== strpos( $live, 'pre_option_template' ) && false !== strpos( $live, 'pre_option_stylesheet' ) );

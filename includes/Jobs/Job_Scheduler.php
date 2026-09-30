@@ -256,7 +256,7 @@ class Job_Scheduler {
 		if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
 			return new \WP_Error(
 				'jisento_probe',
-				__( 'Stage: start. Operation: loopback probe. Reason: the probe folder is not writable. Recovery: make wp-content/jisento writable by PHP. Job: -', 'jisento-migration' ),
+				__( 'Stage: start. Operation: loopback probe. Reason: the probe folder is not writable. Recovery: make the Jisento storage folder writable by PHP. Job: -', 'jisento-migration' ),
 				array( 'status' => 500 )
 			);
 		}
@@ -264,7 +264,7 @@ class Job_Scheduler {
 		if ( false === file_put_contents( $marker, (string) time(), LOCK_EX ) ) {
 			return new \WP_Error(
 				'jisento_probe',
-				__( 'Stage: start. Operation: loopback probe. Reason: the probe marker could not be written. Recovery: make wp-content/jisento writable by PHP. Job: -', 'jisento-migration' ),
+				__( 'Stage: start. Operation: loopback probe. Reason: the probe marker could not be written. Recovery: make the Jisento storage folder writable by PHP. Job: -', 'jisento-migration' ),
 				array( 'status' => 500 )
 			);
 		}

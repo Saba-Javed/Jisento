@@ -12,7 +12,7 @@ $download_base = add_query_arg(
 ?>
 <section class="jisento-card">
 	<h2><?php esc_html_e( 'Backups', 'jisento-migration' ); ?></h2>
-	<p><?php esc_html_e( 'Every .jisento package saved in wp-content/jisento is listed here, including manual full, database, and wp-content backups. A backup is marked Completed when the file exists, is larger than 0 bytes, and matches its registry record. A backup created in the last hour is never removed by retention.', 'jisento-migration' ); ?></p>
+	<p><?php esc_html_e( 'Every .jisento package saved in the Jisento storage folder is listed here, including manual full, database, and wp-content backups. A backup is marked Completed when the file exists, is larger than 0 bytes, and matches its registry record. A backup created in the last hour is never removed by retention.', 'jisento-migration' ); ?></p>
 	<p><button type="button" class="button button-primary" id="jisento-open-backup"><?php esc_html_e( 'Create New Backup', 'jisento-migration' ); ?></button></p>
 	<table class="widefat striped" id="jisento-backups-table">
 		<thead>

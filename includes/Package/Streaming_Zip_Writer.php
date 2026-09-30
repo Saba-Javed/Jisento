@@ -68,7 +68,7 @@ class Streaming_Zip_Writer {
 		$writer = new self( $path, $state_path );
 		$dir    = dirname( $writer->path );
 		if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
-			throw new \RuntimeException( sprintf( 'Operation: create the package. Reason: folder %s could not be created. Recovery: make wp-content/jisento writable by PHP, then start a new export.', $dir ) );
+			throw new \RuntimeException( sprintf( 'Operation: create the package. Reason: folder %s could not be created. Recovery: make the Jisento storage folder writable by PHP, then start a new export.', $dir ) );
 		}
 		$chunk = isset( $options['hash_chunk'] ) ? (int) $options['hash_chunk'] : self::HASH_CHUNK;
 		if ( $chunk < 4096 || 0 !== $chunk % 4096 ) {
@@ -128,7 +128,7 @@ class Streaming_Zip_Writer {
 			if ( $ix ) {
 				fclose( $ix );
 			}
-			throw new \RuntimeException( sprintf( 'Operation: open the package for writing. Reason: %s could not be opened (permission denied or disk full). Recovery: make wp-content/jisento writable by PHP, then start a new export.', basename( $this->path ) ) );
+			throw new \RuntimeException( sprintf( 'Operation: open the package for writing. Reason: %s could not be opened (permission denied or disk full). Recovery: make the Jisento storage folder writable by PHP, then start a new export.', basename( $this->path ) ) );
 		}
 		// Anything past the committed length was written by a request that did not finish.
 		if ( ! ftruncate( $fh, (int) $this->state['offset'] ) || ! ftruncate( $ix, (int) $this->state['index_bytes'] ) ) {

@@ -2,7 +2,7 @@
 /**
  * Lets a migration job keep running after the restored database replaces the destination login.
  *
- * The proof is a random value stored only as a hash in wp-content/jisento/jobs/.
+ * The proof is a random value stored only as a hash in the Jisento jobs folder.
  * It is not a WordPress auth cookie and it is not written into the database.
  *
  * @package Jisento\Migration
@@ -370,7 +370,7 @@ class Job_Continuation {
 			// Another request may have won the race: always use what is on disk.
 			$raw = is_readable( $path ) ? trim( (string) file_get_contents( $path ) ) : '';
 			if ( ! preg_match( '/^[a-f0-9]{64}$/', $raw ) ) {
-				throw new \RuntimeException( sprintf( 'Operation: create the job token key. Reason: %s could not be written. Recovery: make wp-content/jisento/jobs writable by PHP.', $path ) );
+				throw new \RuntimeException( sprintf( 'Operation: create the job token key. Reason: %s could not be written. Recovery: make the Jisento jobs folder writable by PHP.', $path ) );
 			}
 		}
 		$key = $raw;

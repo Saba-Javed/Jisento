@@ -620,7 +620,7 @@ PHP;
 	}
 
 	private static function path() {
-		$dir = defined( 'WP_CONTENT_DIR' ) ? WP_CONTENT_DIR . '/jisento' : sys_get_temp_dir();
+		$dir = \Jisento\Migration\Storage\Local_Storage::root_path();
 		return $dir . '/live-url.json';
 	}
 

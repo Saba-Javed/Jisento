@@ -447,7 +447,7 @@ class Rest_Controller {
 		}
 		$secret = Job_Continuation::issue( $job->job_id );
 		if ( '' === $secret ) {
-			Job_Runner::fail( $job, sprintf( __( 'Stage: start. Operation: store the job token. Reason: the token file could not be written. Recovery: make wp-content/jisento/jobs writable by PHP, then start again. Job: %s', 'jisento-migration' ), $job->job_id ) );
+			Job_Runner::fail( $job, sprintf( __( 'Stage: start. Operation: store the job token. Reason: the token file could not be written. Recovery: make the Jisento jobs folder writable by PHP, then start again. Job: %s', 'jisento-migration' ), $job->job_id ) );
 			return new \WP_Error(
 				'jisento_continuation',
 				__( 'The job could not store a continuation proof, so it was not started.', 'jisento-migration' ),
