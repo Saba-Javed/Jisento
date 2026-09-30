@@ -112,8 +112,118 @@ class Admin {
 	}
 
 	public function page_logs() {
-		$logs = Plugin::instance()->logger->query( '', 200 );
-		$this->render( 'logs', array( 'logs' => $logs ) );
+		$history = $this->migration_history( 50 );
+		$this->render( 'logs', array( 'history' => $history ) );
+	}
+
+	/**
+	 * Build Migration history rows for the Logs screen.
+	 *
+	 * @param int $limit Max jobs.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function migration_history( $limit = 50 ) {
+		$jobs = Plugin::instance()->jobs->list_recent( max( 1, (int) $limit ) );
+		$out  = array();
+		foreach ( (array) $jobs as $job ) {
+			$full = Plugin::instance()->jobs->get( $job->job_id );
+			$state = ( $full && is_array( $full->state ) ) ? $full->state : array();
+			$opts  = isset( $state['options'] ) && is_array( $state['options'] ) ? $state['options'] : array();
+			$type  = (string) $job->type;
+			$mode  = isset( $opts['destination_mode'] ) ? (string) $opts['destination_mode'] : '';
+			if ( 'export' === $type ) {
+				$type_label = __( 'Export', 'jisento' );
+			} elseif ( 'receive' === $type ) {
+				$type_label = __( 'Key transfer', 'jisento' );
+			} elseif ( 'import' === $type && 'replace' === $mode ) {
+				$type_label = __( 'Import replace', 'jisento' );
+			} elseif ( 'import' === $type && 'preserve' === $mode ) {
+				$type_label = __( 'Import preserve', 'jisento' );
+			} elseif ( 'import' === $type ) {
+				$type_label = __( 'Import', 'jisento' );
+			} else {
+				$type_label = ucfirst( $type );
+			}
+
+			$status = (string) $job->status;
+			$result_map = array(
+				'completed' => __( 'Completed', 'jisento' ),
+				'failed'    => __( 'Failed', 'jisento' ),
+				'cancelled' => __( 'Cancelled', 'jisento' ),
+				'paused'    => __( 'Paused', 'jisento' ),
+				'running'   => __( 'Running', 'jisento' ),
+				'created'   => __( 'Created', 'jisento' ),
+				'preparing' => __( 'Preparing', 'jisento' ),
+			);
+			$result = isset( $result_map[ $status ] ) ? $result_map[ $status ] : $status;
+
+			$created = strtotime( (string) $job->created_at );
+			$updated = strtotime( (string) $job->updated_at );
+			$seconds = ( $created && $updated && $updated >= $created ) ? ( $updated - $created ) : 0;
+			if ( $seconds < 60 ) {
+				$duration = sprintf(
+					/* translators: %d: seconds */
+					_n( '%d second', '%d seconds', $seconds, 'jisento' ),
+					$seconds
+				);
+			} elseif ( $seconds < 3600 ) {
+				$mins = (int) round( $seconds / 60 );
+				$duration = sprintf(
+					/* translators: %d: minutes */
+					_n( '%d minute', '%d minutes', $mins, 'jisento' ),
+					$mins
+				);
+			} else {
+				$hours = (int) floor( $seconds / 3600 );
+				$mins  = (int) round( ( $seconds % 3600 ) / 60 );
+				$duration = sprintf(
+					/* translators: 1: hours, 2: minutes */
+					__( '%1$d h %2$d min', 'jisento' ),
+					$hours,
+					$mins
+				);
+			}
+
+			$lines = array();
+			if ( ! empty( $state['timings'] ) && is_array( $state['timings'] ) ) {
+				foreach ( $state['timings'] as $phase => $secs ) {
+					$lines[] = sprintf(
+						/* translators: 1: stage name, 2: seconds */
+						__( 'Stage %1$s: %2$ss', 'jisento' ),
+						sanitize_key( (string) $phase ),
+						(string) round( (float) $secs, 1 )
+					);
+				}
+			}
+			if ( in_array( $status, array( 'failed', 'cancelled' ), true ) ) {
+				$summary = (string) ( $job->error_summary ? $job->error_summary : '' );
+				if ( $summary ) {
+					$lines[] = $summary;
+				} elseif ( ! empty( $job->stage ) ) {
+					$lines[] = sprintf(
+						/* translators: %s: stage slug */
+						__( 'Stopped during: %s', 'jisento' ),
+						(string) $job->stage
+					);
+				}
+			}
+
+			$log_url = wp_nonce_url(
+				admin_url( 'admin-post.php?action=jisento_log&migration_id=' . rawurlencode( (string) $job->job_id ) ),
+				'jisento_log'
+			);
+
+			$out[] = array(
+				'job_id'        => (string) $job->job_id,
+				'date'          => (string) $job->created_at,
+				'type_label'    => $type_label,
+				'result'        => $result,
+				'duration'      => $duration,
+				'details_lines' => $lines,
+				'log_url'       => $log_url,
+			);
+		}
+		return $out;
 	}
 
 	private function render( $view, array $data = array() ) {

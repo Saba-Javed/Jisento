@@ -138,7 +138,7 @@ class Plugin {
 		( new Security\Migration_Key_Store() )->expire_stale();
 		( new Security\Session_Store() )->expire_stale();
 		$this->storage->enforce_retention( (int) $this->settings->get( 'keep_backups', 3 ) );
-		$this->logger->prune( 30 );
+		$this->logger->prune( 30, 20 * 1048576 );
 	}
 
 	public function run_job_tick() {

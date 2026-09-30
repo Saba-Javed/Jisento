@@ -61,12 +61,20 @@
 	word-break: break-all;
 	margin: 0 0 8px;
 }
-.jisento-connection-result {
-	margin-top: 16px;
-	padding: 12px 16px;
-	border: 1px solid #c3c4c7;
-	border-radius: 4px;
-	background: #f6f7f7;
+.jisento-history-details { margin: 0; }
+.jisento-history-lines { margin: 8px 0 0; padding-left: 1.2em; }
+.jisento-debug-downloads {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.jisento-debug-downloads li {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 16px;
+	align-items: center;
+	padding: 8px 0;
+	border-bottom: 1px solid #f0f0f1;
 }
 .jisento-ok { color: #00a32a; }
 .jisento-warn { color: #dba617; }
