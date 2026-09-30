@@ -2,7 +2,6 @@
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
-$wizard_prefix = isset( $wizard_prefix ) ? $wizard_prefix : '';
 ?>
 <section class="jisento-wizard-panel" id="jisento-wizard-step-2" data-wizard-step="2" hidden>
 	<h2><?php esc_html_e( 'What should happen to this site?', 'jisento-migration' ); ?></h2>

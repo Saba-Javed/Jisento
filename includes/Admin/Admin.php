@@ -163,13 +163,13 @@ class Admin {
 	}
 
 	public function page_settings() {
-		$settings = Plugin::instance()->settings->all();
-		$this->render( 'settings', array( 'settings' => $settings ) );
+		$jisento_settings = Plugin::instance()->settings->all();
+		$this->render( 'settings', array( 'jisento_settings' => $jisento_settings ) );
 	}
 
 	public function page_logs() {
-		$history = $this->migration_history( 50 );
-		$this->render( 'logs', array( 'history' => $history ) );
+		$jisento_history = $this->migration_history( 50 );
+		$this->render( 'logs', array( 'jisento_history' => $jisento_history ) );
 	}
 
 	/**

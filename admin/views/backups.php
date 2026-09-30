@@ -2,7 +2,7 @@
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
-$download_base = add_query_arg(
+$jisento_download_base = add_query_arg(
 	array(
 		'action'   => 'jisento_download',
 		'_wpnonce' => wp_create_nonce( 'jisento_download' ),
@@ -40,6 +40,6 @@ $download_base = add_query_arg(
 		</p>
 	</div>
 </div>
-<script>window.jisentoDownloadBase = <?php echo wp_json_encode( $download_base ); ?>;</script>
+<script>window.jisentoDownloadBase = <?php echo wp_json_encode( $jisento_download_base ); ?>;</script>
 <div id="jisento-progress" class="jisento-panel" hidden></div>
 <div id="jisento-result" class="jisento-panel" hidden></div>
