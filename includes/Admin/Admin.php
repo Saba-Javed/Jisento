@@ -35,7 +35,7 @@ class Admin {
 			$cap,
 			'jisento',
 			array( $this, 'page_migration' ),
-			'dashicons-migrate',
+			$this->menu_icon_data_uri(),
 			58
 		);
 		add_submenu_page( 'jisento', __( 'Migration', 'jisento' ), __( 'Migration', 'jisento' ), $cap, 'jisento', array( $this, 'page_migration' ) );
@@ -80,6 +80,22 @@ class Admin {
 			'before'
 		);
 		wp_dequeue_style( 'wp-auth-check' );
+	}
+
+	/**
+	 * Base64 SVG data URI for the admin menu (filled black paths for svg-painter).
+	 *
+	 * @return string
+	 */
+	private function menu_icon_data_uri() {
+		$path = JISENTO_PATH . 'assets/icons/menu-icon.svg';
+		if ( ! is_readable( $path ) ) {
+			return 'dashicons-migrate';
+		}
+		$svg = (string) file_get_contents( $path );
+		$svg = preg_replace( '/<!--.*?-->/s', '', $svg );
+		$svg = trim( preg_replace( '/\s+/', ' ', $svg ) );
+		return 'data:image/svg+xml;base64,' . base64_encode( $svg );
 	}
 
 	public function page_migration() {
