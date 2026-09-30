@@ -268,17 +268,17 @@ function rt_import( $dbname, array $segments, $dump_dir, array $options, $fault_
 						if ( $point !== $fault_at['point'] || $importer->statement_no() < $fault_at['after'] ) {
 							return;
 						}
-						// Batch commits fire rarely; statement_no can jump over exact multiples of
-						// every. Count hook calls so before_commit/after_commit still get killed.
+						// Large multi-row INSERTs and batch commits fire far fewer hooks than
+						// the old per-row / per-statement model, so count hook calls and scale
+						// "every" down so crash-resume still exercises each kill point.
+						$hook_ticks++;
+						$every = max( 1, (int) $fault_at['every'] );
 						if ( 'before_commit' === $point || 'after_commit' === $point ) {
-							$hook_ticks++;
-							$every = max( 1, (int) ceil( $fault_at['every'] / 50 ) );
-							if ( 0 === ( $hook_ticks % $every ) ) {
-								throw new RuntimeException( 'simulated kill at ' . $point );
-							}
-							return;
+							$every = max( 1, (int) ceil( $every / 50 ) );
+						} else {
+							$every = max( 1, (int) ceil( $every / 20 ) );
 						}
-						if ( 0 === ( $importer->statement_no() % $fault_at['every'] ) ) {
+						if ( 0 === ( $hook_ticks % $every ) ) {
 							throw new RuntimeException( 'simulated kill at ' . $point );
 						}
 					}

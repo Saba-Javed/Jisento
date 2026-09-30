@@ -202,14 +202,7 @@ class Admin {
 
 			$lines = array();
 			if ( ! empty( $state['timings'] ) && is_array( $state['timings'] ) ) {
-				foreach ( $state['timings'] as $phase => $secs ) {
-					$lines[] = sprintf(
-						/* translators: 1: stage name, 2: seconds */
-						__( 'Stage %1$s: %2$ss', 'jisento' ),
-						sanitize_key( (string) $phase ),
-						(string) round( (float) $secs, 1 )
-					);
-				}
+				$lines = \Jisento\Migration\Core\Timings::readable_list( $state['timings'] );
 			}
 			if ( in_array( $status, array( 'failed', 'cancelled' ), true ) ) {
 				$summary = (string) ( $job->error_summary ? $job->error_summary : '' );

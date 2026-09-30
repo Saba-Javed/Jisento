@@ -834,19 +834,81 @@
 		if (!timings) {
 			return null;
 		}
+		function formatDuration(seconds) {
+			seconds = Math.max(0, Number(seconds) || 0);
+			if (seconds < 60) {
+				return Math.round(seconds) + ' s';
+			}
+			if (seconds < 3600) {
+				const m = Math.floor(seconds / 60);
+				const s = Math.round(seconds - m * 60);
+				return m + ' min ' + s + ' s';
+			}
+			const h = Math.floor(seconds / 3600);
+			const m = Math.round((seconds - h * 3600) / 60);
+			return h + ' h ' + m + ' min';
+		}
 		const labels = {
-			validating: 'Validation',
-			compatibility: 'Compatibility',
-			extracting: 'Extraction',
-			importing_database: 'Database restore',
-			importing_files: 'File restore',
-			replacing_urls: 'URL replacement',
-			finalizing: 'Finalization'
+			validating: 'Package validated',
+			compatibility: 'Compatibility checked',
+			extracting: 'Package extracted',
+			importing_database: 'Database restored',
+			importing_files: 'Files restored',
+			replacing_urls: 'URLs replaced',
+			finalizing: 'Migration finalized',
+			exporting_database: 'Database exported',
+			exporting_files: 'Files exported',
+			packaging: 'Package built',
+			checksum: 'Checksum verified',
+			finalize: 'Export finalized',
+			transfer: 'Package transferred',
+			upload: 'Package uploaded'
 		};
+		const order = [
+			'validating', 'compatibility', 'extracting', 'exporting_database', 'exporting_files',
+			'packaging', 'checksum', 'finalize', 'transfer', 'upload',
+			'importing_database', 'importing_files', 'replacing_urls', 'finalizing'
+		];
 		const lines = [];
-		Object.keys(labels).forEach(function (key) {
-			if (timings[key] > 0) {
-				lines.push(el('p', null, labels[key] + ': ' + Math.round(timings[key]) + 's'));
+		const seen = {};
+		Object.keys(timings).forEach(function (key) {
+			if (key.indexOf('table_') === 0) {
+				const entry = timings[key];
+				const secs = entry && typeof entry === 'object' ? entry.seconds : entry;
+				if (secs > 0) {
+					lines.push(el('p', null, 'Table ' + key.slice(6) + ' exported in ' + formatDuration(secs)));
+					seen[key] = true;
+				}
+			}
+		});
+		order.forEach(function (key) {
+			if (!(key in timings) || seen[key]) {
+				return;
+			}
+			const entry = timings[key];
+			const secs = entry && typeof entry === 'object' ? Number(entry.seconds) || 0 : Number(entry) || 0;
+			if (secs <= 0 && !(entry && entry.requests)) {
+				return;
+			}
+			const label = labels[key] || key;
+			if (key === 'transfer' && entry && entry.requests) {
+				lines.push(el('p', null,
+					'Package transferred in ' + formatDuration(secs) +
+					' (' + entry.requests + ' requests, avg chunk ' + formatDuration(entry.average_chunk_seconds || 0) + ')'
+				));
+			} else {
+				lines.push(el('p', null, label + ' in ' + formatDuration(secs)));
+			}
+			seen[key] = true;
+		});
+		Object.keys(timings).forEach(function (key) {
+			if (seen[key]) {
+				return;
+			}
+			const entry = timings[key];
+			const secs = entry && typeof entry === 'object' ? Number(entry.seconds) || 0 : Number(entry) || 0;
+			if (secs > 0) {
+				lines.push(el('p', null, (labels[key] || key) + ' in ' + formatDuration(secs)));
 			}
 		});
 		return lines;

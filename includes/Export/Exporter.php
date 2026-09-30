@@ -334,6 +334,22 @@ class Exporter {
 	private function export_database( $job, array $state ) {
 		$tables = isset( $state['tables'] ) ? $state['tables'] : array();
 		$dump   = isset( $state['dump'] ) && is_array( $state['dump'] ) ? $state['dump'] : Dump_Writer::initial_state( $tables );
+		if ( empty( $state['timing_db_started'] ) ) {
+			\Jisento\Migration\Core\Timings::begin( $state, 'exporting_database', (int) ( $state['db_size'] ?? 0 ) );
+			$state['timing_db_started'] = true;
+		}
+		$prev_index = isset( $dump['index'] ) ? (int) $dump['index'] : 0;
+		if ( empty( $state['timing_table_key'] ) && isset( $tables[ $prev_index ] ) ) {
+			$table = (string) $tables[ $prev_index ];
+			$meta  = isset( $state['table_meta'][ $table ] ) && is_array( $state['table_meta'][ $table ] ) ? $state['table_meta'][ $table ] : array();
+			$data  = isset( $meta['data'] ) ? (int) $meta['data'] : 0;
+			if ( $data >= \Jisento\Migration\Core\Timings::LARGE_TABLE_BYTES ) {
+				$key = 'table_' . preg_replace( '/[^A-Za-z0-9_]/', '_', $table );
+				\Jisento\Migration\Core\Timings::begin( $state, $key, $data );
+				$state['timing_table_key']  = $key;
+				$state['timing_table_name'] = $table;
+			}
+		}
 		$db     = new Database_Exporter();
 		$writer = new Dump_Writer( $state['dump_dir'], $db );
 		$next   = $writer->step( $dump, max( 1, Step_Budget::seconds( 8 ) ), 500 );
@@ -342,6 +358,25 @@ class Exporter {
 			throw new \RuntimeException( $next->get_error_message() );
 		}
 		$state['dump'] = $next;
+
+		$new_index = (int) $next['index'];
+		if ( ! empty( $state['timing_table_key'] ) && ( $new_index > $prev_index || ! empty( $next['done'] ) ) ) {
+			$tname = isset( $state['timing_table_name'] ) ? (string) $state['timing_table_name'] : '';
+			$bytes = ( $tname && isset( $next['table_stats'][ $tname ]['bytes'] ) ) ? (int) $next['table_stats'][ $tname ]['bytes'] : null;
+			\Jisento\Migration\Core\Timings::end( $state, (string) $state['timing_table_key'], $bytes );
+			unset( $state['timing_table_key'], $state['timing_table_name'] );
+			if ( $new_index > $prev_index && isset( $tables[ $new_index ] ) && empty( $next['done'] ) ) {
+				$table = (string) $tables[ $new_index ];
+				$meta  = isset( $state['table_meta'][ $table ] ) && is_array( $state['table_meta'][ $table ] ) ? $state['table_meta'][ $table ] : array();
+				$data  = isset( $meta['data'] ) ? (int) $meta['data'] : 0;
+				if ( $data >= \Jisento\Migration\Core\Timings::LARGE_TABLE_BYTES ) {
+					$key = 'table_' . preg_replace( '/[^A-Za-z0-9_]/', '_', $table );
+					\Jisento\Migration\Core\Timings::begin( $state, $key, $data );
+					$state['timing_table_key']  = $key;
+					$state['timing_table_name'] = $table;
+				}
+			}
+		}
 
 		$mode        = isset( $state['options']['mode'] ) ? $state['options']['mode'] : 'full';
 		$index       = (int) $next['index'];
@@ -352,6 +387,7 @@ class Exporter {
 		}
 		if ( ! empty( $next['done'] ) ) {
 			$state['sql_bytes'] = $sql_bytes;
+			\Jisento\Migration\Core\Timings::end( $state, 'exporting_database', $sql_bytes );
 			$unstable = array();
 			foreach ( $next['table_stats'] as $table => $stat ) {
 				if ( empty( $stat['stable'] ) ) {
@@ -363,6 +399,7 @@ class Exporter {
 			}
 			$stage    = 'packaging';
 			$progress = $this->export_percent( $mode, 'database', 1 );
+			\Jisento\Migration\Core\Timings::begin( $state, 'packaging', (int) ( $state['db_size'] ?? 0 ) + (int) ( $state['files_size'] ?? 0 ) );
 		} else {
 			$stage    = 'exporting_database';
 			$progress = $this->export_percent( $mode, 'database', $table_total > 0 ? $index / $table_total : 1 );
@@ -537,6 +574,9 @@ class Exporter {
 			$writer->commit();
 			$writer->close();
 			$state['zip_ready'] = true;
+			if ( empty( $state['timings']['packaging'] ) ) {
+				\Jisento\Migration\Core\Timings::begin( $state, 'packaging', (int) ( $state['db_size'] ?? 0 ) + (int) ( $state['files_size'] ?? 0 ) );
+			}
 			$state['zip_phase'] = ( 'files' === $mode ) ? 'files' : 'database';
 			$state['zip_index'] = 0;
 			$state['activity']  = $this->activity( 'packaging', __( 'Finalizing package', 'jisento' ), __( 'Writing package header', 'jisento' ), 0, (int) ( $state['file_count'] ?? 0 ), __( 'Files', 'jisento' ), '' );
@@ -705,6 +745,8 @@ class Exporter {
 			$state['package_built_size']     = (int) $result['size'];
 			$state['package_content_sha256'] = (string) $result['content_sha256'];
 			$state['finalize_step']          = 'verify';
+			\Jisento\Migration\Core\Timings::end( $state, 'packaging', (int) $result['size'] );
+			\Jisento\Migration\Core\Timings::begin( $state, 'checksum', (int) $result['size'] );
 			$state['activity']               = $this->activity( 'verifying', __( 'Verifying package', 'jisento' ), $state['package_name'], 1, 1, __( 'Package', 'jisento' ), '' );
 			return $this->save_work( $job, $state, 'packaging', $this->export_percent( $mode, 'finalize', 0.3 ), (int) $result['size'], (int) $result['size'] );
 		}
@@ -717,6 +759,8 @@ class Exporter {
 			$this->assert_package( $partial );
 			$state['package_name']  = $this->free_package_name( $state['package_name'], $job->job_id );
 			$state['finalize_step'] = 'rename';
+			\Jisento\Migration\Core\Timings::end( $state, 'checksum', (int) $state['package_built_size'] );
+			\Jisento\Migration\Core\Timings::begin( $state, 'finalize', (int) $state['package_built_size'] );
 			return $this->save_work( $job, $state, 'packaging', $this->export_percent( $mode, 'finalize', 0.7 ), (int) $state['package_built_size'], (int) $state['package_built_size'] );
 		}
 
@@ -794,21 +838,29 @@ class Exporter {
 		$state['package_id']   = $pack_id;
 		$state['package_name'] = $name;
 		unset( $state['package_partial'] );
+		\Jisento\Migration\Core\Timings::end( $state, 'finalize', $size );
+		$timing_lines = \Jisento\Migration\Core\Timings::readable_list( isset( $state['timings'] ) && is_array( $state['timings'] ) ? $state['timings'] : array() );
 		$state['report']       = array(
-			'source'    => home_url(),
-			'started'   => $job->created_at,
-			'completed' => current_time( 'mysql' ),
-			'database'  => File_System::readable_size( $state['db_size'] ?? 0 ),
-			'files'     => File_System::readable_size( $state['files_size'] ?? 0 ),
-			'total'     => File_System::readable_size( $size ),
-			'tables'    => isset( $state['tables'] ) ? count( $state['tables'] ) : 0,
-			'files_n'   => $expected_files,
-			'package'   => $name,
-			'size'      => $size,
-			'checksum'  => $checksum,
+			'source'       => home_url(),
+			'started'      => $job->created_at,
+			'completed'    => current_time( 'mysql' ),
+			'database'     => File_System::readable_size( $state['db_size'] ?? 0 ),
+			'files'        => File_System::readable_size( $state['files_size'] ?? 0 ),
+			'total'        => File_System::readable_size( $size ),
+			'tables'       => isset( $state['tables'] ) ? count( $state['tables'] ) : 0,
+			'files_n'      => $expected_files,
+			'package'      => $name,
+			'size'         => $size,
+			'checksum'     => $checksum,
+			'timings'      => isset( $state['timings'] ) ? $state['timings'] : array(),
+			'timing_lines' => $timing_lines,
+			'total_seconds'=> \Jisento\Migration\Core\Timings::total_seconds( isset( $state['timings'] ) && is_array( $state['timings'] ) ? $state['timings'] : array() ),
 		);
 
 		$plugin->logger->log( $job->job_id, 'packaging', 'package', $name, 'ok', 'Verified package bytes=' . $size . ' content_sha256=' . $checksum );
+		foreach ( $timing_lines as $line ) {
+			$plugin->logger->log( $job->job_id, 'packaging', 'timing', '', 'info', $line );
+		}
 
 		$saved = $plugin->jobs->update(
 			$job,

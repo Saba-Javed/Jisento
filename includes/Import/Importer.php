@@ -333,11 +333,7 @@ class Importer {
 			if ( ! empty( $state['timing_mark'] ) && ! empty( $state['timing_phase'] ) ) {
 				$delta = $now - (float) $state['timing_mark'];
 				if ( $delta > 0 && $delta < 180 ) {
-					if ( ! isset( $state['timings'] ) || ! is_array( $state['timings'] ) ) {
-						$state['timings'] = array();
-					}
-					$key = (string) $state['timing_phase'];
-					$state['timings'][ $key ] = ( isset( $state['timings'][ $key ] ) ? (float) $state['timings'][ $key ] : 0 ) + $delta;
+					\Jisento\Migration\Core\Timings::add( $state, (string) $state['timing_phase'], $delta, 0 );
 				}
 			}
 			$state['timing_mark']  = $now;
@@ -419,6 +415,23 @@ class Importer {
 			'database'      => (bool) $info['has_db'],
 			'files'         => (bool) $info['has_files'],
 		);
+		$sidecar = $path . '.json';
+		if ( empty( $state['timings']['transfer'] ) && empty( $state['timings']['upload'] ) && is_readable( $sidecar ) ) {
+			$pkg_meta = json_decode( (string) file_get_contents( $sidecar ), true );
+			if ( is_array( $pkg_meta ) && ! empty( $pkg_meta['upload_timing'] ) && is_array( $pkg_meta['upload_timing'] ) ) {
+				$ut = $pkg_meta['upload_timing'];
+				\Jisento\Migration\Core\Timings::set_transfer(
+					$state,
+					isset( $ut['requests'] ) ? (int) $ut['requests'] : 0,
+					isset( $ut['seconds'] ) ? (float) $ut['seconds'] : 0.0,
+					isset( $ut['bytes'] ) ? (int) $ut['bytes'] : 0
+				);
+				if ( isset( $state['timings']['transfer'] ) ) {
+					$state['timings']['upload'] = $state['timings']['transfer'];
+					unset( $state['timings']['transfer'] );
+				}
+			}
+		}
 		$state['jisento_copies']      = $archive->jisento_plugin_copies( $path );
 		$state['skipped_plugin_dirs'] = self::skipped_plugin_dirs( $state['jisento_copies'], $info['manifest'] );
 		Live_Url::skip_plugin_dirs( $job->job_id, $state['skipped_plugin_dirs'] );
@@ -1805,20 +1818,21 @@ class Importer {
 				__( 'Kept your existing versions of: %s', 'jisento' ),
 				implode( ', ', $state['kept_extensions'] )
 			) : '',
-			'timings'        => isset( $state['timings'] ) ? $state['timings'] : array(),
+			'timings'        => isset( $state['timings'] ) && is_array( $state['timings'] ) ? $state['timings'] : array(),
 		);
 		$cleanup->verify( $report );
 		if ( ! empty( $report['errors'] ) ) {
 			throw self::error( $job, 'verify the migrated site', implode( ' ', $report['warnings'] ), __( 'Resolve the reported problems, then press Retry.', 'jisento' ) );
 		}
-		$report['total_seconds'] = 0;
-		if ( ! empty( $state['timings'] ) && is_array( $state['timings'] ) ) {
-			$report['total_seconds'] = (int) round( array_sum( $state['timings'] ) );
-		}
+		$report['total_seconds'] = \Jisento\Migration\Core\Timings::total_seconds( $report['timings'] );
+		$report['timing_lines']  = \Jisento\Migration\Core\Timings::readable_list( $report['timings'] );
 		Live_Url::hold();
 		Admin_Guard::ensure( $job->job_id );
 		$state['report'] = $report;
 		$plugin->logger->log( $job->job_id, 'finalizing', 'complete', '', 'ok', 'Migration completed' );
+		foreach ( $report['timing_lines'] as $line ) {
+			$plugin->logger->log( $job->job_id, 'finalizing', 'timing', '', 'info', $line );
+		}
 
 		return $plugin->jobs->update(
 			$job,

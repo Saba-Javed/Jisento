@@ -579,6 +579,7 @@ class Rest_Controller {
 
 		if ( empty( $state['remote']['transfer_done'] ) ) {
 			$chunk  = max( 131072, min( 1048576, (int) Plugin::instance()->settings->get( 'chunk_size', 524288 ) ) );
+			$t0     = microtime( true );
 			$result = $xfer->download_package_chunk(
 				$remote['source_url'],
 				$remote['session_id'],
@@ -592,10 +593,20 @@ class Rest_Controller {
 			if ( is_wp_error( $result ) ) {
 				throw new \RuntimeException( 'Operation: download the package. Reason: ' . $result->get_error_message() . ' Recovery: start a new migration once the source is reachable.' );
 			}
+			$elapsed = microtime( true ) - $t0;
+			$state['remote']['timing_requests'] = ( isset( $state['remote']['timing_requests'] ) ? (int) $state['remote']['timing_requests'] : 0 ) + 1;
+			$state['remote']['timing_seconds']  = ( isset( $state['remote']['timing_seconds'] ) ? (float) $state['remote']['timing_seconds'] : 0.0 ) + $elapsed;
+			$state['remote']['timing_bytes']    = ( isset( $state['remote']['timing_bytes'] ) ? (int) $state['remote']['timing_bytes'] : 0 ) + (int) $result['bytes'];
 			$state['remote']['offset'] += (int) $result['bytes'];
 			$total = max( 1, (int) $state['remote']['package_size'] );
 			if ( $result['bytes'] < $chunk || $state['remote']['offset'] >= $total ) {
 				$state['remote']['transfer_done'] = true;
+				\Jisento\Migration\Core\Timings::set_transfer(
+					$state,
+					(int) $state['remote']['timing_requests'],
+					(float) $state['remote']['timing_seconds'],
+					(int) $state['remote']['timing_bytes']
+				);
 			}
 			return $plugin->jobs->update(
 				$job,
@@ -1197,11 +1208,14 @@ class Rest_Controller {
 				}
 				$meta['ranges']   = $merged;
 				$meta['received'] = Upload_Session::covered_bytes( $merged );
-				$saved            = Upload_Session::write_meta( $paths['meta'], $meta );
+				$write_ms         = ( microtime( true ) - $write_started ) * 1000.0;
+				$meta['timing_requests'] = ( isset( $meta['timing_requests'] ) ? (int) $meta['timing_requests'] : 0 ) + 1;
+				$meta['timing_ms']       = ( isset( $meta['timing_ms'] ) ? (float) $meta['timing_ms'] : 0.0 ) + $boot_ms + $write_ms;
+				$meta['timing_bytes']    = ( isset( $meta['timing_bytes'] ) ? (int) $meta['timing_bytes'] : 0 ) + $written;
+				$saved                   = Upload_Session::write_meta( $paths['meta'], $meta );
 				if ( is_wp_error( $saved ) ) {
 					return $saved;
 				}
-				$write_ms = ( microtime( true ) - $write_started ) * 1000.0;
 				$this->upload_timing_headers( $boot_ms, $write_ms );
 				Plugin::instance()->logger->log(
 					'upload',
@@ -1259,6 +1273,11 @@ class Rest_Controller {
 				if ( is_wp_error( $name ) ) {
 					return $name;
 				}
+				$upload_timing = array(
+					'requests' => isset( $meta['timing_requests'] ) ? (int) $meta['timing_requests'] : 0,
+					'seconds'  => isset( $meta['timing_ms'] ) ? round( (float) $meta['timing_ms'] / 1000.0, 3 ) : 0.0,
+					'bytes'    => isset( $meta['timing_bytes'] ) ? (int) $meta['timing_bytes'] : 0,
+				);
 				$key  = 'packages/' . $name;
 				$dest = $storage->get_path( $key );
 				wp_mkdir_p( dirname( $dest ) );
@@ -1304,16 +1323,18 @@ class Rest_Controller {
 					'table_count'       => isset( $manifest['table_count'] ) ? (int) $manifest['table_count'] : 0,
 					'file_count'        => isset( $manifest['file_count'] ) ? (int) $manifest['file_count'] : 0,
 					'contents'          => isset( $manifest['contents'] ) ? $manifest['contents'] : '',
+					'upload_timing'     => $upload_timing,
 				);
 				file_put_contents( $dest . '.json', wp_json_encode( $record ) );
 				$id = ( new \Jisento\Migration\Package\Package_Registry() )->create( $record );
 				return rest_ensure_response(
 					array(
-						'package'    => $key,
-						'package_id' => $id,
-						'manifest'   => $manifest,
-						'size'       => $size,
-						'filename'   => $name,
+						'package'       => $key,
+						'package_id'    => $id,
+						'manifest'      => $manifest,
+						'size'          => $size,
+						'filename'      => $name,
+						'upload_timing' => $upload_timing,
 					)
 				);
 			}
