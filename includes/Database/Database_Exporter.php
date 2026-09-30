@@ -14,6 +14,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Database_Exporter {
 
 	/**
+	 * Flush a multi-row INSERT when statement text reaches this size (~1.5 MiB).
+	 */
+	const INSERT_FLUSH_BYTES = 1572864;
+
+	/**
 	 * @var \wpdb
 	 */
 	private $wpdb;
@@ -387,6 +392,8 @@ class Database_Exporter {
 		$group   = array();
 		$size    = strlen( $prefix );
 		$written = 0;
+		// Prefer large multi-row INSERTs: flush around 1–2 MB of statement text (not row-count / 256 KB).
+		$flush_at = self::INSERT_FLUSH_BYTES;
 		foreach ( $rows as $row ) {
 			$values = array();
 			foreach ( $row as $column => $value ) {
@@ -399,7 +406,7 @@ class Database_Exporter {
 			$tuple   = '(' . implode( ',', $values ) . ')';
 			$group[] = $tuple;
 			$size   += strlen( $tuple ) + 1;
-			if ( count( $group ) >= 40 || $size >= 262144 ) {
+			if ( $size >= $flush_at ) {
 				$sql   = $prefix . implode( ',', $group ) . ";\n";
 				$wrote = self::write_all( $handle, $sql, $targets );
 				if ( is_wp_error( $wrote ) ) {

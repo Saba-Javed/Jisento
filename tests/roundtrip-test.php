@@ -262,9 +262,23 @@ function rt_import( $dbname, array $segments, $dump_dir, array $options, $fault_
 			$GLOBALS['wpdb'] = $wpdb;
 			$importer        = new Database_Importer( 'wp_', 'wp_', $options + array( 'session' => $session, 'statement_no' => $stmt_no ) );
 			if ( $fault_at && $killed < $fault_at['times'] ) {
+				$hook_ticks = 0;
 				$importer->set_fault_hook(
-					function ( $point ) use ( $fault_at, $importer ) {
-						if ( $point === $fault_at['point'] && $importer->statement_no() >= $fault_at['after'] && 0 === ( $importer->statement_no() % $fault_at['every'] ) ) {
+					function ( $point ) use ( $fault_at, $importer, &$hook_ticks ) {
+						if ( $point !== $fault_at['point'] || $importer->statement_no() < $fault_at['after'] ) {
+							return;
+						}
+						// Batch commits fire rarely; statement_no can jump over exact multiples of
+						// every. Count hook calls so before_commit/after_commit still get killed.
+						if ( 'before_commit' === $point || 'after_commit' === $point ) {
+							$hook_ticks++;
+							$every = max( 1, (int) ceil( $fault_at['every'] / 50 ) );
+							if ( 0 === ( $hook_ticks % $every ) ) {
+								throw new RuntimeException( 'simulated kill at ' . $point );
+							}
+							return;
+						}
+						if ( 0 === ( $importer->statement_no() % $fault_at['every'] ) ) {
 							throw new RuntimeException( 'simulated kill at ' . $point );
 						}
 					}

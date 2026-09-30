@@ -4,7 +4,12 @@
  *
  * Every table from the package is restored into "<table>__js". Live tables are only
  * touched by swap_shadows(), which renames all restored tables in one RENAME TABLE.
- * A statement, its ledger row and the resume cursor commit in one transaction.
+ *
+ * DML runs in batches (about 2 s or 8 MB of statement text). The applied ledger and
+ * resume cursor are written once per batch in the same transaction as that batch's
+ * INSERT data. A batch contains only DML; before any DDL the open batch is committed,
+ * then the DDL runs on its own. Resume continues at the first piece after the last
+ * committed batch.
  *
  * @package Jisento\Migration
  */
@@ -19,6 +24,16 @@ class Database_Importer {
 
 	const SHADOW_SUFFIX  = '__js';
 	const RETIRED_SUFFIX = '__jo';
+
+	/**
+	 * Commit an open DML batch after about this many seconds of wall time.
+	 */
+	const BATCH_TIME_SEC = 2.0;
+
+	/**
+	 * Commit an open DML batch after about this many bytes of executed INSERT text.
+	 */
+	const BATCH_MAX_BYTES = 8388608;
 
 	/**
 	 * Tables whose row values must never appear in an error message or log.
@@ -146,6 +161,41 @@ class Database_Importer {
 	private $escaper;
 
 	/**
+	 * Max bytes per INSERT piece (from @@max_allowed_packet / 4). Null until read.
+	 *
+	 * @var int|null
+	 */
+	private $insert_byte_limit = null;
+
+	/**
+	 * Whether a DML batch transaction is open.
+	 *
+	 * @var bool
+	 */
+	private $batch_open = false;
+
+	/**
+	 * microtime(true) when the open batch started.
+	 *
+	 * @var float
+	 */
+	private $batch_started = 0.0;
+
+	/**
+	 * Bytes of INSERT text executed in the open batch.
+	 *
+	 * @var int
+	 */
+	private $batch_bytes = 0;
+
+	/**
+	 * Last DML piece in the open batch (ledger written at batch flush).
+	 *
+	 * @var array{segment:int,offset:int,piece:int,next_offset:int,next_piece:int}|null
+	 */
+	private $batch_last = null;
+
+	/**
 	 * @param string $source_prefix Prefix in the package.
 	 * @param string $dest_prefix   Prefix on this site.
 	 * @param array  $options       job_id, legacy, placeholder_tokens, restore (list), keep (list), session (array).
@@ -189,6 +239,22 @@ class Database_Importer {
 
 	public function set_fault_hook( $callback ) {
 		$this->fault = is_callable( $callback ) ? $callback : null;
+	}
+
+	/**
+	 * Override the INSERT split size (normally @@max_allowed_packet / 4). For tests.
+	 *
+	 * @param int $bytes Limit.
+	 */
+	public function set_insert_byte_limit( $bytes ) {
+		$this->insert_byte_limit = max( 1, (int) $bytes );
+	}
+
+	/**
+	 * @return int Current INSERT piece size limit.
+	 */
+	public function insert_byte_limit() {
+		return null === $this->insert_byte_limit ? 0 : (int) $this->insert_byte_limit;
 	}
 
 	public function session() {
@@ -508,6 +574,10 @@ class Database_Importer {
 		if ( is_wp_error( $ready ) ) {
 			return $ready;
 		}
+		$packet = $this->refresh_packet_limit();
+		if ( is_wp_error( $packet ) ) {
+			return $packet;
+		}
 		$cursor = $this->read_cursor();
 		if ( ! $cursor || (int) $cursor['segment'] !== (int) $segment ) {
 			return new \WP_Error( 'jisento_sql_cursor', sprintf( __( 'The restore cursor is not on segment %d. The restore stopped instead of guessing where to continue.', 'jisento' ), (int) $segment ) . $this->job_suffix() );
@@ -530,10 +600,101 @@ class Database_Importer {
 		}
 		$this->notes                 = array();
 		$this->placeholders_repaired = 0;
+		$this->batch_reset();
 		$result = $this->run_segment( $handle, (int) $segment, $cursor, $size, $time_budget, $max_statements );
 		fclose( $handle );
 		$this->close_session();
 		return $result;
+	}
+
+	/**
+	 * Read @@max_allowed_packet and set INSERT split size to packet / 4 (whole rows only).
+	 *
+	 * @return true|\WP_Error
+	 */
+	private function refresh_packet_limit() {
+		if ( null !== $this->insert_byte_limit && $this->insert_byte_limit > 0 ) {
+			return true;
+		}
+		$packet = (int) $this->scalar( 'SELECT @@max_allowed_packet' );
+		if ( $packet < 1024 ) {
+			return new \WP_Error( 'jisento_sql_packet', __( 'Unable to read @@max_allowed_packet on the destination database.', 'jisento' ) . $this->job_suffix() );
+		}
+		$this->insert_byte_limit = max( 65536, (int) floor( $packet / 4 ) );
+		return true;
+	}
+
+	private function batch_reset() {
+		$this->batch_open    = false;
+		$this->batch_started = 0.0;
+		$this->batch_bytes   = 0;
+		$this->batch_last    = null;
+	}
+
+	/**
+	 * @return true|\WP_Error
+	 */
+	private function batch_ensure_open() {
+		if ( $this->batch_open ) {
+			return true;
+		}
+		if ( ! $this->exec_sql( 'START TRANSACTION' ) ) {
+			return $this->driver_error( 'start transaction', self::cursor_table() );
+		}
+		$this->batch_open    = true;
+		$this->batch_started = microtime( true );
+		$this->batch_bytes   = 0;
+		$this->batch_last    = null;
+		return true;
+	}
+
+	/**
+	 * Commit the open DML batch: one ledger row (batch end) + cursor, same transaction as the INSERTs.
+	 *
+	 * @return true|\WP_Error
+	 */
+	private function flush_batch() {
+		if ( ! $this->batch_open ) {
+			return true;
+		}
+		if ( ! $this->batch_last ) {
+			$this->exec_sql( 'ROLLBACK' );
+			$this->batch_reset();
+			return true;
+		}
+		$b = $this->batch_last;
+		if ( ! $this->write_ledger( $b['segment'], $b['offset'], $b['piece'] ) || ! $this->write_cursor( $b['segment'], $b['next_offset'], $b['next_piece'] ) ) {
+			$this->exec_sql( 'ROLLBACK' );
+			$this->batch_reset();
+			return $this->driver_error( 'save resume point', self::cursor_table() );
+		}
+		$this->fire( 'before_commit' );
+		if ( ! $this->exec_sql( 'COMMIT' ) ) {
+			$this->batch_reset();
+			return $this->driver_error( 'save resume point', self::cursor_table() );
+		}
+		$this->fire( 'after_commit' );
+		$this->batch_reset();
+		return true;
+	}
+
+	/**
+	 * Whether the open batch should commit before accepting more DML.
+	 *
+	 * @param int $extra_bytes Bytes about to be added.
+	 * @return bool
+	 */
+	private function batch_should_flush( $extra_bytes = 0 ) {
+		if ( ! $this->batch_open || ! $this->batch_last ) {
+			return false;
+		}
+		if ( ( $this->batch_bytes + (int) $extra_bytes ) >= self::BATCH_MAX_BYTES ) {
+			return true;
+		}
+		if ( ( microtime( true ) - $this->batch_started ) >= self::BATCH_TIME_SEC ) {
+			return true;
+		}
+		return false;
 	}
 
 	private function run_segment( $handle, $segment, array $cursor, $size, $time_budget, $max_statements ) {
@@ -566,6 +727,10 @@ class Database_Importer {
 				continue;
 			}
 			if ( $statements > 0 && ( microtime( true ) >= $deadline || $statements >= $max_statements ) ) {
+				$flushed = $this->flush_batch();
+				if ( is_wp_error( $flushed ) ) {
+					return $flushed;
+				}
 				return $this->chunk_result( false, $statements, $last_table, $started, $buffer_start, $size );
 			}
 			$raw     = $split[0];
@@ -583,8 +748,16 @@ class Database_Importer {
 				$last_table = $ran['table'];
 			}
 			if ( ! empty( $ran['partial'] ) ) {
+				$flushed = $this->flush_batch();
+				if ( is_wp_error( $flushed ) ) {
+					return $flushed;
+				}
 				return $this->chunk_result( false, $statements, $last_table, $started, $start, $size );
 			}
+		}
+		$flushed = $this->flush_batch();
+		if ( is_wp_error( $flushed ) ) {
+			return $flushed;
 		}
 		if ( '' !== trim( self::strip_leading_comments( $pending ) ) ) {
 			return new \WP_Error( 'jisento_sql_truncated', sprintf( __( 'Database segment %d ends in the middle of a statement. The package is incomplete; export it again.', 'jisento' ), $segment ) . $this->job_suffix() );
@@ -616,6 +789,10 @@ class Database_Importer {
 	private function run_statement( $segment, $start, $end, $raw, $first_piece, $deadline ) {
 		$sql = self::strip_leading_comments( $raw );
 		if ( '' === $sql || ';' === $sql ) {
+			$flushed = $this->flush_batch();
+			if ( is_wp_error( $flushed ) ) {
+				return $flushed;
+			}
 			return $this->advance( $segment, $end, 0, '' );
 		}
 		$plan = $this->classify( $sql );
@@ -623,9 +800,17 @@ class Database_Importer {
 			return $plan;
 		}
 		if ( 'skip' === $plan['kind'] ) {
+			$flushed = $this->flush_batch();
+			if ( is_wp_error( $flushed ) ) {
+				return $flushed;
+			}
 			return $this->advance( $segment, $end, 0, $plan['table'] );
 		}
 		if ( 'set' === $plan['kind'] ) {
+			$flushed = $this->flush_batch();
+			if ( is_wp_error( $flushed ) ) {
+				return $flushed;
+			}
 			$applied = $this->apply_set( $plan );
 			if ( is_wp_error( $applied ) ) {
 				return $applied;
@@ -633,6 +818,11 @@ class Database_Importer {
 			return $this->advance( $segment, $end, 0, '' );
 		}
 		if ( 'ddl' === $plan['kind'] ) {
+			// DDL is never part of a DML batch: commit first, then run DDL alone.
+			$flushed = $this->flush_batch();
+			if ( is_wp_error( $flushed ) ) {
+				return $flushed;
+			}
 			if ( $first_piece > 0 ) {
 				return $this->advance( $segment, $end, 0, $plan['table'] );
 			}
@@ -656,7 +846,8 @@ class Database_Importer {
 			);
 		}
 
-		$pieces = Sql_Scanner::split_insert( $plan['sql'] );
+		$limit  = $this->insert_byte_limit ? (int) $this->insert_byte_limit : 262144;
+		$pieces = Sql_Scanner::split_insert( $plan['sql'], $limit );
 		$count  = 0;
 		$total  = count( $pieces );
 		foreach ( $pieces as $index => $piece ) {
@@ -664,6 +855,10 @@ class Database_Importer {
 				continue;
 			}
 			if ( $count > 0 && microtime( true ) >= $deadline ) {
+				$flushed = $this->flush_batch();
+				if ( is_wp_error( $flushed ) ) {
+					return $flushed;
+				}
 				return array(
 					'statements' => $count,
 					'table'      => $plan['table'],
@@ -673,6 +868,10 @@ class Database_Importer {
 			$next_offset = ( $index + 1 >= $total ) ? $end : $start;
 			$next_piece  = ( $index + 1 >= $total ) ? 0 : $index + 1;
 			if ( $this->was_applied( $segment, $start, $index ) ) {
+				$flushed = $this->flush_batch();
+				if ( is_wp_error( $flushed ) ) {
+					return $flushed;
+				}
 				if ( ! $this->write_cursor( $segment, $next_offset, $next_piece ) ) {
 					return $this->driver_error( 'save resume point', self::cursor_table() );
 				}
@@ -680,24 +879,41 @@ class Database_Importer {
 				continue;
 			}
 			$piece = $this->prepare_insert( $piece, $plan['shadow'] );
-			if ( ! $this->exec_sql( 'START TRANSACTION' ) ) {
-				return $this->driver_error( 'start transaction', $plan['table'] );
+			$bytes = strlen( $piece );
+			if ( $this->batch_should_flush( $bytes ) ) {
+				$flushed = $this->flush_batch();
+				if ( is_wp_error( $flushed ) ) {
+					return $flushed;
+				}
+			}
+			$opened = $this->batch_ensure_open();
+			if ( is_wp_error( $opened ) ) {
+				return $opened;
 			}
 			$this->fire( 'before_exec' );
 			if ( ! $this->exec_sql( $piece ) ) {
 				$error = $this->statement_error( $plan, $piece, $segment, $start, $index );
 				$this->exec_sql( 'ROLLBACK' );
+				$this->batch_reset();
 				return $error;
 			}
 			$this->fire( 'after_exec' );
 			$this->statement_no++;
-			if ( ! $this->commit_progress( $segment, $start, $index, $next_offset, $next_piece ) ) {
-				$error = $this->driver_error( 'save resume point', self::cursor_table() );
-				$this->exec_sql( 'ROLLBACK' );
-				return $error;
-			}
-			$this->fire( 'after_commit' );
+			$this->batch_bytes += $bytes;
+			$this->batch_last   = array(
+				'segment'     => (int) $segment,
+				'offset'      => (int) $start,
+				'piece'       => (int) $index,
+				'next_offset' => (int) $next_offset,
+				'next_piece'  => (int) $next_piece,
+			);
 			$count++;
+			if ( $this->batch_should_flush( 0 ) ) {
+				$flushed = $this->flush_batch();
+				if ( is_wp_error( $flushed ) ) {
+					return $flushed;
+				}
+			}
 		}
 		return array(
 			'statements' => $count,
@@ -706,7 +922,7 @@ class Database_Importer {
 	}
 
 	/**
-	 * Ledger row plus cursor, then COMMIT. For INSERT the statement is already inside this transaction.
+	 * Ledger row plus cursor, then COMMIT. Used for DDL resume points (DDL itself already committed).
 	 */
 	private function commit_progress( $segment, $offset, $piece, $next_offset, $next_piece ) {
 		if ( ! $this->write_ledger( $segment, $offset, $piece ) || ! $this->write_cursor( $segment, $next_offset, $next_piece ) ) {
