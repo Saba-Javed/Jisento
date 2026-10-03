@@ -79,7 +79,30 @@ try {
 
     $zip = Join-Path $OutputDir 'jisento-migration.zip'
     if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
-    Compress-Archive -Path $pluginStage -DestinationPath $zip -Force
+
+    # Compress-Archive embeds Windows backslashes; WordPress/Linux need '/'.
+    # Use FullName (not Resolve-Path) so short/long 8.3 paths stay consistent.
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zipStream = [System.IO.Compression.ZipFile]::Open($zip, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $pluginStageFull = (Get-Item -LiteralPath $pluginStage).FullName.TrimEnd('\')
+        Get-ChildItem -LiteralPath $pluginStage -Recurse -File | ForEach-Object {
+            $full = $_.FullName
+            $rest = $full.Substring($pluginStageFull.Length)
+            $inner = ($rest -replace '^\\+', '') -replace '\\', '/'
+            $entry = 'jisento-migration/' + $inner
+            [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $zipStream,
+                $full,
+                $entry,
+                [System.IO.Compression.CompressionLevel]::Optimal
+            )
+        }
+    } finally {
+        $zipStream.Dispose()
+    }
+
     Write-Host "Built $zip"
     Write-Host ('Size: {0:N0} bytes' -f (Get-Item -LiteralPath $zip).Length)
 } finally {
