@@ -109,6 +109,28 @@ for this validation, not in the plugin:
 `tests/roundtrip-test.php` reports `SKIP no database server`, which is the behaviour the
 bootstrap documents for a host with no reachable MariaDB/MySQL.
 
+## E5 re-validation
+
+After the E4 archive was reviewed, the whole suite was run again with the MariaDB variables
+that `tests/run-roundtrip.ps1` sets (`JISENTO_TEST_DB_HOST=127.0.0.1`, `_PORT=3307`,
+`_USER=root`, `_PASS=root`), and the archive was rebuilt and re-verified.
+
+| Run | PHP | Result |
+| --- | --- | --- |
+| `tests/*-test.php` (26 files) | 8.3.33 | 466 passed, 13 failed (same two runner-defect files) |
+| `tests/*-test.php` (26 files) | 7.4.33 | 466 passed, 13 failed — identical to 8.3 |
+| `tests/roundtrip-test.php` with the MariaDB variables | 8.3.33 | `SKIP no database server` |
+| Rebuilt archive | — | 68 entries, 221,863 bytes, SHA-256 `b7accc1323cb63b4b4c5fe0c9716124b15b6a8d70d4824668f70c77b21add4e1` |
+
+`tests/run-roundtrip.ps1` drives five database scenarios — `jisento-mariadb` (port 3307) to
+itself, MySQL 8 (3308) to MariaDB, MariaDB 11.4 (3309) to itself, MariaDB 11.4 to MariaDB 10.6
+(3310) for the `uca1400` collation mapping, and `tests/preserve-mode-test.php` for the
+preserve-mode orphan-author checks. It was not executed here because the validation host has no
+Docker engine and no MySQL-compatible server, so the round-trip scenarios are **not covered by
+this pass** and must be run on a Docker-capable machine before release. Everything the script
+needs apart from the containers is in place: `tests/preserve-mode-test.php`, which it invokes
+directly, reports 14 passed, 0 failed.
+
 ## Release package rules
 
 * `docs/` is listed in `.distignore` and is absent from the archive.
